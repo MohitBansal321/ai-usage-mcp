@@ -12,6 +12,7 @@ import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record
 import {
   AggregationService,
   type ClientReport,
+  type DailyReport,
   type ModelReport,
   type ProjectReport,
   type SessionDetail,
@@ -181,9 +182,9 @@ export class UsageService {
     return this.aggregation.session(sessionId, includeSubagents);
   }
 
-  dailyUsage(query: UsageQuery = {}) {
-    const { filter } = this.filterFor(query);
-    return this.aggregation.byDay(filter);
+  dailyUsage(query: UsageQuery = {}): DailyReport {
+    const { filter, label } = this.filterFor(query);
+    return this.aggregation.daily(filter, label);
   }
 
   /** True when there is no data at all, so frontends can say so instead of printing zeros. */

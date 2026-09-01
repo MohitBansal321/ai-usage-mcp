@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
 import { registerClientUsage } from './tools/client-usage.js';
+import { registerDailyUsage } from './tools/daily-usage.js';
 import { registerModelUsage } from './tools/model-usage.js';
 import { registerProjectUsage } from './tools/project-usage.js';
 import { registerRecentSessions } from './tools/recent-sessions.js';
@@ -76,6 +77,7 @@ async function main(): Promise<void> {
   registerModelUsage(server, ctx);
   registerClientUsage(server, ctx);
   registerProjectUsage(server, ctx);
+  registerDailyUsage(server, ctx);
   registerRecentSessions(server, ctx);
 
   const shutdown = () => {

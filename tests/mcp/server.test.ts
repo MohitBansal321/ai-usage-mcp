@@ -113,6 +113,7 @@ describe('MCP server over stdio', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'client_usage',
+      'daily_usage',
       'model_usage',
       'project_usage',
       'recent_sessions',

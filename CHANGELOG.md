@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-day totals were bucketed in UTC while the period filter used local midnight.** A turn made
+  late in the evening was filed under the previous day for every user east of Greenwich, so
+  `--today` could select rows that the daily breakdown then reported under yesterday. On the
+  development machine (UTC+5:30) this misplaced 376 of 12,014 records. Bucketing now uses the OS
+  timezone database, which also stays correct across DST changes where a fixed offset would not.
+
 ### Added
 
 - **Per-project usage.** A `project_usage` MCP tool and an `ai-usage projects` CLI command report
@@ -15,6 +23,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grouped as `(unknown)` rather than dropped.
 - A `--project` CLI flag and a `projectPath` parameter on every period-based MCP tool, so any
   existing report can be narrowed to one project.
+- **A `daily_usage` MCP tool.** The per-day breakdown was CLI-only; the agent can now ask for it
+  directly. `ai-usage daily` and the tool render through one formatter, so they cannot drift.
+- `dailyUsage()` now returns a report with a period label and overall totals, matching the shape
+  of every other report rather than a bare array of rows.
 
 ## [0.1.2] - 2026-09-01
 

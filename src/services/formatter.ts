@@ -2,6 +2,7 @@ import type { AggregateRow, SessionRow } from '../db/repositories/usage-reposito
 import type { CostTotals } from '../models/usage-record.js';
 import type {
   ClientReport,
+  DailyReport,
   ModelReport,
   ProjectReport,
   SessionDetail,
@@ -163,6 +164,33 @@ export function formatModels(report: ModelReport, costService: CostService): str
   out.push(
     `Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`,
   );
+  return out.join('\n');
+}
+
+/** Compact one line per day. Reported and estimated costs stay separate, as everywhere else. */
+export function formatDaily(report: DailyReport): string {
+  const out: string[] = [];
+  out.push(`Daily usage -- ${report.period.label}`);
+  out.push(subagentNote(report));
+  out.push('');
+  if (report.days.length === 0) {
+    out.push('No usage records for this period.');
+    return out.join('\n');
+  }
+  for (const day of report.days) {
+    const cost: string[] = [];
+    if (day.cost.reportedRecords > 0) cost.push(`reported ${usd(day.cost.reported)}`);
+    if (day.cost.estimatedRecords > 0) cost.push(`estimated ${usd(day.cost.estimated)}`);
+    out.push(
+      `${day.key}  ${int(day.records).padStart(6)} turns  total ${tokens(day.totalTokens)}` +
+        (cost.length ? `  (${cost.join(', ')})` : ''),
+    );
+  }
+  out.push('');
+  out.push(
+    `Total across ${int(report.days.length)} day(s): ${tokens(report.overall.totalTokens)} tokens`,
+  );
+  out.push('Days are local calendar days, matching the period filter.');
   return out.join('\n');
 }
 

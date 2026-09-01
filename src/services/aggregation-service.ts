@@ -37,6 +37,14 @@ export interface ProjectReport {
   overall: AggregateRow;
 }
 
+export interface DailyReport {
+  period: { since?: string; until?: string; label: string };
+  includeSubagents: boolean;
+  /** Newest day first. Keyed by local calendar date, `YYYY-MM-DD`. */
+  days: GroupedRow[];
+  overall: AggregateRow;
+}
+
 export interface SessionDetail {
   session: SessionRow;
   models: GroupedRow[];
@@ -113,6 +121,19 @@ export class AggregationService {
 
   byDay(filter: UsageFilter): GroupedRow[] {
     return this.repo.byDay(filter);
+  }
+
+  daily(filter: UsageFilter, label: string): DailyReport {
+    return {
+      period: {
+        ...(filter.since ? { since: filter.since } : {}),
+        ...(filter.until ? { until: filter.until } : {}),
+        label,
+      },
+      includeSubagents: filter.includeSubagents !== false,
+      days: this.repo.byDay(filter),
+      overall: this.repo.totals(filter),
+    };
   }
 
   /** Resolves an exact or partial session id, then assembles its detail view. */

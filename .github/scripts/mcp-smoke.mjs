@@ -51,6 +51,7 @@ child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/ini
 
 const EXPECTED = [
   'client_usage',
+  'daily_usage',
   'model_usage',
   'project_usage',
   'recent_sessions',
@@ -67,6 +68,7 @@ for (const name of [
   'client_usage',
   'model_usage',
   'project_usage',
+  'daily_usage',
   'recent_sessions',
 ]) {
   const res = await send('tools/call', { name, arguments: {} });
