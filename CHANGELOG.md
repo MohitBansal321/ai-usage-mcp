@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Source maps are no longer emitted into `dist`. The published tarball never carried the
+  `.ts` sources they point at, so every one of them was dead weight: 101 files and 302 KB
+  become 69 files and 198 KB. `sourceMap` stays on in `tsconfig.json` for local work; only
+  the build config turns it off.
+
 ## [0.1.1] - 2026-09-01
 
 Mostly a metadata and tooling release. It exists because npm metadata is immutable per
