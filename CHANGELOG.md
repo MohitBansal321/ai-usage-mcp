@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-01
+
+Mostly a metadata and tooling release. It exists because npm metadata is immutable per
+version, and 0.1.0 was published without the fields that link the package back to its source:
+the package page showed no repository, no Issues link and no verified-source badge. Two small
+collector fixes ride along; everything else in `src` is Prettier reflow.
+
 ### Added
 
 - Continuous integration: typecheck, lint, format check, and the full test suite on Node 22
@@ -22,9 +29,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Formatter test suite covering the cost-honesty invariants: reported and estimated figures
   are never summed, estimates always carry the API-equivalent label, unpriced records are
   reported as unavailable, and every token class is broken out.
-- `repository`, `homepage`, `bugs` and `author` metadata, missing from 0.1.0.
+- `repository`, `homepage`, `bugs` and `author` metadata, absent from the published 0.1.0
+  tarball. Without `repository` the npm page shows no link to the source, no Issues link
+  and no verified-source badge, and npm cannot resolve the README's relative links.
+- `engines.npm` (`>=11`), so npm warns at install time rather than failing mid-build on
+  Windows.
 
 ### Changed
+
+- **An `AI_USAGE_CLAUDE_PROJECTS` override is now authoritative.** Previously the override was
+  added to the store list but only marked primary if the path existed, so a typo left the
+  collector with no primary store and no complaint. The override is now always the primary,
+  which surfaces a bad path as a missing primary store in `ai-usage status`.
+- A malformed `pricing.json` override now chains the underlying parse error as `cause` rather
+  than interpolating it into the message, so the reason survives without a two-line message.
 
 - **Install docs rewritten around the simplest path.** The Claude Code instructions now lead
   with `npx -y ai-usage-mcp`, which needs no global install, and document the config-file route
@@ -85,5 +103,6 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MohitBansal321/ai-usage-mcp/releases/tag/v0.1.0

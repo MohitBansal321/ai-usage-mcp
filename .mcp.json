@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ai-usage": {
+      "command": "npx",
+      "args": ["-y", "ai-usage-mcp"]
+    }
+  }
+}
