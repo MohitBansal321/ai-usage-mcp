@@ -26,10 +26,48 @@ export interface UsageFilter {
 export interface AggregateRow extends TokenTotals {
   records: number;
   sessions: number;
+  /**
+   * Cache writes split by TTL. Kept alongside the combined `cacheWriteTokens`
+   * because the two are priced differently (1.25x vs 2x of the input rate), so
+   * anything re-pricing a period needs them separately.
+   */
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
   cost: CostTotals;
   firstTimestamp?: string;
   lastTimestamp?: string;
 }
+
+/**
+ * One stored turn. The first non-aggregate shape in this repository: every other
+ * read collapses rows, which makes per-turn questions -- how context grew, what a
+ * single turn cost -- unanswerable.
+ */
+export interface TurnRow {
+  id: string;
+  client: ClientId;
+  provider: string;
+  model: string;
+  sessionId: string;
+  projectPath?: string;
+  timestamp: string;
+  turnKind: TurnKind;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  cost?: number;
+  estimatedCost?: number;
+  costBasis: string;
+}
+
+/** Sessions reach thousands of turns, so a row read is always bounded. */
+export const TURNS_DEFAULT_LIMIT = 200;
+export const TURNS_MAX_LIMIT = 5000;
 
 export interface GroupedRow extends AggregateRow {
   key: string;
@@ -55,6 +93,8 @@ interface RawAgg {
   output_tokens: number | null;
   cache_read_tokens: number | null;
   cache_write_tokens: number | null;
+  cache_write_5m_tokens: number | null;
+  cache_write_1h_tokens: number | null;
   reasoning_tokens: number | null;
   total_tokens: number | null;
   reported: number | null;
@@ -73,6 +113,8 @@ const AGG_SELECT = `
   SUM(output_tokens)                AS output_tokens,
   SUM(COALESCE(cache_read_tokens,0))  AS cache_read_tokens,
   SUM(COALESCE(cache_write_tokens,0)) AS cache_write_tokens,
+  SUM(COALESCE(cache_write_5m_tokens,0)) AS cache_write_5m_tokens,
+  SUM(COALESCE(cache_write_1h_tokens,0)) AS cache_write_1h_tokens,
   SUM(COALESCE(reasoning_tokens,0))   AS reasoning_tokens,
   SUM(total_tokens)                 AS total_tokens,
   SUM(CASE WHEN cost_basis='reported'  THEN COALESCE(cost,0)           ELSE 0 END) AS reported,
@@ -126,6 +168,8 @@ function toAggregate(raw: RawAgg | undefined): AggregateRow {
     outputTokens: r.output_tokens ?? 0,
     cacheReadTokens: r.cache_read_tokens ?? 0,
     cacheWriteTokens: r.cache_write_tokens ?? 0,
+    cacheWrite5mTokens: r.cache_write_5m_tokens ?? 0,
+    cacheWrite1hTokens: r.cache_write_1h_tokens ?? 0,
     reasoningTokens: r.reasoning_tokens ?? 0,
     totalTokens: r.total_tokens ?? 0,
     cost: {
@@ -264,6 +308,61 @@ export class UsageRepository {
       )
       .all(params) as (RawAgg & { key: string })[];
     return rows.map((r) => ({ key: r.key, ...toAggregate(r) }));
+  }
+
+  /**
+   * Individual turns, oldest first so a caller can read a session as a series.
+   * Always bounded: `limit` defaults to {@link TURNS_DEFAULT_LIMIT} and is capped
+   * at {@link TURNS_MAX_LIMIT}, because a single session can exceed 2,000 turns.
+   */
+  turns(filter: UsageFilter = {}, options: { limit?: number; offset?: number } = {}): TurnRow[] {
+    const { sql, params } = buildWhere(filter);
+    params.limit = Math.min(Math.max(1, options.limit ?? TURNS_DEFAULT_LIMIT), TURNS_MAX_LIMIT);
+    params.offset = Math.max(0, options.offset ?? 0);
+    const rows = this.db
+      .prepare(
+        `SELECT id, client, provider, model, session_id, project_path, timestamp, turn_kind,
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
+                cost, estimated_cost, cost_basis
+         FROM usage_records ${sql}
+         ORDER BY timestamp ASC, id ASC
+         LIMIT :limit OFFSET :offset`,
+      )
+      .all(params) as Record<string, unknown>[];
+    return rows.map((r) => {
+      const turn: TurnRow = {
+        id: r.id as string,
+        client: r.client as ClientId,
+        provider: r.provider as string,
+        model: r.model as string,
+        sessionId: r.session_id as string,
+        timestamp: r.timestamp as string,
+        turnKind: r.turn_kind as TurnKind,
+        inputTokens: (r.input_tokens as number) ?? 0,
+        outputTokens: (r.output_tokens as number) ?? 0,
+        cacheReadTokens: (r.cache_read_tokens as number) ?? 0,
+        cacheWriteTokens: (r.cache_write_tokens as number) ?? 0,
+        cacheWrite5mTokens: (r.cache_write_5m_tokens as number) ?? 0,
+        cacheWrite1hTokens: (r.cache_write_1h_tokens as number) ?? 0,
+        reasoningTokens: (r.reasoning_tokens as number) ?? 0,
+        totalTokens: (r.total_tokens as number) ?? 0,
+        costBasis: r.cost_basis as string,
+      };
+      if (r.project_path != null) turn.projectPath = r.project_path as string;
+      if (r.cost != null) turn.cost = r.cost as number;
+      if (r.estimated_cost != null) turn.estimatedCost = r.estimated_cost as number;
+      return turn;
+    });
+  }
+
+  /** Total turns matching a filter, so a caller can page without guessing. */
+  countTurns(filter: UsageFilter = {}): number {
+    const { sql, params } = buildWhere(filter);
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM usage_records ${sql}`).get(params) as {
+      n: number;
+    };
+    return row.n;
   }
 
   /** Recent sessions, newest activity first. */

@@ -179,6 +179,8 @@ function subtract(all: AggregateRow, main: AggregateRow): AggregateRow {
     outputTokens: all.outputTokens - main.outputTokens,
     cacheReadTokens: all.cacheReadTokens - main.cacheReadTokens,
     cacheWriteTokens: all.cacheWriteTokens - main.cacheWriteTokens,
+    cacheWrite5mTokens: all.cacheWrite5mTokens - main.cacheWrite5mTokens,
+    cacheWrite1hTokens: all.cacheWrite1hTokens - main.cacheWrite1hTokens,
     reasoningTokens: all.reasoningTokens - main.reasoningTokens,
     totalTokens: all.totalTokens - main.totalTokens,
     cost: {
