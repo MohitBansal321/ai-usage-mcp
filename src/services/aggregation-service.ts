@@ -29,6 +29,14 @@ export interface ClientReport {
   overall: AggregateRow;
 }
 
+export interface ProjectReport {
+  period: { since?: string; until?: string; label: string };
+  includeSubagents: boolean;
+  /** Keyed by project path. Records with no project resolve to `(unknown)`. */
+  projects: GroupedRow[];
+  overall: AggregateRow;
+}
+
 export interface SessionDetail {
   session: SessionRow;
   models: GroupedRow[];
@@ -82,6 +90,19 @@ export class AggregationService {
       },
       includeSubagents: filter.includeSubagents !== false,
       clients: this.repo.byClient(filter),
+      overall: this.repo.totals(filter),
+    };
+  }
+
+  projects(filter: UsageFilter, label: string, limit?: number): ProjectReport {
+    return {
+      period: {
+        ...(filter.since ? { since: filter.since } : {}),
+        ...(filter.until ? { until: filter.until } : {}),
+        label,
+      },
+      includeSubagents: filter.includeSubagents !== false,
+      projects: this.repo.byProject(filter, limit),
       overall: this.repo.totals(filter),
     };
   }

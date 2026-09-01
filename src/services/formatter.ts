@@ -3,6 +3,7 @@ import type { CostTotals } from '../models/usage-record.js';
 import type {
   ClientReport,
   ModelReport,
+  ProjectReport,
   SessionDetail,
   SummaryReport,
 } from './aggregation-service.js';
@@ -161,6 +162,33 @@ export function formatModels(report: ModelReport, costService: CostService): str
   }
   out.push(
     `Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`,
+  );
+  return out.join('\n');
+}
+
+export function formatProjects(report: ProjectReport, costService: CostService): string {
+  const out: string[] = [];
+  out.push(`Usage by project -- ${report.period.label}`);
+  out.push(subagentNote(report));
+  out.push('');
+  if (report.projects.length === 0) {
+    out.push('No usage records for this period.');
+    return out.join('\n');
+  }
+  for (const project of report.projects) {
+    out.push(
+      `${project.key}  --  ${int(project.records)} records, ${int(project.sessions)} sessions`,
+    );
+    out.push(...tokenLines(project, '  '));
+    out.push(...costLines(project.cost, costService, '  '));
+    out.push('');
+  }
+  out.push(
+    `Total across ${int(report.projects.length)} project(s): ${tokens(report.overall.totalTokens)} tokens`,
+  );
+  out.push(
+    'A project is the working directory the turn ran in. Turns whose project could not be ' +
+      'resolved are grouped as (unknown) rather than dropped.',
   );
   return out.join('\n');
 }

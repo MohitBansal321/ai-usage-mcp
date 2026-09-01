@@ -180,6 +180,36 @@ describe('UsageService', () => {
     expect(models).toEqual(['big-pickle', 'claude-opus-5', 'claude-sonnet-5']);
   });
 
+  it('reports per-project usage across both clients', () => {
+    const report = service.projectUsage();
+    expect(report.projects.map((p) => p.key)).toEqual(['/work/project-one']);
+    // Both collectors resolve to the same working directory, so the project row
+    // must account for every record rather than one client's share.
+    const project = report.projects[0]!;
+    expect(project.records).toBe(6);
+    expect(project.cost.reportedRecords).toBe(3);
+    expect(project.cost.estimatedRecords).toBe(3);
+    expect(project.totalTokens).toBe(report.overall.totalTokens);
+  });
+
+  it('filters every report by project, and reports nothing for an unknown one', () => {
+    const known = service.summary({ projectPath: '/work/project-one' });
+    expect(known.overall.records).toBe(6);
+
+    const missing = service.projectUsage({ projectPath: '/work/does-not-exist' });
+    expect(missing.projects).toEqual([]);
+    expect(missing.overall.records).toBe(0);
+  });
+
+  it('honours the period and subagent filters on the project breakdown', () => {
+    const lastWeek = service.projectUsage({ days: 7 });
+    expect(lastWeek.projects[0]!.records).toBe(5);
+
+    const mainOnly = service.projectUsage({ includeSubagents: false });
+    expect(mainOnly.projects[0]!.records).toBe(4);
+    expect(mainOnly.includeSubagents).toBe(false);
+  });
+
   it('resolves a session by an unambiguous fragment and splits its turn kinds', () => {
     // 'sess-1' is a fragment; it must resolve to the single matching session.
     const detail = service.sessionUsage('sess-1');

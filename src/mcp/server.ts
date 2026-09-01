@@ -5,6 +5,7 @@ import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
 import { registerClientUsage } from './tools/client-usage.js';
 import { registerModelUsage } from './tools/model-usage.js';
+import { registerProjectUsage } from './tools/project-usage.js';
 import { registerRecentSessions } from './tools/recent-sessions.js';
 import { registerSessionUsage } from './tools/session-usage.js';
 import { registerUsageSummary } from './tools/usage-summary.js';
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
   registerSessionUsage(server, ctx);
   registerModelUsage(server, ctx);
   registerClientUsage(server, ctx);
+  registerProjectUsage(server, ctx);
   registerRecentSessions(server, ctx);
 
   const shutdown = () => {

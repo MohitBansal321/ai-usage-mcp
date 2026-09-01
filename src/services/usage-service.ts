@@ -13,6 +13,7 @@ import {
   AggregationService,
   type ClientReport,
   type ModelReport,
+  type ProjectReport,
   type SessionDetail,
   type SummaryReport,
 } from './aggregation-service.js';
@@ -161,6 +162,11 @@ export class UsageService {
   clientUsage(query: UsageQuery = {}): ClientReport {
     const { filter, label } = this.filterFor(query);
     return this.aggregation.clients(filter, label);
+  }
+
+  projectUsage(query: UsageQuery = {}, limit?: number): ProjectReport {
+    const { filter, label } = this.filterFor(query);
+    return this.aggregation.projects(filter, label, limit);
   }
 
   recentSessions(query: UsageQuery = {}, limit = 20): SessionRow[] {
