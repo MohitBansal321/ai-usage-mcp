@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-01
+
+0.3.0 taught a stale install to say so, in the CLI. This says it where the people who never
+open a terminal will actually see it: inside the MCP session itself.
+
 ### Added
 
 - **The MCP server now says when its build is out of date.** 0.3.0 put that notice in
@@ -224,7 +229,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...v0.1.2

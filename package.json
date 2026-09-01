@@ -1,6 +1,6 @@
 {
   "name": "ai-usage-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first MCP server that reports real token usage and cost across coding agents (Claude Code, OpenCode). Nothing leaves your machine.",
   "keywords": [
     "mcp",
