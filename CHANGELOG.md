@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-01
+
+Packaging and release plumbing. No runtime change: `src` is untouched since 0.1.1.
+
 ### Added
 
 - The release workflow now creates the GitHub Release itself, with notes taken from this
@@ -117,6 +121,7 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MohitBansal321/ai-usage-mcp/releases/tag/v0.1.0
