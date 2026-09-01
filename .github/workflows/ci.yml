@@ -47,7 +47,26 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          echo "node: $(node -v)"
+          echo "npm:  $(npm -v)"
+          echo "os:   ${{ matrix.os }}"
+      - name: Install dependencies
+        id: install
+        run: npm ci
+      - name: Dump npm debug log if the install failed
+        if: failure() && steps.install.outcome == 'failure'
+        shell: bash
+        run: |
+          cache="$(npm config get cache)"
+          echo "npm cache: $cache"
+          shopt -s nullglob
+          for f in "$cache"/_logs/*debug*.log; do
+            echo "=========== $f ==========="
+            tail -120 "$f"
+          done
       - run: npm run build
       - run: npm test
 
