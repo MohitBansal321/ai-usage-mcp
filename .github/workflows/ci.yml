@@ -55,18 +55,30 @@ jobs:
           echo "os:   ${{ matrix.os }}"
       - name: Install dependencies
         id: install
-        run: npm ci
-      - name: Dump npm debug log if the install failed
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee npm-ci.log
+      - name: Report why the install failed
         if: failure() && steps.install.outcome == 'failure'
         shell: bash
         run: |
-          cache="$(npm config get cache)"
-          echo "npm cache: $cache"
           shopt -s nullglob
-          for f in "$cache"/_logs/*debug*.log; do
-            echo "=========== $f ==========="
-            tail -120 "$f"
-          done
+          {
+            echo "### \`npm ci\` failed on ${{ matrix.os }} / Node ${{ matrix.node }}"
+            echo
+            echo "- node: \`$(node -v)\`"
+            echo "- npm: \`$(npm -v)\`"
+            echo
+            echo '```'
+            tail -120 npm-ci.log 2>/dev/null || echo '(no npm-ci.log)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Emit the key lines as an annotation too: job logs and summaries need
+          # elevated access, but annotations are readable from the checks API.
+          msg="$(grep -iE 'npm (error|warn ERESOLVE)' npm-ci.log 2>/dev/null | head -25 | tr '\n' '~' | cut -c1-700)"
+          echo "::error title=npm ci failed on ${{ matrix.os }} Node ${{ matrix.node }}::${msg:-no npm error lines captured}"
       - run: npm run build
       - run: npm test
 
