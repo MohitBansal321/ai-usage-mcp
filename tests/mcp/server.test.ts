@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
@@ -98,6 +99,9 @@ describe('MCP server over stdio', () => {
         AI_USAGE_OPENCODE_DB: openCodeDb,
         AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
         AI_USAGE_FRESHNESS_MS: '0',
+        // Hermetic: no registry lookup, so no update notice can appear in a
+        // result this suite compares byte for byte.
+        AI_USAGE_NO_UPDATE_CHECK: '1',
       },
     });
     client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -124,7 +128,11 @@ describe('MCP server over stdio', () => {
 
   it('exposes resources the user can pull in with an @ mention', async () => {
     const { resources } = await client.listResources();
-    expect(resources.map((r) => r.uri).sort()).toEqual(['usage://session/latest', 'usage://today']);
+    expect(resources.map((r) => r.uri).sort()).toEqual([
+      'usage://session/latest',
+      'usage://status',
+      'usage://today',
+    ]);
   });
 
   it('serves usage://today as the same numbers usage_summary reports', async () => {
@@ -246,5 +254,77 @@ describe('MCP server over stdio', () => {
     const text = (result.content as { type: string; text: string }[])[0]!.text;
     expect(text).toContain('No usage records for this period');
     expect((result.structuredContent as any).totals.records).toBe(0);
+  });
+});
+
+describe('MCP server on a stale install', () => {
+  let dir: string;
+  let client: Client;
+  let transport: StdioClientTransport;
+
+  beforeAll(async () => {
+    dir = tempDir('mcp-stale-');
+    const config = join(dir, 'config');
+    mkdirSync(config, { recursive: true });
+    // A fresh cache entry claiming a much newer release. Seeding the cache is
+    // what keeps this test off the network: the server never fetches.
+    writeFileSync(
+      join(config, 'update-check.json'),
+      JSON.stringify({ checkedAt: Date.now(), latest: '999.0.0' }),
+    );
+
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [SERVER],
+      env: {
+        ...process.env,
+        AI_USAGE_HOME: config,
+        AI_USAGE_DB: join(dir, 'usage.db'),
+        // Deliberately empty sources: this test is about the notice, and it must
+        // not read the real machine's usage.
+        AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
+        AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+        AI_USAGE_FRESHNESS_MS: '0',
+        AI_USAGE_NO_UPDATE_CHECK: '0',
+        CI: '',
+      },
+    });
+    client = new Client({ name: 'stale-client', version: '1.0.0' });
+    await client.connect(transport);
+  }, 60_000);
+
+  afterAll(async () => {
+    await client?.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('tells the client at handshake time that the build is out of date', () => {
+    const instructions = client.getInstructions() ?? '';
+    expect(instructions).toContain('Server notice');
+    expect(instructions).toContain('999.0.0 is the latest release');
+    // Still the real instructions, with the notice added rather than replacing them.
+    expect(instructions).toContain('Never present the reported and estimated cost figures');
+  });
+
+  it('does not also repeat itself on the tool results', async () => {
+    const first = await client.callTool({ name: 'usage_summary', arguments: {} });
+    const second = await client.callTool({ name: 'client_usage', arguments: {} });
+
+    // The handshake already said it; a server that says it again on every call
+    // is adware.
+    expect(first.content).toHaveLength(1);
+    expect(second.content).toHaveLength(1);
+    expect(
+      (first as { structuredContent?: Record<string, unknown> }).structuredContent,
+    ).not.toHaveProperty('serverNotice');
+  });
+
+  it('serves the update state as a resource, for anyone who asks', async () => {
+    const read = await client.readResource({ uri: 'usage://status' });
+    const text = (read.contents[0] as { text: string }).text;
+
+    expect(text).toContain('ai-usage status');
+    expect(text).toContain('Update available:');
+    expect(text).toContain('999.0.0 latest');
   });
 });

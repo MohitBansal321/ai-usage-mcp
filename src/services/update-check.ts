@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { configDir } from '../pricing/index.js';
 
 /** How long a registry answer is trusted before it is fetched again. */
@@ -8,11 +9,21 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = 1500;
 const REGISTRY_URL = 'https://registry.npmjs.org/ai-usage-mcp/latest';
 
+/**
+ * How this build was launched. It decides what the fix actually is, which is not
+ * the same command in each case: a global install stays pinned until someone
+ * reinstalls it, an npx cache re-resolves on the next cold start, and a version
+ * pinned in an MCP config is not fixable by any command at all.
+ */
+export type InstallKind = 'global' | 'npx' | 'local' | 'unknown';
+
 export interface UpdateInfo {
   current: string;
   latest: string;
   /** False when the installed build is current, or ahead of the registry. */
   isOutdated: boolean;
+  /** Absent when the caller did not care how the build was installed. */
+  installKind?: InstallKind;
 }
 
 interface CacheFile {
@@ -27,10 +38,19 @@ export interface UpdateCheckOptions {
   cachePath?: string;
   now?: number;
   env?: NodeJS.ProcessEnv;
+  /** Injected in tests; defaults to detecting how this build was launched. */
+  installKind?: InstallKind;
 }
+
+export type CachedUpdateOptions = Omit<UpdateCheckOptions, 'fetchLatest'>;
 
 function updateCachePath(): string {
   return join(configDir(), 'update-check.json');
+}
+
+/** Both opt-outs, in one place: a check nobody will see should not run. */
+function optedOut(env: NodeJS.ProcessEnv): boolean {
+  return env.AI_USAGE_NO_UPDATE_CHECK === '1' || Boolean(env.CI);
 }
 
 function readCache(path: string, now: number): string | null {
@@ -98,22 +118,94 @@ export function isNewer(latest: string, current: string): boolean {
 }
 
 /**
- * Reports whether a newer release is on the registry.
+ * Classifies an install from the path this module was loaded from.
  *
- * Only ever called from `ai-usage status`. It is deliberately absent from the
- * MCP server: that process speaks JSON-RPC over stdout, and it is also
- * unnecessary there, because `npx -y ai-usage-mcp` re-resolves the version on
- * every cold start. Global CLI installs are the ones that go stale silently.
+ * Read from `import.meta.url`, never `process.argv[1]`: a global install is
+ * reached through a symlinked bin, and argv[1] can name the link rather than the
+ * file, which makes a global install look like a bare script.
+ *
+ * A heuristic, and treated as one -- every branch still names a real fix, and
+ * `unknown` says both of the likely ones rather than guessing between them.
+ */
+export function detectInstallKind(moduleUrl: string): InstallKind {
+  let path: string;
+  try {
+    path = moduleUrl.startsWith('file:') ? fileURLToPath(moduleUrl) : moduleUrl;
+  } catch {
+    return 'unknown';
+  }
+  const p = path.split(sep).join('/');
+  if (p.includes('/_npx/')) return 'npx';
+  // The npm prefix on POSIX (`<prefix>/lib/node_modules`) and on Windows
+  // (`%APPDATA%/npm/node_modules`). A project dependency has neither.
+  if (p.includes('/lib/node_modules/') || p.includes('/npm/node_modules/')) return 'global';
+  if (p.includes('/node_modules/ai-usage-mcp/')) return 'local';
+  return 'unknown';
+}
+
+let detected: InstallKind | undefined;
+
+/** Memoised: the answer cannot change while the process is alive. */
+export function installKind(): InstallKind {
+  detected ??= detectInstallKind(import.meta.url);
+  return detected;
+}
+
+/**
+ * What to actually do about a stale install, given how it was installed.
+ *
+ * An undefined kind means the caller did not detect one; the global command is
+ * the right default, because a global install is the one that goes stale.
+ */
+export function updateCommand(kind?: InstallKind): string {
+  switch (kind) {
+    case 'npx':
+      return 'restart the MCP server -- npx re-resolves the version on a cold start. If the version is pinned in your MCP config, change it there.';
+    case 'local':
+      return 'npm i ai-usage-mcp@latest';
+    case 'unknown':
+      return 'npm i -g ai-usage-mcp@latest, or `git pull && npm run build` in a source checkout';
+    default:
+      return 'npm i -g ai-usage-mcp@latest';
+  }
+}
+
+/**
+ * One line, for a channel that gets exactly one line.
+ *
+ * Deliberately a statement of fact and not an instruction: this text is read by
+ * a model before it reaches a person, and a server that tells the model what to
+ * say is doing prompt injection against its own users.
+ */
+export function formatUpdateNotice(info: UpdateInfo): string {
+  return (
+    `[ai-usage] Server notice: ai-usage-mcp ${info.current} is running; ` +
+    `${info.latest} is the latest release. To update: ${updateCommand(info.installKind)}`
+  );
+}
+
+function toUpdateInfo(current: string, latest: string, kind: InstallKind): UpdateInfo {
+  return { current, latest, isOutdated: isNewer(latest, current), installKind: kind };
+}
+
+/**
+ * Reports whether a newer release is on the registry.
  *
  * Never throws and never blocks for longer than the timeout. Returns null when
  * the answer is unknown (offline, opted out) rather than guessing.
+ *
+ * The MCP server calls this too, but only in the background once the JSON-RPC
+ * handshake is done -- see `src/mcp/notice.ts`. It is the one outbound request
+ * this package makes: a GET for a version string, carrying no usage data and no
+ * identifier, disabled by `AI_USAGE_NO_UPDATE_CHECK=1`.
  */
 export async function checkForUpdate(options: UpdateCheckOptions): Promise<UpdateInfo | null> {
   const env = options.env ?? process.env;
-  if (env.AI_USAGE_NO_UPDATE_CHECK === '1' || env.CI) return null;
+  if (optedOut(env)) return null;
 
   const now = options.now ?? Date.now();
   const cachePath = options.cachePath ?? updateCachePath();
+  const kind = options.installKind ?? installKind();
 
   let latest = readCache(cachePath, now);
   if (latest === null) {
@@ -122,5 +214,26 @@ export async function checkForUpdate(options: UpdateCheckOptions): Promise<Updat
     writeCache(cachePath, latest, now);
   }
 
-  return { current: options.current, latest, isOutdated: isNewer(latest, options.current) };
+  return toUpdateInfo(options.current, latest, kind);
+}
+
+/**
+ * The same answer, from the cache only: synchronous, and it never touches the
+ * network.
+ *
+ * This exists for the two places that cannot afford a fetch. The MCP server's
+ * `instructions` are built before the transport is connected, so a fetch there
+ * would add its timeout to every client's handshake; a resource read should
+ * answer at once. Returns null until some earlier run has populated the cache,
+ * which is the honest answer -- an unknown is not the same as up to date.
+ */
+export function readCachedUpdate(options: CachedUpdateOptions): UpdateInfo | null {
+  const env = options.env ?? process.env;
+  if (optedOut(env)) return null;
+
+  const now = options.now ?? Date.now();
+  const latest = readCache(options.cachePath ?? updateCachePath(), now);
+  if (latest === null) return null;
+
+  return toUpdateInfo(options.current, latest, options.installKind ?? installKind());
 }

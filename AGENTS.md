@@ -20,7 +20,12 @@ the machine.
 2. **MCP must not know where data comes from.** MCP → usage service → collectors. Business
    logic lives in `services/`, never in an MCP tool handler.
 3. **Nothing leaves the machine.** No telemetry, no cloud sync, no API keys, no conversation
-   content. SQLite only — no Postgres, Redis, or Kafka.
+   content. SQLite only — no Postgres, Redis, or Kafka. **One documented exception:** the
+   update check GETs a version string from the npm registry — cached for a day, abandoned after
+   1.5s, skipped under `CI`, disabled by `AI_USAGE_NO_UPDATE_CHECK=1`. It carries no usage data
+   and no identifier. It runs in the CLI's `status` and, in the MCP server, only in the
+   background after the handshake. Nothing else in this package may open a socket; if a change
+   needs to, it does not belong here.
 4. **Do not parse `opencode stats` output to collect data.** It is a box-drawing TUI table.
    Read the database instead — resolved via `$XDG_DATA_HOME/opencode` before
    `~/.local/share/opencode`, because a sandboxed launcher splits these into two stores.
