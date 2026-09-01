@@ -1,0 +1,50 @@
+{
+  "name": "ai-usage-mcp",
+  "version": "0.1.0",
+  "description": "Local-first MCP server that reports real token usage and cost across coding agents (Claude Code, OpenCode). Nothing leaves your machine.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "ai-usage-mcp": "dist/mcp/server.js",
+    "ai-usage": "dist/cli/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/chmod-bins.mjs",
+    "dev": "tsc -w -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && vitest run",
+    "test:watch": "vitest",
+    "verify": "node dist/cli/index.js verify",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "opencode",
+    "token-usage",
+    "cost",
+    "local-first"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^13.0.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
