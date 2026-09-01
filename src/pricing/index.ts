@@ -54,9 +54,7 @@ export function loadPricing(): LoadedPricing {
     try {
       parsed = JSON.parse(readFileSync(overridePath, 'utf8'));
     } catch (err) {
-      throw new Error(
-        `Pricing override at ${overridePath} is not valid JSON: ${(err as Error).message}`,
-      );
+      throw new Error(`Pricing override at ${overridePath} is not valid JSON`, { cause: err });
     }
     if (!isPricingTable(parsed)) {
       throw new Error(

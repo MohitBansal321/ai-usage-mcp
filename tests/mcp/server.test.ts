@@ -39,7 +39,12 @@ describe('MCP server over stdio', () => {
     const openCodeDb = buildOpenCodeDb(dir, {
       sessions: [{ id: 'oc-1', parentId: null }],
       messages: [
-        { id: 'm1', sessionId: 'oc-1', timeCreated: now - 5000, data: ocAssistant(now - 5000, 500, 50) },
+        {
+          id: 'm1',
+          sessionId: 'oc-1',
+          timeCreated: now - 5000,
+          data: ocAssistant(now - 5000, 500, 50),
+        },
       ],
     });
     const claudeProjects = buildClaudeProjects(dir, [
@@ -49,10 +54,35 @@ describe('MCP server over stdio', () => {
           {
             sessionId: 'cc-1',
             lines: [
-              assistantLine({ sessionId: 'cc-1', requestId: 'r1', messageId: 'm1', input: 2, output: 400, cacheRead: 90_000, cacheWrite1h: 800, thinking: 100, timestamp: new Date(now - 4000).toISOString(), stopReason: 'end_turn' }),
+              assistantLine({
+                sessionId: 'cc-1',
+                requestId: 'r1',
+                messageId: 'm1',
+                input: 2,
+                output: 400,
+                cacheRead: 90_000,
+                cacheWrite1h: 800,
+                thinking: 100,
+                timestamp: new Date(now - 4000).toISOString(),
+                stopReason: 'end_turn',
+              }),
             ],
             subagents: [
-              { name: 'agent-a', lines: [assistantLine({ sessionId: 'cc-1', requestId: 'r2', messageId: 'm2', input: 1, output: 30, cacheRead: 5000, timestamp: new Date(now - 3000).toISOString(), stopReason: 'end_turn' })] },
+              {
+                name: 'agent-a',
+                lines: [
+                  assistantLine({
+                    sessionId: 'cc-1',
+                    requestId: 'r2',
+                    messageId: 'm2',
+                    input: 1,
+                    output: 30,
+                    cacheRead: 5000,
+                    timestamp: new Date(now - 3000).toISOString(),
+                    stopReason: 'end_turn',
+                  }),
+                ],
+              },
             ],
           },
         ],
@@ -68,7 +98,7 @@ describe('MCP server over stdio', () => {
         AI_USAGE_OPENCODE_DB: openCodeDb,
         AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
         AI_USAGE_FRESHNESS_MS: '0',
-      } as Record<string, string>,
+      },
     });
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
@@ -133,7 +163,10 @@ describe('MCP server over stdio', () => {
   });
 
   it('session_usage returns one session in detail', async () => {
-    const result = await client.callTool({ name: 'session_usage', arguments: { sessionId: 'cc-1' } });
+    const result = await client.callTool({
+      name: 'session_usage',
+      arguments: { sessionId: 'cc-1' },
+    });
     const structured = result.structuredContent as any;
     expect(structured.sessionId).toBe('cc-1');
     expect(structured.client).toBe('claude-code');
@@ -141,7 +174,10 @@ describe('MCP server over stdio', () => {
   });
 
   it('session_usage reports a miss as an error instead of inventing zeros', async () => {
-    const result = await client.callTool({ name: 'session_usage', arguments: { sessionId: 'nope' } });
+    const result = await client.callTool({
+      name: 'session_usage',
+      arguments: { sessionId: 'nope' },
+    });
     expect(result.isError).toBe(true);
     const text = (result.content as { type: string; text: string }[])[0]!.text;
     expect(text).toContain('No session matching');
@@ -149,7 +185,10 @@ describe('MCP server over stdio', () => {
 
   it('honours includeSubagents=false', async () => {
     const all = await client.callTool({ name: 'usage_summary', arguments: {} });
-    const mainOnly = await client.callTool({ name: 'usage_summary', arguments: { includeSubagents: false } });
+    const mainOnly = await client.callTool({
+      name: 'usage_summary',
+      arguments: { includeSubagents: false },
+    });
     expect((all.structuredContent as any).totals.records).toBe(3);
     expect((mainOnly.structuredContent as any).totals.records).toBe(2);
     const text = (mainOnly.content as { type: string; text: string }[])[0]!.text;

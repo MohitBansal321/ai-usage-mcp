@@ -2,31 +2,6 @@
   "name": "ai-usage-mcp",
   "version": "0.1.0",
   "description": "Local-first MCP server that reports real token usage and cost across coding agents (Claude Code, OpenCode). Nothing leaves your machine.",
-  "license": "MIT",
-  "type": "module",
-  "engines": {
-    "node": ">=22.0.0"
-  },
-  "bin": {
-    "ai-usage-mcp": "dist/mcp/server.js",
-    "ai-usage": "dist/cli/index.js"
-  },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "docs",
-    "README.md",
-    "LICENSE"
-  ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/chmod-bins.mjs",
-    "dev": "tsc -w -p tsconfig.json",
-    "test": "tsc -p tsconfig.json && vitest run",
-    "test:watch": "vitest",
-    "verify": "node dist/cli/index.js verify",
-    "prepublishOnly": "npm run build && npm test"
-  },
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -36,17 +11,9 @@
     "cost",
     "local-first"
   ],
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "better-sqlite3": "^13.0.3",
-    "zod": "^4.5.4"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
-  },
+  "license": "MIT",
+  "author": "Mohit Bansal",
+  "homepage": "https://github.com/MohitBansal321/ai-usage-mcp#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/MohitBansal321/ai-usage-mcp.git"
@@ -54,6 +21,60 @@
   "bugs": {
     "url": "https://github.com/MohitBansal321/ai-usage-mcp/issues"
   },
-  "homepage": "https://github.com/MohitBansal321/ai-usage-mcp#readme",
-  "author": "Mohit Bansal"
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "bin": {
+    "ai-usage-mcp": "dist/mcp/server.js",
+    "ai-usage": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/chmod-bins.mjs",
+    "dev": "tsc -w -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "node dist/cli/index.js verify",
+    "prepublishOnly": "npm run check",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^13.0.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^2.1.0"
+  }
 }

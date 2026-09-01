@@ -11,7 +11,12 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-function ocAssistant(created: number, tokens: Partial<Record<string, number>>, model = 'big-pickle', cost = 0.5) {
+function ocAssistant(
+  created: number,
+  tokens: Partial<Record<string, number>>,
+  model = 'big-pickle',
+  cost = 0.5,
+) {
   return {
     role: 'assistant',
     cost,
@@ -42,9 +47,24 @@ describe('UsageService', () => {
         { id: 'oc-child', parentId: 'oc-main' },
       ],
       messages: [
-        { id: 'oc-1', sessionId: 'oc-main', timeCreated: now - 1000, data: ocAssistant(now - 1000, { input: 1000, output: 100, cacheRead: 5000 }) },
-        { id: 'oc-2', sessionId: 'oc-child', timeCreated: now - 900, data: ocAssistant(now - 900, { input: 200, output: 20 }) },
-        { id: 'oc-old', sessionId: 'oc-main', timeCreated: now - 10 * DAY, data: ocAssistant(now - 10 * DAY, { input: 7777, output: 7 }) },
+        {
+          id: 'oc-1',
+          sessionId: 'oc-main',
+          timeCreated: now - 1000,
+          data: ocAssistant(now - 1000, { input: 1000, output: 100, cacheRead: 5000 }),
+        },
+        {
+          id: 'oc-2',
+          sessionId: 'oc-child',
+          timeCreated: now - 900,
+          data: ocAssistant(now - 900, { input: 200, output: 20 }),
+        },
+        {
+          id: 'oc-old',
+          sessionId: 'oc-main',
+          timeCreated: now - 10 * DAY,
+          data: ocAssistant(now - 10 * DAY, { input: 7777, output: 7 }),
+        },
       ],
     });
 
@@ -55,11 +75,46 @@ describe('UsageService', () => {
           {
             sessionId: 'cc-sess-1',
             lines: [
-              assistantLine({ sessionId: 'cc-sess-1', requestId: 'r1', messageId: 'm1', input: 2, output: 500, cacheRead: 100_000, cacheWrite1h: 1000, thinking: 300, timestamp: new Date(now - 2000).toISOString(), stopReason: 'end_turn' }),
-              assistantLine({ sessionId: 'cc-sess-1', requestId: 'r2', messageId: 'm2', input: 2, output: 100, cacheRead: 50_000, model: 'claude-sonnet-5', timestamp: new Date(now - 1500).toISOString(), stopReason: 'end_turn' }),
+              assistantLine({
+                sessionId: 'cc-sess-1',
+                requestId: 'r1',
+                messageId: 'm1',
+                input: 2,
+                output: 500,
+                cacheRead: 100_000,
+                cacheWrite1h: 1000,
+                thinking: 300,
+                timestamp: new Date(now - 2000).toISOString(),
+                stopReason: 'end_turn',
+              }),
+              assistantLine({
+                sessionId: 'cc-sess-1',
+                requestId: 'r2',
+                messageId: 'm2',
+                input: 2,
+                output: 100,
+                cacheRead: 50_000,
+                model: 'claude-sonnet-5',
+                timestamp: new Date(now - 1500).toISOString(),
+                stopReason: 'end_turn',
+              }),
             ],
             subagents: [
-              { name: 'agent-1', lines: [assistantLine({ sessionId: 'cc-sess-1', requestId: 'r3', messageId: 'm3', input: 1, output: 50, cacheRead: 10_000, timestamp: new Date(now - 1200).toISOString(), stopReason: 'end_turn' })] },
+              {
+                name: 'agent-1',
+                lines: [
+                  assistantLine({
+                    sessionId: 'cc-sess-1',
+                    requestId: 'r3',
+                    messageId: 'm3',
+                    input: 1,
+                    output: 50,
+                    cacheRead: 10_000,
+                    timestamp: new Date(now - 1200).toISOString(),
+                    stopReason: 'end_turn',
+                  }),
+                ],
+              },
             ],
           },
         ],

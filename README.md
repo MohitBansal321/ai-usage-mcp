@@ -1,5 +1,11 @@
 # ai-usage-mcp
 
+[![npm version](https://img.shields.io/npm/v/ai-usage-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/ai-usage-mcp)
+[![CI](https://github.com/MohitBansal321/ai-usage-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MohitBansal321/ai-usage-mcp/actions/workflows/ci.yml)
+[![npm downloads](https://img.shields.io/npm/dm/ai-usage-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/ai-usage-mcp)
+[![node](https://img.shields.io/node/v/ai-usage-mcp?logo=node.js&color=5fa04e)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
+
 A local-first MCP server that answers, from real data on your machine:
 
 > How many tokens have I used, from which client, model and session — and what did it cost?
@@ -62,9 +68,9 @@ Or declare it in `~/.config/opencode/opencode.jsonc`:
   "mcp": {
     "ai-usage": {
       "type": "local",
-      "command": ["ai-usage-mcp"]
-    }
-  }
+      "command": ["ai-usage-mcp"],
+    },
+  },
 }
 ```
 
@@ -95,13 +101,13 @@ Show all usage from the last 7 days.
 
 ## MCP tools
 
-| Tool | Returns |
-|---|---|
-| `usage_summary` | Totals for a period, split by client, tokens + cost |
-| `session_usage` | One session: client, model, duration, token breakdown, cost |
-| `model_usage` | Per-model tokens and cost |
-| `client_usage` | Per-client (Claude Code vs OpenCode) tokens and cost |
-| `recent_sessions` | Recent sessions with project, client, tokens, cost |
+| Tool              | Returns                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `usage_summary`   | Totals for a period, split by client, tokens + cost         |
+| `session_usage`   | One session: client, model, duration, token breakdown, cost |
+| `model_usage`     | Per-model tokens and cost                                   |
+| `client_usage`    | Per-client (Claude Code vs OpenCode) tokens and cost        |
+| `recent_sessions` | Recent sessions with project, client, tokens, cost          |
 
 ## Debug CLI
 
@@ -130,10 +136,10 @@ Add `--json` to any command for machine-readable output.
 
 Cost is **never** a single blended number. Every figure carries a basis:
 
-| Basis | Meaning |
-|---|---|
-| `reported` | The client told us the cost. OpenCode does this. Exact. |
-| `estimated` | Computed from a versioned pricing table. Claude Code records no cost. |
+| Basis         | Meaning                                                               |
+| ------------- | --------------------------------------------------------------------- |
+| `reported`    | The client told us the cost. OpenCode does this. Exact.               |
+| `estimated`   | Computed from a versioned pricing table. Claude Code records no cost. |
 | `unavailable` | We could not produce an honest number (e.g. no price for that model). |
 
 **The Claude Code figure is an "API-equivalent estimated cost"** — what those tokens would
@@ -186,13 +192,13 @@ badly wrong numbers if taken at face value. What this tool does about them:
   the `message` grain instead, which is corroborated byte-for-byte by the independent
   `part` table.
 - **Reasoning tokens mean different things per client.** In Claude Code, thinking tokens are
-  *inside* `output_tokens`; in OpenCode, `reasoning` is a *sibling* of `output`. Totals are
+  _inside_ `output_tokens`; in OpenCode, `reasoning` is a _sibling_ of `output`. Totals are
   computed per client accordingly, so reasoning is never double-counted.
 - **Cache tokens dwarf everything else** (800M cache-read vs 24K input is a real ratio), so
   token classes are always broken out and never presented as one blended total.
 
-Run `ai-usage verify` to check this yourself. It re-reads both sources with a *second,
-independent implementation* that shares no reduction code with the collectors, and diffs the
+Run `ai-usage verify` to check this yourself. It re-reads both sources with a _second,
+independent implementation_ that shares no reduction code with the collectors, and diffs the
 result against the database:
 
 ```text
@@ -255,13 +261,13 @@ Delete that file to erase everything the tool knows.
 
 It prints the reason and every path it looked at. Point it at the right place:
 
-| Variable | Purpose |
-|---|---|
-| `AI_USAGE_OPENCODE_DB` | Path to `opencode.db` |
-| `AI_USAGE_CLAUDE_PROJECTS` | Path to Claude Code's `projects/` directory |
-| `AI_USAGE_DB` | Where to keep our database |
-| `AI_USAGE_PRICING_FILE` | Pricing override file |
-| `AI_USAGE_FRESHNESS_MS` | How long a sync stays fresh before a tool call re-syncs (default 30000) |
+| Variable                   | Purpose                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `AI_USAGE_OPENCODE_DB`     | Path to `opencode.db`                                                   |
+| `AI_USAGE_CLAUDE_PROJECTS` | Path to Claude Code's `projects/` directory                             |
+| `AI_USAGE_DB`              | Where to keep our database                                              |
+| `AI_USAGE_PRICING_FILE`    | Pricing override file                                                   |
+| `AI_USAGE_FRESHNESS_MS`    | How long a sync stays fresh before a tool call re-syncs (default 30000) |
 
 ### Numbers look lower than `opencode stats`
 
@@ -311,8 +317,18 @@ OpenCode is read incrementally from a saved cursor. `--full` ignores the cursors
 
 ```bash
 npm install
-npm run build
-npm test          # 63 tests: collectors, services, MCP integration, CLI/MCP parity
+npm run check          # typecheck, lint, format check, build, tests -- what CI runs
+```
+
+Individually:
+
+```bash
+npm run typecheck      # tsc, covering src and tests
+npm run lint           # eslint (type-aware)
+npm run format         # prettier --write
+npm run build          # emit dist/
+npm test               # 81 tests: collectors, services, formatter, MCP integration, parity
+npm run test:coverage  # with coverage report
 ```
 
 Architecture — the one rule that matters is that **MCP never knows where data comes from**:
@@ -330,6 +346,27 @@ frontends over `UsageService`, and they render through the same formatter.
 See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for the verified on-disk formats of both
 sources, including everything that had to be corrected by inspecting real data, and
 [docs/PUBLISHING.md](docs/PUBLISHING.md) for the release process.
+
+## Contributing
+
+Issues and pull requests are welcome. Two expectations specific to this project:
+
+1. **Never fabricate a number.** If a source does not record something, it must surface as
+   unavailable, not as zero.
+2. **If your change touches a collector, `ai-usage verify` must still report a zero delta**,
+   and if it changes how an on-disk format is understood, update
+   [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) in the same change. Both source formats are
+   internal and unversioned, so that file is the only record of what was actually observed.
+
+`npm run check` runs everything CI runs.
+
+## Links
+
+- [CHANGELOG.md](CHANGELOG.md) — release history
+- [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) — verified on-disk formats, and the documented
+  assumptions that proved wrong
+- [docs/PUBLISHING.md](docs/PUBLISHING.md) — release process
+- [SECURITY.md](SECURITY.md) — threat model and how to report a vulnerability
 
 ## License
 

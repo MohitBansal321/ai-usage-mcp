@@ -59,11 +59,47 @@ describe('CLI and MCP parity', () => {
           {
             sessionId: 'cc-1',
             lines: [
-              assistantLine({ sessionId: 'cc-1', requestId: 'r1', messageId: 'm1', input: 3, output: 271, cacheRead: 83_000, cacheWrite5m: 400, cacheWrite1h: 900, thinking: 88, timestamp: new Date(now - 50_000).toISOString(), stopReason: 'end_turn' }),
-              assistantLine({ sessionId: 'cc-1', requestId: 'r2', messageId: 'm2', input: 1, output: 33, cacheRead: 2000, model: 'claude-sonnet-5', timestamp: new Date(now - 40_000).toISOString(), stopReason: 'end_turn' }),
+              assistantLine({
+                sessionId: 'cc-1',
+                requestId: 'r1',
+                messageId: 'm1',
+                input: 3,
+                output: 271,
+                cacheRead: 83_000,
+                cacheWrite5m: 400,
+                cacheWrite1h: 900,
+                thinking: 88,
+                timestamp: new Date(now - 50_000).toISOString(),
+                stopReason: 'end_turn',
+              }),
+              assistantLine({
+                sessionId: 'cc-1',
+                requestId: 'r2',
+                messageId: 'm2',
+                input: 1,
+                output: 33,
+                cacheRead: 2000,
+                model: 'claude-sonnet-5',
+                timestamp: new Date(now - 40_000).toISOString(),
+                stopReason: 'end_turn',
+              }),
             ],
             subagents: [
-              { name: 'agent-a', lines: [assistantLine({ sessionId: 'cc-1', requestId: 'r3', messageId: 'm3', input: 1, output: 17, cacheRead: 900, timestamp: new Date(now - 30_000).toISOString(), stopReason: 'end_turn' })] },
+              {
+                name: 'agent-a',
+                lines: [
+                  assistantLine({
+                    sessionId: 'cc-1',
+                    requestId: 'r3',
+                    messageId: 'm3',
+                    input: 1,
+                    output: 17,
+                    cacheRead: 900,
+                    timestamp: new Date(now - 30_000).toISOString(),
+                    stopReason: 'end_turn',
+                  }),
+                ],
+              },
             ],
           },
         ],
@@ -76,7 +112,7 @@ describe('CLI and MCP parity', () => {
       AI_USAGE_OPENCODE_DB: openCodeDb,
       AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
       AI_USAGE_FRESHNESS_MS: '0',
-    } as Record<string, string>;
+    };
 
     // Populate the shared database once, through the CLI.
     execFileSync(process.execPath, [CLI, 'sync'], { env, encoding: 'utf8' });
@@ -132,7 +168,10 @@ describe('CLI and MCP parity', () => {
 
   it('agrees on the numbers themselves, not just the rendering', async () => {
     const cliJson = JSON.parse(
-      execFileSync(process.execPath, [CLI, 'stats', '--today', '--json'], { env, encoding: 'utf8' }),
+      execFileSync(process.execPath, [CLI, 'stats', '--today', '--json'], {
+        env,
+        encoding: 'utf8',
+      }),
     );
     const result = await client.callTool({ name: 'usage_summary', arguments: { today: true } });
     const structured = result.structuredContent as any;

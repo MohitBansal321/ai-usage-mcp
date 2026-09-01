@@ -147,7 +147,9 @@ export class VerifyService {
     for (const store of targets) {
       const db = new BetterSqlite3(store.path, { readonly: true });
       try {
-        for (const row of db.prepare('SELECT data FROM message').iterate() as IterableIterator<{ data: string }>) {
+        for (const row of db.prepare('SELECT data FROM message').iterate() as IterableIterator<{
+          data: string;
+        }>) {
           let d: any;
           try {
             d = JSON.parse(row.data);
@@ -209,7 +211,11 @@ export class VerifyService {
     const grains: GrainComparison[] = [
       compare('opencode.db message grain (what we collect)', message, ours),
       compare('opencode.db part/step-finish grain (independent corroboration)', part, ours),
-      compare('opencode.db session rollup grain (what `opencode stats` headline shows)', session, ours),
+      compare(
+        'opencode.db session rollup grain (what `opencode stats` headline shows)',
+        session,
+        ours,
+      ),
     ];
     const rollupGrain = grains[2];
     if (rollupGrain) {
@@ -250,7 +256,7 @@ export class VerifyService {
     }
 
     const snapshot = { ...ZERO, records: 0 };
-    let naive = { ...ZERO, records: 0 };
+    const naive = { ...ZERO, records: 0 };
 
     for (const root of targets) {
       for (const file of listTranscripts(root.path)) {

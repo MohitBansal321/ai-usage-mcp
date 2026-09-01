@@ -39,11 +39,18 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database {
 }
 
 export function migrate(db: Database): void {
-  db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)');
-  const applied = new Set(
-    db.prepare('SELECT version FROM schema_migrations').all().map((r) => (r as { version: number }).version),
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
   );
-  const insert = db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+  const applied = new Set(
+    db
+      .prepare('SELECT version FROM schema_migrations')
+      .all()
+      .map((r) => (r as { version: number }).version),
+  );
+  const insert = db.prepare(
+    'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+  );
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
     db.transaction(() => {
@@ -54,6 +61,7 @@ export function migrate(db: Database): void {
 }
 
 export function schemaVersion(db: Database): number {
-  const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null } | undefined;
+  const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as
+    { v: number | null } | undefined;
   return row?.v ?? 0;
 }

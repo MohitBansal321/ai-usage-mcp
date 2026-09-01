@@ -72,7 +72,9 @@ async function run(argv: string[]): Promise<number> {
           ...(args.client ? { clients: [args.client] } : {}),
         });
         emit(args, formatSyncReport(report), report);
-        return report.results.some((r) => !r.available && r.reason?.startsWith('Collection failed')) ? 1 : 0;
+        return report.results.some((r) => !r.available && r.reason?.startsWith('Collection failed'))
+          ? 1
+          : 0;
       }
 
       case 'stats': {

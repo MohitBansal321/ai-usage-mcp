@@ -14,7 +14,13 @@ export function registerModelUsage(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         ...periodShape,
         client: clientEnum,
-        limit: z.number().int().positive().max(100).optional().describe('Return only the top N models.'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(100)
+          .optional()
+          .describe('Return only the top N models.'),
       },
     },
     async (args) => {

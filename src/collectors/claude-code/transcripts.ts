@@ -23,7 +23,9 @@ export interface TranscriptFile {
  *   <root>/<projectSlug>/<sessionId>/subagents/workflows/<wf>/agent-*.jsonl -> subagent turns
  *   <root>/<projectSlug>/<sessionId>/subagents/workflows/<wf>/journal.jsonl -> not usage, skipped
  *
- * A flat glob of `<root>/*​/*.jsonl` finds only about a quarter of the files.
+ * Only the first shape sits directly under the project directory, so a single-level glob
+ * finds just 47 of the 196 files on the machine this was verified against. Discovery must
+ * recurse.
  */
 export function discoverClaudeRoots(): StoreInfo[] {
   const stores: StoreInfo[] = [];
@@ -37,7 +39,13 @@ export function discoverClaudeRoots(): StoreInfo[] {
 
   const override = process.env.AI_USAGE_CLAUDE_PROJECTS;
   if (override) {
+    // An explicit override is authoritative whether or not it exists, so a typo
+    // in it is reported as a missing PRIMARY store rather than silently leaving
+    // the collector with no primary at all.
     add(override, 'AI_USAGE_CLAUDE_PROJECTS override');
+    const overrideStore = stores[0];
+    if (overrideStore) overrideStore.primary = true;
+    return stores;
   } else {
     if (process.env.CLAUDE_CONFIG_DIR) {
       add(join(process.env.CLAUDE_CONFIG_DIR, 'projects'), 'CLAUDE_CONFIG_DIR');
@@ -138,7 +146,7 @@ function resolveSlugUncached(slug: string): string | undefined {
       try {
         isDir = statSync(candidate).isDirectory();
       } catch {
-        isDir = false;
+        // Unreadable or missing: fall through and try the next token grouping.
       }
       if (!isDir) continue;
       const result = walk(candidate, index + take);

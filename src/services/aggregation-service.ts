@@ -48,7 +48,11 @@ export class AggregationService {
 
   summary(filter: UsageFilter, label: string): SummaryReport {
     return {
-      period: { ...(filter.since ? { since: filter.since } : {}), ...(filter.until ? { until: filter.until } : {}), label },
+      period: {
+        ...(filter.since ? { since: filter.since } : {}),
+        ...(filter.until ? { until: filter.until } : {}),
+        label,
+      },
       includeSubagents: filter.includeSubagents !== false,
       overall: this.repo.totals(filter),
       byClient: this.repo.byClient(filter),
@@ -58,7 +62,11 @@ export class AggregationService {
 
   models(filter: UsageFilter, label: string, limit?: number): ModelReport {
     return {
-      period: { ...(filter.since ? { since: filter.since } : {}), ...(filter.until ? { until: filter.until } : {}), label },
+      period: {
+        ...(filter.since ? { since: filter.since } : {}),
+        ...(filter.until ? { until: filter.until } : {}),
+        label,
+      },
       includeSubagents: filter.includeSubagents !== false,
       models: this.repo.byModel(filter, limit),
       overall: this.repo.totals(filter),
@@ -67,7 +75,11 @@ export class AggregationService {
 
   clients(filter: UsageFilter, label: string): ClientReport {
     return {
-      period: { ...(filter.since ? { since: filter.since } : {}), ...(filter.until ? { until: filter.until } : {}), label },
+      period: {
+        ...(filter.since ? { since: filter.since } : {}),
+        ...(filter.until ? { until: filter.until } : {}),
+        label,
+      },
       includeSubagents: filter.includeSubagents !== false,
       clients: this.repo.byClient(filter),
       overall: this.repo.totals(filter),
@@ -83,10 +95,17 @@ export class AggregationService {
   }
 
   /** Resolves an exact or partial session id, then assembles its detail view. */
-  session(sessionId: string, includeSubagents = true): SessionDetail | { ambiguous: string[] } | undefined {
+  session(
+    sessionId: string,
+    includeSubagents = true,
+  ): SessionDetail | { ambiguous: string[] } | undefined {
     const matches = this.repo.findSessionIds(sessionId);
     if (matches.length === 0) return undefined;
-    const exact = matches.includes(sessionId) ? sessionId : matches.length === 1 ? matches[0] : undefined;
+    const exact = matches.includes(sessionId)
+      ? sessionId
+      : matches.length === 1
+        ? matches[0]
+        : undefined;
     if (!exact) return { ambiguous: matches };
 
     const base: UsageFilter = { sessionId: exact, includeSubagents };
@@ -98,7 +117,10 @@ export class AggregationService {
       session,
       models: this.repo.byModel(base),
       main: this.repo.totals({ sessionId: exact, includeSubagents: false }),
-      subagent: subtract(this.repo.totals({ sessionId: exact }), this.repo.totals({ sessionId: exact, includeSubagents: false })),
+      subagent: subtract(
+        this.repo.totals({ sessionId: exact }),
+        this.repo.totals({ sessionId: exact, includeSubagents: false }),
+      ),
     };
   }
 

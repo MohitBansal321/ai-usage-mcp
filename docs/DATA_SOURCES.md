@@ -27,10 +27,10 @@ This matters far more than it sounds. A sandboxed launcher exports its own `XDG_
 the VSCode snap sets it to `~/snap/code/<revision>/.local/share` — so the same user ends up
 with **two disjoint OpenCode histories**. On the development machine:
 
-| Store | Sessions | Messages | Input tokens | Overlap |
-|---|---|---|---|---|
-| `~/snap/code/259/.local/share/opencode/opencode.db` (live, XDG_DATA_HOME) | 276 | 7,772 | 76,629,027 | — |
-| `~/.local/share/opencode/opencode.db` (stale, XDG default) | 174 | 5,149 | 31,199,511 | **0 shared session ids** |
+| Store                                                                     | Sessions | Messages | Input tokens | Overlap                  |
+| ------------------------------------------------------------------------- | -------- | -------- | ------------ | ------------------------ |
+| `~/snap/code/259/.local/share/opencode/opencode.db` (live, XDG_DATA_HOME) | 276      | 7,772    | 76,629,027   | —                        |
+| `~/.local/share/opencode/opencode.db` (stale, XDG default)                | 174      | 5,149    | 31,199,511   | **0 shared session ids** |
 
 Reading only the documented path would have missed 60% of the usage and silently reported it
 as the total. `opencode stats` reports the snap store, confirming which one OpenCode uses.
@@ -53,11 +53,11 @@ aggregate and can be stale.**
 
 All three available grains, measured on the live store:
 
-| Grain | Input | Output | Reasoning | Cache read | Cost |
-|---|---|---|---|---|---|
-| `message` (assistant rows) | 76,629,027 | 2,472,262 | 1,146,012 | 389,450,640 | $0.481085 |
+| Grain                       | Input      | Output    | Reasoning | Cache read  | Cost      |
+| --------------------------- | ---------- | --------- | --------- | ----------- | --------- |
+| `message` (assistant rows)  | 76,629,027 | 2,472,262 | 1,146,012 | 389,450,640 | $0.481085 |
 | `part` (`step-finish` rows) | 76,629,027 | 2,472,262 | 1,146,012 | 389,450,640 | $0.481085 |
-| `session` rollup columns | 76,083,050 | 2,446,766 | 1,114,320 | 386,045,840 | $0.481085 |
+| `session` rollup columns    | 76,083,050 | 2,446,766 | 1,114,320 | 386,045,840 | $0.481085 |
 
 `message` and `part` are two independently maintained tables and they agree **byte-for-byte**.
 The `session` rollup is short by 545,977 input tokens across exactly 4 sessions — three of
@@ -89,7 +89,7 @@ session, not the number of active days (which was 41).
 `session.model` is **JSON, not a plain string** — **[CORRECTION]**:
 
 ```json
-{"id": "deepseek-v4-flash-free", "providerID": "opencode", "variant": "max"}
+{ "id": "deepseek-v4-flash-free", "providerID": "opencode", "variant": "max" }
 ```
 
 Some sessions have `model = NULL`; those turns are reported as `(unknown)`, never guessed.
@@ -99,12 +99,21 @@ verified, and `session_message` is a **different, empty table** — 0 rows):
 
 ```json
 {
-  "role": "assistant", "cost": 0, "modelID": "…", "providerID": "…",
-  "agent": "build", "variant": "max",
+  "role": "assistant",
+  "cost": 0,
+  "modelID": "…",
+  "providerID": "…",
+  "agent": "build",
+  "variant": "max",
   "path": { "cwd": "…", "root": "…" },
   "time": { "created": 1781765382824, "completed": 1781765386318 },
-  "tokens": { "total": 63055, "input": 640, "output": 79, "reasoning": 0,
-              "cache": { "write": 0, "read": 62336 } }
+  "tokens": {
+    "total": 63055,
+    "input": 640,
+    "output": 79,
+    "reasoning": 0,
+    "cache": { "write": 0, "read": 62336 }
+  }
 }
 ```
 
@@ -170,12 +179,12 @@ req_011Ce… | msg_011Ce…  tool_use  input=2  output=350  cache_read=0  cache_
 
 Measured impact of getting this wrong — naive summing versus correct dedupe, all-time:
 
-| | Naive sum of every usage line | Deduped (correct) | Inflation |
-|---|---|---|---|
-| Input | 73,345 | 24,381 | 3.0× |
-| Output | 12,996,611 | 6,033,231 | 2.15× |
-| Cache read | 1,791,664,252 | 800,839,432 | 2.24× |
-| Cache write | 82,790,630 | 27,164,362 | 3.05× |
+|             | Naive sum of every usage line | Deduped (correct) | Inflation |
+| ----------- | ----------------------------- | ----------------- | --------- |
+| Input       | 73,345                        | 24,381            | 3.0×      |
+| Output      | 12,996,611                    | 6,033,231         | 2.15×     |
+| Cache read  | 1,791,664,252                 | 800,839,432       | 2.24×     |
+| Cache write | 82,790,630                    | 27,164,362        | 3.05×     |
 
 **Rule: group by `requestId` + `message.id`, then take the MAX of each field.**
 

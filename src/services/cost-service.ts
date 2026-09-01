@@ -69,7 +69,9 @@ export class CostService {
     }
 
     const rates =
-      input.speed === 'fast' && price.fast ? price.fast : { input: price.input, output: price.output };
+      input.speed === 'fast' && price.fast
+        ? price.fast
+        : { input: price.input, output: price.output };
 
     const perMillion = (tokens: number, rate: number) => (tokens / 1_000_000) * rate;
     const { read, write5m, write1h } = table.cacheMultipliers;

@@ -1,0 +1,56 @@
+name: Bug report
+description: Numbers look wrong, a collector fails, or something crashes
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is about **numbers being wrong**, please include `ai-usage verify`
+        output — it reconciles the local database against a fresh read of the
+        source data and usually identifies the problem immediately.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `ai-usage status`
+      description: Shows collector availability, data stores and record counts.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: Output of `ai-usage verify`
+      description: Only needed if the numbers themselves look wrong.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `ai-usage --version`
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node version
+      placeholder: macOS 15 arm64, Node 24.2.0
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        **Please do not paste prompts or code from your sessions.** This tool never
+        reads conversation content, and issues do not need it either.

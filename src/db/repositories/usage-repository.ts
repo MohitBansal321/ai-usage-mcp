@@ -213,9 +213,8 @@ export class UsageRepository {
 
   totals(filter: UsageFilter = {}): AggregateRow {
     const { sql, params } = buildWhere(filter);
-    const raw = this.db
-      .prepare(`SELECT ${AGG_SELECT} FROM usage_records ${sql}`)
-      .get(params) as RawAgg | undefined;
+    const raw = this.db.prepare(`SELECT ${AGG_SELECT} FROM usage_records ${sql}`).get(params) as
+      RawAgg | undefined;
     return toAggregate(raw);
   }
 

@@ -1,11 +1,21 @@
 import type { Database } from 'better-sqlite3';
 import { openDatabase, resolveDatabasePath, schemaVersion } from '../db/database.js';
 import { SyncRepository, type SyncState } from '../db/repositories/sync-repository.js';
-import { UsageRepository, type SessionRow, type UsageFilter } from '../db/repositories/usage-repository.js';
+import {
+  UsageRepository,
+  type SessionRow,
+  type UsageFilter,
+} from '../db/repositories/usage-repository.js';
 import { ClaudeCodeCollector } from '../collectors/claude-code/collector.js';
 import { OpenCodeCollector } from '../collectors/opencode/collector.js';
 import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record.js';
-import { AggregationService, type ClientReport, type ModelReport, type SessionDetail, type SummaryReport } from './aggregation-service.js';
+import {
+  AggregationService,
+  type ClientReport,
+  type ModelReport,
+  type SessionDetail,
+  type SummaryReport,
+} from './aggregation-service.js';
 import { CostService } from './cost-service.js';
 import { resolvePeriod, type PeriodInput } from './period.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';

@@ -124,13 +124,23 @@ describe('OpenCodeCollector', () => {
           id: 'free',
           sessionId: 'ses-1',
           timeCreated: 1_772_000_000_000,
-          data: assistant({ input: 10, cost: 0, modelID: 'free-model', created: 1_772_000_000_000 }),
+          data: assistant({
+            input: 10,
+            cost: 0,
+            modelID: 'free-model',
+            created: 1_772_000_000_000,
+          }),
         },
         {
           id: 'paid',
           sessionId: 'ses-1',
           timeCreated: 1_772_000_000_001,
-          data: assistant({ input: 10, cost: 1.5, modelID: 'paid-model', created: 1_772_000_000_001 }),
+          data: assistant({
+            input: 10,
+            cost: 1.5,
+            modelID: 'paid-model',
+            created: 1_772_000_000_001,
+          }),
         },
       ],
     });

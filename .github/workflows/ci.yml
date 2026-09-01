@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Only the newest run per ref needs to finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Typecheck, lint, format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run build
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The collectors are path-heavy and the one native dependency ships
+        # per-platform binaries, so cross-OS coverage is load-bearing here,
+        # not decoration.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  package:
+    name: Install from packed tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pack
+        run: npm pack --pack-destination /tmp
+      - name: Reject a tarball containing sources, tests or databases
+        run: |
+          tar tzf /tmp/ai-usage-mcp-*.tgz > /tmp/files.txt
+          if grep -qE 'package/(src/|tests/)|\.db$' /tmp/files.txt; then
+            echo "::error::tarball contains files that must not ship"
+            grep -E 'package/(src/|tests/)|\.db$' /tmp/files.txt
+            exit 1
+          fi
+          echo "tarball contents clean ($(wc -l < /tmp/files.txt) files)"
+      - name: Install globally and smoke-test both binaries
+        run: |
+          npm install -g /tmp/ai-usage-mcp-*.tgz
+          ai-usage --version
+          ai-usage status
+      - name: MCP handshake over stdio
+        run: node .github/scripts/mcp-smoke.mjs

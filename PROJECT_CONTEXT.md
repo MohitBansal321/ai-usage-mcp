@@ -40,7 +40,8 @@ Install → Connect → Collect → Normalize → Query → Verify
 ```
 
 Two collectors (OpenCode, Claude Code) → normalized schema → local SQLite → 5 MCP tools
-+ a small debug CLI. That is the entire milestone.
+
+- a small debug CLI. That is the entire milestone.
 
 ### Explicitly NOT in Phase 1
 
@@ -171,6 +172,7 @@ metadata
 ```
 
 Other useful tables:
+
 - `project`: `id, worktree, vcs, name, time_created, …` → maps sessions to a project path.
 - `session_message`: `id, session_id, type, time_created, time_updated, data (JSON), seq`
   → **[assumed]** per-message model/token detail lives in `data`; verify before depending on it.
@@ -234,11 +236,14 @@ Real `message.usage` payload:
   },
   "inference_geo": "not_available",
   "iterations": [
-    { "input_tokens": 2, "output_tokens": 522,
-      "cache_read_input_tokens": 26970, "cache_creation_input_tokens": 15312,
-      "cache_creation": { "ephemeral_5m_input_tokens": 0,
-                          "ephemeral_1h_input_tokens": 15312 },
-      "type": "message" }
+    {
+      "input_tokens": 2,
+      "output_tokens": 522,
+      "cache_read_input_tokens": 26970,
+      "cache_creation_input_tokens": 15312,
+      "cache_creation": { "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 15312 },
+      "type": "message"
+    }
   ],
   "speed": "standard"
 }
@@ -279,12 +284,12 @@ interface UsageRecord {
   reasoningTokens?: number;
   totalTokens: number;
 
-  cost?: number;              // exact, when the source reports it
-  estimatedCost?: number;     // computed from a pricing table
+  cost?: number; // exact, when the source reports it
+  estimatedCost?: number; // computed from a pricing table
   costBasis: 'reported' | 'estimated' | 'unavailable';
   currency: 'USD';
 
-  source: string;             // e.g. 'opencode.db:session', 'claude-jsonl:v2.x'
+  source: string; // e.g. 'opencode.db:session', 'claude-jsonl:v2.x'
 }
 ```
 
@@ -311,12 +316,12 @@ interface UsageCollector {
   and cache-write are priced differently from input — model that properly.
 - Never blend reported and estimated cost into one unlabelled number.
 
-The product lives or dies on the answer to *"are these numbers actually correct?"* — so
+The product lives or dies on the answer to _"are these numbers actually correct?"_ — so
 never trade honesty for a prettier summary.
 
 ## 8. Known pitfalls (each of these will produce wrong numbers if ignored)
 
-1. **Double counting on Claude Code.** `usage.iterations[]` is an array *inside* a single
+1. **Double counting on Claude Code.** `usage.iterations[]` is an array _inside_ a single
    `usage` object, and lines carry `requestId`. Naively summing every assistant line inflates
    totals. Dedupe on `requestId` + `message.id`; decide explicitly whether `iterations` are
    already included in the top-level totals (they appear to be) before summing them.
@@ -373,13 +378,13 @@ That is enough for Phase 1.
 
 ## 10. MCP tools — exactly five
 
-| Tool | Returns |
-|---|---|
-| `usage_summary` | totals for a period, split by client, tokens + cost |
-| `session_usage` | one session: client, model, duration, token breakdown, cost |
-| `model_usage` | per-model tokens and cost |
-| `client_usage` | per-client (Claude Code vs OpenCode) tokens and cost |
-| `recent_sessions` | recent sessions with project, client, tokens, cost |
+| Tool              | Returns                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `usage_summary`   | totals for a period, split by client, tokens + cost         |
+| `session_usage`   | one session: client, model, duration, token breakdown, cost |
+| `model_usage`     | per-model tokens and cost                                   |
+| `client_usage`    | per-client (Claude Code vs OpenCode) tokens and cost        |
+| `recent_sessions` | recent sessions with project, client, tokens, cost          |
 
 MCP **resources**, **prompts**, notifications and live usage come later. Do not add them now.
 

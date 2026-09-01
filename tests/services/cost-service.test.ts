@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CostService } from '../../src/services/cost-service.js';
-import { anthropicPricing } from '../../src/pricing/index.js';
+import { anthropicPricing, loadPricing } from '../../src/pricing/index.js';
 
 const service = new CostService({ table: anthropicPricing });
 
@@ -83,15 +86,30 @@ describe('CostService', () => {
   });
 
   it('uses premium rates when the request ran in fast mode', () => {
-    const standard = service.estimate({ model: 'claude-opus-5', inputTokens: 1_000_000, outputTokens: 0, speed: 'standard' });
-    const fast = service.estimate({ model: 'claude-opus-5', inputTokens: 1_000_000, outputTokens: 0, speed: 'fast' });
+    const standard = service.estimate({
+      model: 'claude-opus-5',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      speed: 'standard',
+    });
+    const fast = service.estimate({
+      model: 'claude-opus-5',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      speed: 'fast',
+    });
     expect(standard.estimatedCost).toBeCloseTo(5, 9);
     expect(fast.estimatedCost).toBeCloseTo(10, 9);
     expect(fast.note).toContain('fast-mode');
   });
 
   it('falls back to standard rates when a model has no fast-mode price', () => {
-    const fast = service.estimate({ model: 'claude-sonnet-5', inputTokens: 1_000_000, outputTokens: 0, speed: 'fast' });
+    const fast = service.estimate({
+      model: 'claude-sonnet-5',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      speed: 'fast',
+    });
     expect(fast.estimatedCost).toBeCloseTo(2, 9);
   });
 
@@ -102,11 +120,7 @@ describe('CostService', () => {
     expect(label).toContain(anthropicPricing.version);
   });
 
-  it('rejects a malformed pricing override rather than silently using different prices', async () => {
-    const { loadPricing } = await import('../../src/pricing/index.js');
-    const { writeFileSync, mkdtempSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const { tmpdir } = await import('node:os');
+  it('rejects a malformed pricing override rather than silently using different prices', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pricing-'));
     const file = join(dir, 'pricing.json');
     writeFileSync(file, JSON.stringify({ version: 'broken' }), 'utf8');

@@ -31,7 +31,11 @@ describe('resolvePeriod', () => {
   });
 
   it('lets explicit bounds win', () => {
-    const period = resolvePeriod({ days: 7, since: '2026-01-01T00:00:00Z', until: '2026-02-01T00:00:00Z' });
+    const period = resolvePeriod({
+      days: 7,
+      since: '2026-01-01T00:00:00Z',
+      until: '2026-02-01T00:00:00Z',
+    });
     expect(period.since).toBe('2026-01-01T00:00:00.000Z');
     expect(period.until).toBe('2026-02-01T00:00:00.000Z');
   });

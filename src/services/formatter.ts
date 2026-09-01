@@ -1,6 +1,11 @@
 import type { AggregateRow, SessionRow } from '../db/repositories/usage-repository.js';
 import type { CostTotals } from '../models/usage-record.js';
-import type { ClientReport, ModelReport, SessionDetail, SummaryReport } from './aggregation-service.js';
+import type {
+  ClientReport,
+  ModelReport,
+  SessionDetail,
+  SummaryReport,
+} from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
 import type { StatusReport } from './usage-service.js';
 import type { SyncReport } from './sync-service.js';
@@ -57,7 +62,9 @@ export function duration(seconds: number): string {
 export function costLines(cost: CostTotals, costService: CostService, indent = '  '): string[] {
   const lines: string[] = [];
   if (cost.reportedRecords > 0) {
-    lines.push(`${indent}Cost (reported by client, exact): ${usd(cost.reported)}  [${int(cost.reportedRecords)} records]`);
+    lines.push(
+      `${indent}Cost (reported by client, exact): ${usd(cost.reported)}  [${int(cost.reportedRecords)} records]`,
+    );
   }
   if (cost.estimatedRecords > 0) {
     lines.push(
@@ -65,7 +72,9 @@ export function costLines(cost: CostTotals, costService: CostService, indent = '
     );
   }
   if (cost.unavailableRecords > 0) {
-    lines.push(`${indent}Cost unavailable for ${int(cost.unavailableRecords)} record(s) (no price for that model).`);
+    lines.push(
+      `${indent}Cost unavailable for ${int(cost.unavailableRecords)} record(s) (no price for that model).`,
+    );
   }
   if (cost.reportedRecords === 0 && cost.estimatedRecords === 0 && cost.unavailableRecords === 0) {
     lines.push(`${indent}Cost: no records in this period.`);
@@ -87,9 +96,14 @@ export function tokenLines(row: AggregateRow, indent = '  '): string[] {
   ];
 }
 
-function subagentNote(report: { includeSubagents: boolean }, turnKinds?: { main: number; subagent: number }): string {
+function subagentNote(
+  report: { includeSubagents: boolean },
+  turnKinds?: { main: number; subagent: number },
+): string {
   if (report.includeSubagents) {
-    const extra = turnKinds ? ` (${int(turnKinds.main)} main + ${int(turnKinds.subagent)} subagent turns)` : '';
+    const extra = turnKinds
+      ? ` (${int(turnKinds.main)} main + ${int(turnKinds.subagent)} subagent turns)`
+      : '';
     return `Subagent/sidechain turns: INCLUDED${extra}.`;
   }
   return 'Subagent/sidechain turns: EXCLUDED (main-thread turns only).';
@@ -120,7 +134,9 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   out.push('');
   out.push('By client:');
   for (const client of report.byClient) {
-    out.push(`  ${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`);
+    out.push(
+      `  ${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`,
+    );
     out.push(...tokenLines(client, '    '));
     out.push(...costLines(client.cost, costService, '    '));
     out.push('');
@@ -143,7 +159,9 @@ export function formatModels(report: ModelReport, costService: CostService): str
     out.push(...costLines(model.cost, costService, '  '));
     out.push('');
   }
-  out.push(`Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`);
+  out.push(
+    `Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`,
+  );
   return out.join('\n');
 }
 
@@ -178,7 +196,9 @@ export function formatSessions(sessions: SessionRow[], costService: CostService)
     out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
     out.push(`  Models:    ${s.models.length ? s.models.join(', ') : '(unknown)'}`);
     out.push(`  Started:   ${s.startedAt}`);
-    out.push(`  Duration:  ${duration(s.durationSeconds)}  (${int(s.records)} turns: ${int(s.mainRecords)} main, ${int(s.subagentRecords)} subagent)`);
+    out.push(
+      `  Duration:  ${duration(s.durationSeconds)}  (${int(s.records)} turns: ${int(s.mainRecords)} main, ${int(s.subagentRecords)} subagent)`,
+    );
     out.push(...tokenLines(s, '  '));
     out.push(...costLines(s.cost, costService, '  '));
     out.push('');
@@ -196,7 +216,9 @@ export function formatSessionDetail(detail: SessionDetail, costService: CostServ
   out.push(`  Started:   ${s.startedAt}`);
   out.push(`  Ended:     ${s.endedAt}`);
   out.push(`  Duration:  ${duration(s.durationSeconds)}`);
-  out.push(`  Turns:     ${int(s.records)} (${int(s.mainRecords)} main, ${int(s.subagentRecords)} subagent)`);
+  out.push(
+    `  Turns:     ${int(s.records)} (${int(s.mainRecords)} main, ${int(s.subagentRecords)} subagent)`,
+  );
   out.push('');
   out.push('Tokens:');
   out.push(...tokenLines(s, '  '));
@@ -235,11 +257,15 @@ export function formatStatus(status: StatusReport): string {
   for (const c of status.collectors) {
     out.push(`  ${c.name} [${c.client}] -- ${c.available ? 'available' : 'UNAVAILABLE'}`);
     if (c.reason) out.push(`    ${c.reason}`);
-    out.push(`    Records stored: ${int(c.records)}${c.lastRecordAt ? `, newest ${c.lastRecordAt}` : ''}`);
+    out.push(
+      `    Records stored: ${int(c.records)}${c.lastRecordAt ? `, newest ${c.lastRecordAt}` : ''}`,
+    );
     out.push(`    Last sync:      ${c.lastSyncAt ?? 'never'}`);
     for (const store of c.stores) {
       const flags = [store.primary ? 'PRIMARY' : 'secondary', store.exists ? 'found' : 'missing'];
-      out.push(`    - ${store.path} [${flags.join(', ')}]${store.detail ? ` -- ${store.detail}` : ''}`);
+      out.push(
+        `    - ${store.path} [${flags.join(', ')}]${store.detail ? ` -- ${store.detail}` : ''}`,
+      );
     }
     const extras = c.stores.filter((s) => s.exists && !s.primary);
     if (extras.length > 0) {
@@ -249,9 +275,7 @@ export function formatStatus(status: StatusReport): string {
       out.push(
         `          separate history or a stale copy of the primary. Records are keyed by source`,
       );
-      out.push(
-        `          record id, so \`--all-stores\` merges them without double counting.`,
-      );
+      out.push(`          record id, so \`--all-stores\` merges them without double counting.`);
     }
   }
   if (status.totalRecords === 0) {
@@ -262,9 +286,14 @@ export function formatStatus(status: StatusReport): string {
 }
 
 export function formatSyncReport(report: SyncReport): string {
-  const out: string[] = [`Sync finished in ${report.durationMs}ms -- ${int(report.totalRecords)} record(s) written.`, ''];
+  const out: string[] = [
+    `Sync finished in ${report.durationMs}ms -- ${int(report.totalRecords)} record(s) written.`,
+    '',
+  ];
   for (const r of report.results) {
-    out.push(`${r.collector} [${r.client}] -- ${r.available ? 'ok' : 'skipped'} (${r.durationMs}ms)`);
+    out.push(
+      `${r.collector} [${r.client}] -- ${r.available ? 'ok' : 'skipped'} (${r.durationMs}ms)`,
+    );
     if (r.reason) out.push(`  ${r.reason}`);
     out.push(`  Records written: ${int(r.recordsWritten)}`);
     for (const note of r.notes) out.push(`  - ${note}`);
@@ -286,7 +315,9 @@ export function formatVerify(report: VerifyReport): string {
       out.push('');
       continue;
     }
-    out.push(`  Ours (from local DB): input ${int(client.ours.inputTokens)}, output ${int(client.ours.outputTokens)}, cache-read ${int(client.ours.cacheReadTokens)}, cache-write ${int(client.ours.cacheWriteTokens)}, reasoning ${int(client.ours.reasoningTokens)}${client.ours.cost !== undefined ? `, cost ${usd(client.ours.cost)}` : ''}`);
+    out.push(
+      `  Ours (from local DB): input ${int(client.ours.inputTokens)}, output ${int(client.ours.outputTokens)}, cache-read ${int(client.ours.cacheReadTokens)}, cache-write ${int(client.ours.cacheWriteTokens)}, reasoning ${int(client.ours.reasoningTokens)}${client.ours.cost !== undefined ? `, cost ${usd(client.ours.cost)}` : ''}`,
+    );
     out.push('');
     for (const grain of client.grains) {
       const verdict = grain.gating === false ? 'INFO    ' : grain.matches ? 'MATCH   ' : 'DIFFERS ';

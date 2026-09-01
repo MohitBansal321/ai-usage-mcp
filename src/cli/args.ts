@@ -24,7 +24,8 @@ function requireValue(flag: string, value: string | undefined): string {
 
 function toPositiveInt(flag: string, raw: string): number {
   const n = Number(raw);
-  if (!Number.isInteger(n) || n <= 0) throw new ArgError(`${flag} expects a positive integer, got "${raw}".`);
+  if (!Number.isInteger(n) || n <= 0)
+    throw new ArgError(`${flag} expects a positive integer, got "${raw}".`);
   return n;
 }
 

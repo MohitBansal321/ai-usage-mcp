@@ -14,7 +14,13 @@ export function registerRecentSessions(server: McpServer, ctx: ToolContext): voi
       inputSchema: {
         ...periodShape,
         client: clientEnum,
-        limit: z.number().int().positive().max(200).optional().describe('How many sessions to return (default 20).'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(200)
+          .optional()
+          .describe('How many sessions to return (default 20).'),
       },
     },
     async (args) => {

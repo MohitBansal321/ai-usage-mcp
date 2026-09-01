@@ -173,8 +173,7 @@ export class OpenCodeCollector implements UsageCollector {
         // turn produced no usage record -- not that usage was zero.
         if (data.role !== 'assistant' || !data.tokens) continue;
 
-        const timestamp =
-          msToIso(data.time?.created) ?? msToIso(row.time_created) ?? undefined;
+        const timestamp = msToIso(data.time?.created) ?? msToIso(row.time_created) ?? undefined;
         if (!timestamp) {
           notes.push(`Skipped OpenCode message ${row.id}: no usable timestamp.`);
           continue;

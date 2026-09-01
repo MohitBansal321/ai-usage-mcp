@@ -151,7 +151,11 @@ export class ClaudeCodeCollector implements UsageCollector {
       : stores.filter((s) => s.primary && s.exists);
 
     if (roots.length === 0) {
-      return { records: [], notes: ['Claude Code transcripts not found; nothing collected.'], stores };
+      return {
+        records: [],
+        notes: ['Claude Code transcripts not found; nothing collected.'],
+        stores,
+      };
     }
     for (const s of stores.filter((s) => s.exists && !roots.includes(s))) {
       notes.push(`Additional Claude Code transcript root detected but NOT collected: ${s.path}.`);
@@ -166,7 +170,7 @@ export class ClaudeCodeCollector implements UsageCollector {
     const records: UsageRecord[] = [];
     let scanned = 0;
     let skipped = 0;
-    let unpricedModels = new Set<string>();
+    const unpricedModels = new Set<string>();
     let syntheticSkipped = 0;
     let requestsSeen = 0;
     let linesWithUsage = 0;
@@ -208,7 +212,9 @@ export class ClaudeCodeCollector implements UsageCollector {
         `by requestId + message.id.`,
     );
     if (syntheticSkipped > 0) {
-      notes.push(`Skipped ${syntheticSkipped} synthetic line(s) (model "<synthetic>", not a real model).`);
+      notes.push(
+        `Skipped ${syntheticSkipped} synthetic line(s) (model "<synthetic>", not a real model).`,
+      );
     }
     if (unpricedModels.size > 0) {
       notes.push(
@@ -283,10 +289,7 @@ export class ClaudeCodeCollector implements UsageCollector {
       acc.inputTokens = Math.max(acc.inputTokens, num(usage.input_tokens));
       acc.outputTokens = Math.max(acc.outputTokens, num(usage.output_tokens));
       acc.cacheReadTokens = Math.max(acc.cacheReadTokens, num(usage.cache_read_input_tokens));
-      acc.cacheWriteTokens = Math.max(
-        acc.cacheWriteTokens,
-        num(usage.cache_creation_input_tokens),
-      );
+      acc.cacheWriteTokens = Math.max(acc.cacheWriteTokens, num(usage.cache_creation_input_tokens));
       acc.cacheWrite5mTokens = Math.max(
         acc.cacheWrite5mTokens,
         num(usage.cache_creation?.ephemeral_5m_input_tokens),
@@ -358,8 +361,7 @@ export class ClaudeCodeCollector implements UsageCollector {
       reasoningTokens: acc.reasoningTokens,
       // Thinking tokens are a *detail of* output_tokens here, so they are NOT
       // added again -- doing so would double-count and over-price.
-      totalTokens:
-        acc.inputTokens + acc.outputTokens + acc.cacheReadTokens + acc.cacheWriteTokens,
+      totalTokens: acc.inputTokens + acc.outputTokens + acc.cacheReadTokens + acc.cacheWriteTokens,
       // Claude Code records no cost of its own; anything here is an estimate.
       costBasis: estimate.costBasis,
       currency: 'USD',

@@ -34,8 +34,27 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 5, input: 2, cacheRead: 1000, cacheWrite1h: 500, blockType: 'thinking', thinking: 4 }),
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 350, input: 2, cacheRead: 1000, cacheWrite1h: 500, blockType: 'tool_use', stopReason: 'tool_use', thinking: 4 }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 5,
+                input: 2,
+                cacheRead: 1000,
+                cacheWrite1h: 500,
+                blockType: 'thinking',
+                thinking: 4,
+              }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 350,
+                input: 2,
+                cacheRead: 1000,
+                cacheWrite1h: 500,
+                blockType: 'tool_use',
+                stopReason: 'tool_use',
+                thinking: 4,
+              }),
             ],
           },
         ],
@@ -61,7 +80,15 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', input: 10, output: 100, cacheRead: 2000, stopReason: 'end_turn', includeIterations: true }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                input: 10,
+                output: 100,
+                cacheRead: 2000,
+                stopReason: 'end_turn',
+                includeIterations: true,
+              }),
             ],
           },
         ],
@@ -82,8 +109,23 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', input: 1, output: 492, cacheRead: 260293, cacheWrite5m: 585, stopReason: 'end_turn' }),
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', input: 0, output: 0, cacheRead: 0, stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                input: 1,
+                output: 492,
+                cacheRead: 260293,
+                cacheWrite5m: 585,
+                stopReason: 'end_turn',
+              }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -103,8 +145,18 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 10, stopReason: 'end_turn' }),
-              assistantLine({ requestId: 'req-2', messageId: 'msg-2', output: 20, stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 10,
+                stopReason: 'end_turn',
+              }),
+              assistantLine({
+                requestId: 'req-2',
+                messageId: 'msg-2',
+                output: 20,
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -123,8 +175,19 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 10, model: '<synthetic>', stopReason: 'end_turn' }),
-              assistantLine({ requestId: 'req-2', messageId: 'msg-2', output: 20, stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 10,
+                model: '<synthetic>',
+                stopReason: 'end_turn',
+              }),
+              assistantLine({
+                requestId: 'req-2',
+                messageId: 'msg-2',
+                output: 20,
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -144,7 +207,16 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', input: 2, output: 500, thinking: 400, cacheRead: 1000, cacheWrite5m: 100, stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                input: 2,
+                output: 500,
+                thinking: 400,
+                cacheRead: 1000,
+                cacheWrite5m: 100,
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -163,14 +235,49 @@ describe('ClaudeCodeCollector', () => {
         sessions: [
           {
             sessionId: 'sess-1',
-            lines: [assistantLine({ requestId: 'req-main', messageId: 'm-main', output: 1, stopReason: 'end_turn' })],
+            lines: [
+              assistantLine({
+                requestId: 'req-main',
+                messageId: 'm-main',
+                output: 1,
+                stopReason: 'end_turn',
+              }),
+            ],
             subagents: [
-              { name: 'agent-abc', lines: [assistantLine({ requestId: 'req-sub', messageId: 'm-sub', output: 2, stopReason: 'end_turn' })] },
+              {
+                name: 'agent-abc',
+                lines: [
+                  assistantLine({
+                    requestId: 'req-sub',
+                    messageId: 'm-sub',
+                    output: 2,
+                    stopReason: 'end_turn',
+                  }),
+                ],
+              },
             ],
             workflowAgents: [
-              { workflow: 'wf_1', name: 'agent-wf', lines: [assistantLine({ requestId: 'req-wf', messageId: 'm-wf', output: 4, stopReason: 'end_turn' })] },
+              {
+                workflow: 'wf_1',
+                name: 'agent-wf',
+                lines: [
+                  assistantLine({
+                    requestId: 'req-wf',
+                    messageId: 'm-wf',
+                    output: 4,
+                    stopReason: 'end_turn',
+                  }),
+                ],
+              },
             ],
-            journalLines: [assistantLine({ requestId: 'req-journal', messageId: 'm-journal', output: 8, stopReason: 'end_turn' })],
+            journalLines: [
+              assistantLine({
+                requestId: 'req-journal',
+                messageId: 'm-journal',
+                output: 8,
+                stopReason: 'end_turn',
+              }),
+            ],
           },
         ],
       },
@@ -193,7 +300,13 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000, stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                cacheWrite5m: 1_000_000,
+                cacheWrite1h: 1_000_000,
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -204,7 +317,10 @@ describe('ClaudeCodeCollector', () => {
     expect(record.cacheWrite1hTokens).toBe(1_000_000);
     expect(record.cacheWriteTokens).toBe(2_000_000);
     // 1.25x and 2x of the $5/M input rate on one million tokens each.
-    expect(record.estimatedCost).toBeCloseTo(1_000_000 / 1e6 * 5 * 1.25 + 1_000_000 / 1e6 * 5 * 2, 6);
+    expect(record.estimatedCost).toBeCloseTo(
+      (1_000_000 / 1e6) * 5 * 1.25 + (1_000_000 / 1e6) * 5 * 2,
+      6,
+    );
   });
 
   it('marks cost unavailable for a model with no price, rather than guessing', async () => {
@@ -215,7 +331,13 @@ describe('ClaudeCodeCollector', () => {
           {
             sessionId: 'sess-1',
             lines: [
-              assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 100, model: 'some-unreleased-model', stopReason: 'end_turn' }),
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 100,
+                model: 'some-unreleased-model',
+                stopReason: 'end_turn',
+              }),
             ],
           },
         ],
@@ -235,7 +357,14 @@ describe('ClaudeCodeCollector', () => {
         sessions: [
           {
             sessionId: 'sess-1',
-            lines: [assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 10, stopReason: 'end_turn' })],
+            lines: [
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 10,
+                stopReason: 'end_turn',
+              }),
+            ],
           },
         ],
       },
@@ -256,7 +385,15 @@ describe('ClaudeCodeCollector', () => {
         sessions: [
           {
             sessionId: 'sess-1',
-            lines: [assistantLine({ requestId: 'req-1', messageId: 'msg-1', output: 10, stopReason: 'end_turn', timestamp: '2026-08-30T10:00:00.000Z' })],
+            lines: [
+              assistantLine({
+                requestId: 'req-1',
+                messageId: 'msg-1',
+                output: 10,
+                stopReason: 'end_turn',
+                timestamp: '2026-08-30T10:00:00.000Z',
+              }),
+            ],
           },
         ],
       },
