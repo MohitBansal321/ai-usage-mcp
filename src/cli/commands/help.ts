@@ -42,6 +42,9 @@ Examples:
   ai-usage verify
 
 Notes:
+  \`status\` also checks npm for a newer version, at most once a day. It sends no
+  data, gives up after 1.5s offline, and \`AI_USAGE_NO_UPDATE_CHECK=1\` disables it.
+
   Cost from OpenCode is what OpenCode reported. Cost for Claude Code is an
   API-equivalent estimate from a versioned pricing table, because Claude Code
   records no cost -- on a Pro/Max subscription your marginal cost per request is

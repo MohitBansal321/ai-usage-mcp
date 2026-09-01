@@ -11,6 +11,7 @@ import {
   formatModels,
   formatSessionDetail,
   formatSessions,
+  formatStatus,
   formatSummary,
   int,
   tokenLines,
@@ -260,5 +261,29 @@ describe('report rendering', () => {
   it('reports an unknown project and unknown models honestly', () => {
     const text = formatSessions([session({ models: [] })], costService);
     expect(text).toContain('(unknown)');
+  });
+});
+
+describe('formatStatus', () => {
+  const status = {
+    databasePath: '/tmp/ai-usage.db',
+    schemaVersion: 3,
+    totalRecords: 12,
+    collectors: [],
+    pricing: { version: '2026-06-24', provenance: 'built-in' },
+    syncState: [],
+  };
+
+  it('points at the update command when a newer release exists', () => {
+    const text = formatStatus(status, { current: '0.1.0', latest: '0.2.0', isOutdated: true });
+    expect(text).toContain('Version:        0.1.0');
+    expect(text).toContain('Update available: 0.1.0 installed, 0.2.0 latest');
+    expect(text).toContain('npm i -g ai-usage-mcp@latest');
+  });
+
+  it('stays quiet when the install is current, or when the check found nothing', () => {
+    const current = formatStatus(status, { current: '0.2.0', latest: '0.2.0', isOutdated: false });
+    expect(current).not.toContain('Update available');
+    expect(formatStatus(status, null)).not.toContain('Update available');
   });
 });

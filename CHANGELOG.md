@@ -7,6 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`ai-usage status` tells you when a newer version is published.** A global install is pinned
+  at whatever version it was installed at, and nothing said so: a machine here was still on
+  0.1.0 after 0.2.0 shipped -- no `project_usage`, no `daily_usage`, no resources or prompts, no
+  local-time day fix -- while the client reported the server as healthy. `status` now prints the
+  installed version and, when the registry has a newer one, the command to update.
+- The `--json` form of `status` carries `version` and an `updateAvailable` object, so the extra
+  line cannot break a script that parses the output.
+
+### Changed
+
+- The README no longer claims the package contains no network code, because it now contains
+  exactly one call. The update check asks the npm registry for a version number and sends
+  nothing else: no usage data, no identifiers. It runs at most once a day (cached in
+  `<config dir>/update-check.json`), gives up after 1.5s, is skipped when `CI` is set, is
+  disabled by `AI_USAGE_NO_UPDATE_CHECK=1`, and never runs in the MCP server -- that process
+  speaks JSON-RPC over stdout, and npx installs already re-resolve their version on every cold
+  start. Version comparison is hand-rolled rather than pulling in `semver`, so the dependency
+  count is unchanged.
+
 ## [0.2.0] - 2026-09-01
 
 The MCP surface grows past period summaries. Usage can now be sliced by project, asked for

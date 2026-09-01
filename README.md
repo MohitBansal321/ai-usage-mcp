@@ -123,6 +123,30 @@ npx -y -p ai-usage-mcp ai-usage stats --today
 
 Verified against Claude Code **2.1.251** and OpenCode **1.18.25**.
 
+### Updating
+
+`npx -y ai-usage-mcp` — the form the instructions above use — re-resolves the version every
+time your client cold-starts the server, so it keeps itself current. Restart the client to pick
+up a new release.
+
+A **global install is pinned** until you update it by hand:
+
+```bash
+npm install -g ai-usage-mcp@latest
+ai-usage --version
+```
+
+`ai-usage status` tells you when you are behind:
+
+```text
+Update available: 0.1.0 installed, 0.2.0 latest -- npm i -g ai-usage-mcp@latest
+```
+
+That is the only network call in the package: a version lookup against the npm registry, at
+most once a day, cached in `<config dir>/update-check.json`, skipped when `CI` is set, and
+silently abandoned after 1.5s if you are offline. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it
+off. The MCP server never makes it.
+
 ---
 
 ## Ask it things
@@ -297,10 +321,14 @@ main/subagent split separately.
 
 ## What stays on your machine
 
-**Everything.** There is no network code in this package.
+**Everything.** Your usage data never leaves the machine.
 
 - No telemetry, no analytics, no crash reporting, no phone-home.
 - No cloud sync, no accounts, no API keys — the tool never calls an LLM API.
+- **One outbound request exists, and only in the CLI:** `ai-usage status` asks the npm registry
+  for the latest published version number. It sends nothing but that GET — no usage data, no
+  identifiers — caches the answer for a day, and is disabled by `AI_USAGE_NO_UPDATE_CHECK=1`.
+  The MCP server makes no network calls at all.
 - **No conversation content is read into the database.** The collectors extract token counts,
   model ids, timestamps, session ids and project paths. Prompts, completions, tool inputs and
   file contents are skipped.
@@ -335,6 +363,7 @@ It prints the reason and every path it looked at. Point it at the right place:
 | `AI_USAGE_DB`              | Where to keep our database                                              |
 | `AI_USAGE_PRICING_FILE`    | Pricing override file                                                   |
 | `AI_USAGE_FRESHNESS_MS`    | How long a sync stays fresh before a tool call re-syncs (default 30000) |
+| `AI_USAGE_NO_UPDATE_CHECK` | Set to `1` to stop `status` checking npm for a newer version            |
 
 ### Numbers look lower than `opencode stats`
 
