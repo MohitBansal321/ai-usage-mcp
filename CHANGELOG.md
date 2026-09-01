@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-01
+
+A stale install can now tell you it is stale. Nothing in the package had ever said so, which
+is how a machine ended up two releases behind while reporting itself healthy.
+
 ### Added
 
 - **`ai-usage status` tells you when a newer version is published.** A global install is pinned
@@ -187,7 +192,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.0...v0.1.1
