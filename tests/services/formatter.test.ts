@@ -39,6 +39,8 @@ function row(overrides: Partial<AggregateRow> = {}): AggregateRow {
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
+    cacheWrite5mTokens: 0,
+    cacheWrite1hTokens: 0,
     reasoningTokens: 0,
     totalTokens: 0,
     cost: cost(),
