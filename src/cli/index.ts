@@ -5,6 +5,7 @@ import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
 import {
   formatClients,
+  formatDaily,
   formatModels,
   formatProjects,
   formatSessionDetail,
@@ -13,9 +14,6 @@ import {
   formatSummary,
   formatSyncReport,
   formatVerify,
-  int,
-  tokens,
-  usd,
 } from '../services/formatter.js';
 
 function queryFrom(args: ParsedArgs): UsageQuery {
@@ -133,26 +131,8 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'daily': {
-        const rows = service.dailyUsage(queryFrom(args));
-        if (args.json) {
-          emit(args, '', rows);
-          return 0;
-        }
-        if (rows.length === 0) {
-          process.stdout.write('No usage records for this period.\n');
-          return 0;
-        }
-        const lines = ['Daily usage:', ''];
-        for (const row of rows) {
-          const cost: string[] = [];
-          if (row.cost.reportedRecords > 0) cost.push(`reported ${usd(row.cost.reported)}`);
-          if (row.cost.estimatedRecords > 0) cost.push(`estimated ${usd(row.cost.estimated)}`);
-          lines.push(
-            `${row.key}  ${int(row.records).padStart(6)} turns  total ${tokens(row.totalTokens)}` +
-              (cost.length ? `  (${cost.join(', ')})` : ''),
-          );
-        }
-        process.stdout.write(`${lines.join('\n')}\n`);
+        const report = service.dailyUsage(queryFrom(args));
+        emit(args, formatDaily(report), report);
         return 0;
       }
 

@@ -247,11 +247,19 @@ export class UsageRepository {
     return this.grouped("COALESCE(project_path,'(unknown)')", filter, limit);
   }
 
+  /**
+   * Per-day totals bucketed in LOCAL time, matching how `resolvePeriod` derives
+   * its bounds from local midnight. Bucketing on `substr(timestamp,1,10)` would
+   * be UTC, which puts a turn made late in the evening into the wrong day for
+   * every user east of Greenwich -- and silently disagrees with the very period
+   * filter that selected the rows. `localtime` reads the OS timezone database,
+   * so it stays correct across DST changes where a fixed offset would not.
+   */
   byDay(filter: UsageFilter = {}): GroupedRow[] {
     const { sql, params } = buildWhere(filter);
     const rows = this.db
       .prepare(
-        `SELECT substr(timestamp,1,10) AS key, ${AGG_SELECT} FROM usage_records ${sql}
+        `SELECT date(timestamp,'localtime') AS key, ${AGG_SELECT} FROM usage_records ${sql}
          GROUP BY key ORDER BY key DESC`,
       )
       .all(params) as (RawAgg & { key: string })[];

@@ -168,6 +168,14 @@ describe('CLI and MCP parity', () => {
     );
   });
 
+  it('daily matches daily_usage', async () => {
+    expect(cli(['daily'])).toBe(await toolText('daily_usage', {}));
+  });
+
+  it('daily --today matches daily_usage today=true', async () => {
+    expect(cli(['daily', '--today'])).toBe(await toolText('daily_usage', { today: true }));
+  });
+
   it('sessions matches recent_sessions', async () => {
     expect(cli(['sessions', '--limit', '5'])).toBe(await toolText('recent_sessions', { limit: 5 }));
   });

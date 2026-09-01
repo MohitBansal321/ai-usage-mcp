@@ -210,6 +210,32 @@ describe('UsageService', () => {
     expect(mainOnly.includeSubagents).toBe(false);
   });
 
+  it('reports per-day usage with a period label and matching overall totals', () => {
+    const report = service.dailyUsage();
+    expect(report.days.length).toBeGreaterThan(0);
+    expect(report.period.label).toBe('all time');
+    const summed = report.days.reduce((n, d) => n + d.totalTokens, 0);
+    expect(summed).toBe(report.overall.totalTokens);
+    // Newest day first, and every key is a calendar date.
+    const keys = report.days.map((d) => d.key);
+    expect([...keys].sort().reverse()).toEqual(keys);
+    for (const key of keys) expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('buckets days in local time so they agree with the period filter', () => {
+    // A turn late on a local evening is a different UTC date east of Greenwich.
+    // The day it lands in must match the local date the period bounds use, or
+    // `--today` selects rows that the daily breakdown then files under yesterday.
+    const localDate = (iso: string): string => {
+      const d = new Date(iso);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+    };
+    const today = service.dailyUsage({ today: true });
+    const expected = localDate(new Date().toISOString());
+    expect(today.days.map((d) => d.key)).toEqual([expected]);
+    expect(today.days[0]!.records).toBe(today.overall.records);
+  });
+
   it('resolves a session by an unambiguous fragment and splits its turn kinds', () => {
     // 'sess-1' is a fragment; it must resolve to the single matching session.
     const detail = service.sessionUsage('sess-1');
