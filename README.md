@@ -21,9 +21,22 @@ unavailable — not as zero.
 
 ## Install
 
-Requires **Node.js 22 or newer**. No compiler or build tools needed — the only native
-dependency ships prebuilt binaries for macOS, Linux (glibc and musl/Alpine) and Windows on
-both x64 and arm64.
+Requires **Node.js 22 or newer** and **npm 11 or newer**.
+
+No compiler or build tools are needed: the one native dependency ships prebuilt binaries for
+macOS, Linux (glibc and musl/Alpine) and Windows, on both x64 and arm64.
+
+> **On Windows, npm 11 is not optional.** npm 10 on Windows ignores that dependency's
+> `gypfile: false` flag and tries to compile it from source even though a working prebuilt
+> binary is right there — and the install then fails unless you have Visual Studio Build Tools
+> and Python. npm 11 uses the prebuild, as does npm 10 on macOS and Linux. Node 22 ships npm
+> 10, so if you are on Windows and Node 22:
+>
+> ```bash
+> npm install -g npm@11
+> ```
+>
+> Node 24 ships npm 11 already.
 
 ### Claude Code
 
@@ -292,6 +305,20 @@ ai-usage sync --all-stores
 
 Read it as API-equivalent list price, not as money you spent — see the cost section above.
 On a Pro/Max subscription the marginal cost per request is $0.
+
+### Install fails on Windows with `node-gyp rebuild` errors
+
+You are on npm 10. It ignores the `gypfile: false` flag on `better-sqlite3` and tries to
+compile it despite a working prebuilt binary being bundled. Fix it with:
+
+```bash
+npm install -g npm@11
+npm install -g ai-usage-mcp
+```
+
+The prebuilt binary itself is fine on Windows — verified by installing with `--ignore-scripts`
+and running it. This is purely an npm-version behaviour, which is why `engines.npm` requires
+11 or newer. macOS and Linux are unaffected on both npm 10 and 11.
 
 ### A model shows cost as unavailable
 

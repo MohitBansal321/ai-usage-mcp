@@ -26,6 +26,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`engines.npm` now requires 11 or newer.** CI found that npm 10 on Windows ignores
+  `better-sqlite3`'s `gypfile: false` and runs `node-gyp rebuild` despite a working prebuilt
+  binary being bundled, failing without Visual Studio Build Tools and Python. The prebuild
+  itself is fine there — installing with `--ignore-scripts` on Windows + Node 22 loads and
+  runs it — so this is an npm-version behaviour. macOS and Linux are unaffected on npm 10 and
+  11 alike. Documented in the README with the one-line fix, and CI raises npm to 11 on every
+  matrix leg.
+
 - Upgraded vitest and `@vitest/coverage-v8` to 4.x together. The v8 provider changed how it
   accounts statements and branches between 2.x and 4.x, so the coverage thresholds were
   recalibrated — no source changed.

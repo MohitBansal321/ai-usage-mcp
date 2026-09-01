@@ -137,12 +137,25 @@ linuxmusl-arm64  linuxmusl-x64  (Alpine / musl)
 win32-arm64   win32-x64         (Windows)
 ```
 
-It has no `install` script, so `npm install` never invokes a compiler and never needs to reach
-GitHub for a binary. This matters: v11 of that library used `prebuild-install`, which fetched
-binaries from GitHub releases at install time and had **no build for Node 24 at all** — users
-on current Node would have needed Python and a C++ toolchain, and the install would fail on a
-machine without them. That is why `package.json` pins `better-sqlite3: ^13` and
-`engines.node: >=22`.
+It declares `gypfile: false` and has no `install` script, so npm should never invoke a
+compiler and never needs to reach GitHub for a binary. This matters: v11 of that library used
+`prebuild-install`, which fetched binaries from GitHub releases at install time and had **no
+build for Node 24 at all** — users on current Node would have needed Python and a C++
+toolchain, and the install would fail without them.
+
+**One exception, found by CI:** npm 10 **on Windows** ignores `gypfile: false` and runs
+`node-gyp rebuild` anyway, which then fails on a machine with no toolchain. The same npm 10 on
+macOS and Linux does not, and npm 11 does not on any platform. The bundled Windows prebuild is
+perfectly usable — installing with `--ignore-scripts` on Windows + Node 22 loads and runs it
+correctly. So this is an npm-version behaviour, not a packaging defect.
+
+That is why `package.json` pins `better-sqlite3: ^13` and declares
+`engines: { node: '>=22', npm: '>=11' }`, and why CI raises npm to 11 on every matrix leg
+before installing.
+
+If supporting npm 10 on Windows ever becomes a requirement, the fix is not to downgrade the
+dependency (v11 has no Node 24 binaries) — it is to drop the native dependency entirely and
+use Node's built-in `node:sqlite`, which needs no binary at all.
 
 If you later need to support Node 20, do not downgrade the dependency — switch the storage
 layer to Node's built-in `node:sqlite` instead.
