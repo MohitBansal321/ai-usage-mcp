@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { UsageService, UsageQuery } from '../../services/usage-service.js';
+import { takeUpdateNotice } from '../notice.js';
 
 /** Period + scope parameters shared by the period-based tools. */
 export const periodShape = {
@@ -63,10 +64,25 @@ export function toQuery(args: PeriodArgs): UsageQuery {
   return query;
 }
 
+/**
+ * A tool result, plus the update notice if one is waiting.
+ *
+ * The notice is a *second* content block, never appended to the first: the data
+ * block has to stay byte-identical to what the CLI prints for the same query
+ * (`ai-usage stats --today` and `usage_summary` are asserted equal), and a
+ * consumer reading `content[0]` should get usage, not server housekeeping. It is
+ * mirrored into `structuredContent.serverNotice` for the same reason -- beside
+ * the numbers, never mixed into them.
+ */
 export function textResult(text: string, structured?: Record<string, unknown>) {
+  const notice = takeUpdateNotice();
+  const content = [{ type: 'text' as const, text }];
+  if (notice) content.push({ type: 'text' as const, text: notice });
   return {
-    content: [{ type: 'text' as const, text }],
-    ...(structured ? { structuredContent: structured } : {}),
+    content,
+    ...(structured
+      ? { structuredContent: { ...structured, ...(notice ? { serverNotice: notice } : {}) } }
+      : {}),
   };
 }
 

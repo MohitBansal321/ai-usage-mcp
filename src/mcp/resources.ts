@@ -1,5 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { formatSessionDetail, formatSummary } from '../services/formatter.js';
+import { formatSessionDetail, formatStatus, formatSummary } from '../services/formatter.js';
+import { readCachedUpdate } from '../services/update-check.js';
+import { VERSION } from '../version.js';
 import type { ToolContext } from './tools/shared.js';
 
 /**
@@ -55,6 +57,26 @@ export function registerResources(server: McpServer, ctx: ToolContext): void {
               : 'The most recent session could not be resolved.';
           })()
         : 'No sessions recorded yet. Run a coding agent, or `ai-usage sync`.';
+      return { contents: [{ uri: uri.href, mimeType: 'text/plain', text }] };
+    },
+  );
+
+  server.registerResource(
+    'server-status',
+    'usage://status',
+    {
+      title: 'Server status',
+      description:
+        'Which build of ai-usage-mcp is answering, where its database and pricing table came ' +
+        'from, which collectors are available, and whether a newer release exists. The same ' +
+        'report `ai-usage status` prints.',
+      mimeType: 'text/plain',
+    },
+    async (uri) => {
+      // Cache-only: a resource read answers now, and the background check has
+      // already populated the cache if it was going to.
+      const update = readCachedUpdate({ current: VERSION });
+      const text = formatStatus(await ctx.service.status(), update);
       return { contents: [{ uri: uri.href, mimeType: 'text/plain', text }] };
     },
   );

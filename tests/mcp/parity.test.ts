@@ -112,6 +112,9 @@ describe('CLI and MCP parity', () => {
       AI_USAGE_OPENCODE_DB: openCodeDb,
       AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
       AI_USAGE_FRESHNESS_MS: '0',
+      // Hermetic: the CLI and the server must render the same bytes, and neither
+      // may reach the registry to do it.
+      AI_USAGE_NO_UPDATE_CHECK: '1',
     };
 
     // Populate the shared database once, through the CLI.

@@ -142,10 +142,29 @@ ai-usage --version
 Update available: 0.1.0 installed, 0.2.0 latest -- npm i -g ai-usage-mcp@latest
 ```
 
-That is the only network call in the package: a version lookup against the npm registry, at
-most once a day, cached in `<config dir>/update-check.json`, skipped when `CI` is set, and
-silently abandoned after 1.5s if you are offline. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it
-off. The MCP server never makes it.
+**The MCP server says so too**, because most people never run the CLI. When the server finds a
+newer release it says it **once per process**, through whichever channel comes first: a line
+added to the `instructions` it returns at handshake time, or a one-off note attached to the
+next tool result. It is a separate content block, so the numbers a tool returns stay exactly
+what the CLI prints for the same query, and it never repeats itself on later calls. The same
+line goes to the server's stderr log, and `@usage://status` shows the state on demand.
+
+The advice differs by how you installed it, and the notice says the right one:
+
+| Installed as                        | What actually fixes it                                |
+| ----------------------------------- | ----------------------------------------------------- |
+| `npm i -g ai-usage-mcp`             | `npm i -g ai-usage-mcp@latest`                        |
+| `npx -y ai-usage-mcp`               | Restart the server -- npx re-resolves on a cold start |
+| A version pinned in your MCP config | Change it there; no command will do it for you        |
+| A project dependency                | `npm i ai-usage-mcp@latest`                           |
+| A source checkout                   | `git pull && npm run build`                           |
+
+That check is the only network call in the package: a version lookup against the npm registry,
+at most once a day, cached in `<config dir>/update-check.json`, skipped when `CI` is set, and
+silently abandoned after 1.5s if you are offline. It sends no usage data and no identifier --
+just a GET for a version string. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it off everywhere,
+CLI and server alike. In the server it runs _after_ the handshake, never during it, so it
+cannot slow down a client starting up.
 
 ---
 
@@ -179,13 +198,14 @@ Every period-based tool takes `projectPath` to narrow the report to one project.
 
 ## Resources and prompts
 
-Two resources can be pulled into a conversation with an `@` mention, instead of asking for a
+Three resources can be pulled into a conversation with an `@` mention, instead of asking for a
 tool call:
 
-| Resource                 | Contents                          |
-| ------------------------ | --------------------------------- |
-| `usage://today`          | Today's totals, split by client   |
-| `usage://session/latest` | The most recent session in detail |
+| Resource                 | Contents                                                       |
+| ------------------------ | -------------------------------------------------------------- |
+| `usage://today`          | Today's totals, split by client                                |
+| `usage://session/latest` | The most recent session in detail                              |
+| `usage://status`         | Which build is answering, its sources, and whether it is stale |
 
 Three prompts appear as slash commands in a client that surfaces them:
 

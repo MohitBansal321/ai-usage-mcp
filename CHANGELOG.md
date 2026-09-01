@@ -7,6 +7,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP server now says when its build is out of date.** 0.3.0 put that notice in
+  `ai-usage status` only, reasoning that npx re-resolves its version on a cold start -- which
+  left every global install, and every version pinned in an MCP config, exactly as uninformed
+  as before, because most people who run the server never run the CLI. It is now said once per
+  process, through whichever channel comes first: a line appended to the `instructions`
+  returned at handshake time when the cached answer already knows, otherwise a one-off note on
+  the next tool result. Never both, and never again on a later call.
+- The notice names the fix that matches how the build was launched -- global install, npx
+  cache, project dependency, source checkout -- detected from `import.meta.url` rather than
+  `process.argv[1]`, which names the symlinked bin for a global install and makes it look like
+  a bare script. The npx line also states the case no command fixes: a version pinned in an
+  MCP config has to be changed there.
+- `usage://status` resource -- the report `ai-usage status` prints, update state included, for
+  a user who would rather ask than wait to be told.
+- `ai-usage status` prints the install-appropriate update command as well, instead of always
+  suggesting the global one.
+
+### Changed
+
+- The update check now runs in the MCP server too, in the background _after_ the JSON-RPC
+  handshake -- never during it, and never on a tool response path, so it cannot delay a client
+  starting up or an answer coming back. Same once-a-day cache, same 1.5s abandon, same
+  opt-outs: `AI_USAGE_NO_UPDATE_CHECK=1` and `CI` cover both frontends. The `instructions`
+  path reads the cache synchronously and never fetches, because a fetch there would add its
+  timeout to every handshake.
+- A tool result carrying a notice returns it as a _second_ content block, with
+  `structuredContent.serverNotice` beside the numbers rather than mixed into them. The data
+  block stays byte-identical to what the CLI prints for the same query, which is what keeps
+  `ai-usage stats --today` and `usage_summary` provably equal.
+
 ## [0.3.0] - 2026-09-01
 
 A stale install can now tell you it is stale. Nothing in the package had ever said so, which

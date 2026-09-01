@@ -10,7 +10,7 @@ import type {
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
 import type { StatusReport } from './usage-service.js';
-import type { UpdateInfo } from './update-check.js';
+import { updateCommand, type UpdateInfo } from './update-check.js';
 import { VERSION } from '../version.js';
 import type { SyncReport } from './sync-service.js';
 import type { VerifyReport } from './verify-service.js';
@@ -345,7 +345,7 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
     out.push('');
     out.push(
       `Update available: ${update.current} installed, ${update.latest} latest -- ` +
-        `npm i -g ai-usage-mcp@latest`,
+        updateCommand(update.installKind),
     );
   }
   return out.join('\n');
