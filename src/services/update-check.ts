@@ -128,19 +128,38 @@ export function isNewer(latest: string, current: string): boolean {
  * `unknown` says both of the likely ones rather than guessing between them.
  */
 export function detectInstallKind(moduleUrl: string): InstallKind {
-  let path: string;
-  try {
-    path = moduleUrl.startsWith('file:') ? fileURLToPath(moduleUrl) : moduleUrl;
-  } catch {
-    return 'unknown';
-  }
-  const p = path.split(sep).join('/');
+  const p = normalisedPath(moduleUrl);
   if (p.includes('/_npx/')) return 'npx';
   // The npm prefix on POSIX (`<prefix>/lib/node_modules`) and on Windows
   // (`%APPDATA%/npm/node_modules`). A project dependency has neither.
   if (p.includes('/lib/node_modules/') || p.includes('/npm/node_modules/')) return 'global';
   if (p.includes('/node_modules/ai-usage-mcp/')) return 'local';
   return 'unknown';
+}
+
+/**
+ * The module path as forward slashes, for matching only.
+ *
+ * `fileURLToPath` is tried first because it is correct, but it is
+ * platform-specific: on Windows it rejects a POSIX-style `file:///home/...`
+ * outright. This is a string heuristic over a path we never open, so the URL's
+ * own pathname is a fine fallback and keeps the classification the same whatever
+ * host it runs on.
+ */
+function normalisedPath(moduleUrl: string): string {
+  let path = moduleUrl;
+  if (moduleUrl.startsWith('file:')) {
+    try {
+      path = fileURLToPath(moduleUrl);
+    } catch {
+      try {
+        path = decodeURIComponent(new URL(moduleUrl).pathname);
+      } catch {
+        path = moduleUrl;
+      }
+    }
+  }
+  return path.split(sep).join('/').split('\\').join('/');
 }
 
 let detected: InstallKind | undefined;
