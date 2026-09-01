@@ -34,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   11 alike. Documented in the README with the one-line fix, and CI raises npm to 11 on every
   matrix leg.
 
+- Upgraded `@types/better-sqlite3` to 9.x to match the 13.x runtime dependency (v13 ships no
+  types of its own).
 - Upgraded vitest and `@vitest/coverage-v8` to 4.x together. The v8 provider changed how it
   accounts statements and branches between 2.x and 4.x, so the coverage thresholds were
   recalibrated — no source changed.
