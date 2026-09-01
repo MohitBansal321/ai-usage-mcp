@@ -3,6 +3,7 @@ import { ArgError, parseArgs, type ParsedArgs } from './args.js';
 import { HELP_TEXT } from './commands/help.js';
 import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
+import { checkForUpdate } from '../services/update-check.js';
 import {
   formatClients,
   formatDaily,
@@ -58,8 +59,17 @@ async function run(argv: string[]): Promise<number> {
   try {
     switch (args.command) {
       case 'status': {
-        const status = await service.status();
-        emit(args, formatStatus(status), status);
+        // The registry check runs alongside the local status work rather than
+        // after it, so a slow network never adds to the command's wall time.
+        const [status, update] = await Promise.all([
+          service.status(),
+          checkForUpdate({ current: VERSION }),
+        ]);
+        emit(args, formatStatus(status, update), {
+          version: VERSION,
+          ...status,
+          ...(update ? { updateAvailable: update } : {}),
+        });
         return 0;
       }
 

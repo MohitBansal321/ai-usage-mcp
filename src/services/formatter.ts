@@ -10,6 +10,8 @@ import type {
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
 import type { StatusReport } from './usage-service.js';
+import type { UpdateInfo } from './update-check.js';
+import { VERSION } from '../version.js';
 import type { SyncReport } from './sync-service.js';
 import type { VerifyReport } from './verify-service.js';
 
@@ -297,10 +299,11 @@ export function formatSessionDetail(detail: SessionDetail, costService: CostServ
   return out.join('\n');
 }
 
-export function formatStatus(status: StatusReport): string {
+export function formatStatus(status: StatusReport, update?: UpdateInfo | null): string {
   const out: string[] = [];
   out.push('ai-usage status');
   out.push('');
+  out.push(`Version:        ${update?.current ?? VERSION}`);
   out.push(`Database:       ${status.databasePath}`);
   out.push(`Schema version: ${status.schemaVersion}`);
   out.push(`Total records:  ${int(status.totalRecords)}`);
@@ -337,6 +340,13 @@ export function formatStatus(status: StatusReport): string {
   if (status.totalRecords === 0) {
     out.push('');
     out.push('No records stored yet. Run `ai-usage sync`.');
+  }
+  if (update?.isOutdated) {
+    out.push('');
+    out.push(
+      `Update available: ${update.current} installed, ${update.latest} latest -- ` +
+        `npm i -g ai-usage-mcp@latest`,
+    );
   }
   return out.join('\n');
 }
