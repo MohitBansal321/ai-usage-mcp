@@ -27,6 +27,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directly. `ai-usage daily` and the tool render through one formatter, so they cannot drift.
 - `dailyUsage()` now returns a report with a period label and overall totals, matching the shape
   of every other report rather than a bare array of rows.
+- **MCP resources and prompts.** `usage://today` and `usage://session/latest` can be pulled into a
+  conversation with an `@` mention, and three prompts appear as slash commands (`daily-review`,
+  `why-was-today-expensive`, `project-cost`). Each prompt names the tools to call and carries the
+  reported-vs-estimated rule with it, so a paraphrased summary cannot quietly merge the two cost
+  buckets. Deliberately not built on sampling, roots or resource subscriptions: the first two were
+  deprecated in the 2026-07-28 spec, and none of the three is documented as supported by Claude
+  Code.
+- **A row-level read path.** `UsageRepository.turns()` returns individual turns, oldest first and
+  always bounded (200 by default, capped at 5,000), with `countTurns()` for paging. Every other
+  read collapses rows, which left per-turn questions -- how context grew across a session, what a
+  single turn cost -- unanswerable.
+- `cacheWrite5mTokens` and `cacheWrite1hTokens` on aggregate rows. Both columns have been written
+  since the first release and never read back, so no period could be re-priced: the two TTLs bill
+  at 1.25x and 2x of the input rate.
+- The first direct tests for `UsageRepository`, previously only exercised through `UsageService`.
 
 ## [0.1.2] - 2026-09-01
 

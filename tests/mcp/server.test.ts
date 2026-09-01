@@ -122,6 +122,47 @@ describe('MCP server over stdio', () => {
     ]);
   });
 
+  it('exposes resources the user can pull in with an @ mention', async () => {
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri).sort()).toEqual(['usage://session/latest', 'usage://today']);
+  });
+
+  it('serves usage://today as the same numbers usage_summary reports', async () => {
+    const read = await client.readResource({ uri: 'usage://today' });
+    const text = (read.contents[0] as { text: string }).text;
+    expect(text).toContain('Usage summary');
+    const tool = await client.callTool({ name: 'usage_summary', arguments: { today: true } });
+    expect(text).toBe((tool.content as { type: string; text: string }[])[0]!.text);
+  });
+
+  it('serves usage://session/latest without needing an argument', async () => {
+    const read = await client.readResource({ uri: 'usage://session/latest' });
+    const text = (read.contents[0] as { text: string }).text;
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).not.toContain('could not be resolved');
+  });
+
+  it('exposes prompts as slash commands, with their arguments declared', async () => {
+    const { prompts } = await client.listPrompts();
+    expect(prompts.map((p) => p.name).sort()).toEqual([
+      'daily-review',
+      'project-cost',
+      'why-was-today-expensive',
+    ]);
+    const daily = prompts.find((p) => p.name === 'daily-review')!;
+    expect(daily.arguments?.map((a) => a.name)).toEqual(['days']);
+  });
+
+  it('renders a prompt that names the tools to call and the cost rule to hold to', async () => {
+    const got = await client.getPrompt({ name: 'daily-review', arguments: { days: '3' } });
+    const text = (got.messages[0]!.content as { type: string; text: string }).text;
+    expect(text).toContain('last 3 days');
+    expect(text).toContain('usage_summary');
+    expect(text).toContain('daily_usage');
+    // The honesty rule travels with the prompt so the agent cannot merge the buckets.
+    expect(text).toContain('Never add the reported and estimated cost figures together');
+  });
+
   it('usage_summary returns real collected totals split by client', async () => {
     const result = await client.callTool({ name: 'usage_summary', arguments: {} });
     const text = (result.content as { type: string; text: string }[])[0]!.text;

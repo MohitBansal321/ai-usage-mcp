@@ -10,6 +10,8 @@ import { registerProjectUsage } from './tools/project-usage.js';
 import { registerRecentSessions } from './tools/recent-sessions.js';
 import { registerSessionUsage } from './tools/session-usage.js';
 import { registerUsageSummary } from './tools/usage-summary.js';
+import { registerPrompts } from './prompts.js';
+import { registerResources } from './resources.js';
 import type { ToolContext } from './tools/shared.js';
 
 /**
@@ -78,6 +80,9 @@ async function main(): Promise<void> {
   registerClientUsage(server, ctx);
   registerProjectUsage(server, ctx);
   registerDailyUsage(server, ctx);
+
+  registerResources(server, ctx);
+  registerPrompts(server);
   registerRecentSessions(server, ctx);
 
   const shutdown = () => {
