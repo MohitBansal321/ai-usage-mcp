@@ -21,82 +21,107 @@ unavailable — not as zero.
 
 ## Install
 
-Requires **Node.js 22 or newer** and **npm 11 or newer**.
-
-No compiler or build tools are needed: the one native dependency ships prebuilt binaries for
-macOS, Linux (glibc and musl/Alpine) and Windows, on both x64 and arm64.
-
-> **On Windows, npm 11 is not optional.** npm 10 on Windows ignores that dependency's
-> `gypfile: false` flag and tries to compile it from source even though a working prebuilt
-> binary is right there — and the install then fails unless you have Visual Studio Build Tools
-> and Python. npm 11 uses the prebuild, as does npm 10 on macOS and Linux. Node 22 ships npm
-> 10, so if you are on Windows and Node 22:
->
-> ```bash
-> npm install -g npm@11
-> ```
->
-> Node 24 ships npm 11 already.
+Requires **Node.js 22+** and **npm 11+**. No compiler or build tools needed — the one native
+dependency ships prebuilt binaries for macOS, Linux (glibc and musl/Alpine) and Windows, on
+x64 and arm64.
 
 ### Claude Code
 
-Either register it directly, with no install step at all:
+Nothing to install first — `npx` fetches it on demand:
 
 ```bash
-claude mcp add ai-usage -- npx -y ai-usage-mcp
+claude mcp add ai-usage -s user -- npx -y ai-usage-mcp
 ```
 
-…or install it globally first, which also gives you the `ai-usage` debug CLI on your PATH:
+`-s user` makes it available in every project. Drop it to add the server to the current
+project only. Then run `/mcp` inside Claude Code to confirm it connected.
 
-```bash
-npm install -g ai-usage-mcp
-claude mcp add ai-usage -- ai-usage-mcp
+<details>
+<summary><b>No <code>claude</code> command? (VS Code / JetBrains extension users)</b></summary>
+
+The extension reads the same configuration as the CLI, so you can add the server by editing a
+file — no CLI needed. Pick whichever scope you want:
+
+**For one project** — create `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "ai-usage": {
+      "command": "npx",
+      "args": ["-y", "ai-usage-mcp"]
+    }
+  }
+}
 ```
 
-Then confirm:
+Claude Code asks you to approve a project-scoped server the first time it loads it. This file
+is safe to commit if you want your team to get it too.
 
-```bash
-claude mcp list          # should show ai-usage
+**For all your projects** — add the same `mcpServers` block at the top level of
+`~/.claude.json` (`%USERPROFILE%\.claude.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "ai-usage": {
+      "command": "npx",
+      "args": ["-y", "ai-usage-mcp"]
+    }
+  }
+}
 ```
 
-and run `/mcp` inside Claude Code to check the connection is live.
+That file already exists and holds other settings — add the `mcpServers` key alongside them
+rather than replacing the file.
 
-Add `-s user` to `claude mcp add` to register it for every project instead of just the current
-one.
+Then reload the window (**Developer: Reload Window** in VS Code) and run `/mcp`. Configuration
+is read when a session starts, so an already-open session will not pick it up.
+
+</details>
 
 ### OpenCode
 
-Interactive:
-
 ```bash
 opencode mcp add ai-usage       # choose a local server, command: ai-usage-mcp
-opencode mcp list               # confirm
 ```
 
-Or declare it in `~/.config/opencode/opencode.jsonc`:
+Or add it to `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "ai-usage": {
       "type": "local",
-      "command": ["ai-usage-mcp"],
+      "command": ["npx", "-y", "ai-usage-mcp"],
     },
   },
 }
 ```
 
-Use `"command": ["npx", "-y", "ai-usage-mcp"]` instead if you would rather not install
-globally.
+Confirm with `opencode mcp list`.
 
-Verified against OpenCode **1.18.25** and Claude Code **2.1.251**.
+### The debug CLI
 
-### Just the CLI, without installing
+The MCP server needs no install. To also get the `ai-usage` CLI on your PATH:
+
+```bash
+npm install -g ai-usage-mcp
+ai-usage status
+```
+
+Or run it without installing:
 
 ```bash
 npx -y -p ai-usage-mcp ai-usage stats --today
 ```
+
+> **Windows + Node 22:** run `npm install -g npm@11` first. npm 10 on Windows ignores a
+> dependency's `gypfile: false` flag and tries to compile it from source even though a working
+> prebuilt binary is bundled, and the install then fails without Visual Studio Build Tools.
+> npm 11 uses the prebuild; so does npm 10 on macOS and Linux. Node 24 ships npm 11 already.
+
+Verified against Claude Code **2.1.251** and OpenCode **1.18.25**.
 
 ---
 
@@ -305,6 +330,37 @@ ai-usage sync --all-stores
 
 Read it as API-equivalent list price, not as money you spent — see the cost section above.
 On a Pro/Max subscription the marginal cost per request is $0.
+
+### `claude: command not found`
+
+You do not need the CLI. Claude Code's extensions read the same configuration files, so you can
+register the server by creating `.mcp.json` in your project root, or by adding an `mcpServers`
+block to `~/.claude.json` — see the collapsed section under [Install](#claude-code). If you do
+want the CLI, `npm install -g @anthropic-ai/claude-code` provides it.
+
+### `/mcp` shows ai-usage as failed
+
+The server is spawned by Claude Code, so it has to be resolvable from the environment Claude
+Code runs in. `npx -y ai-usage-mcp` is the most portable form and is what the instructions
+above use.
+
+If it still fails, your editor was probably launched without your shell's PATH (common with
+Snap or Flatpak builds on Linux, and with launching from a desktop icon on macOS). Point the
+config at absolute paths to bypass PATH lookup entirely:
+
+```json
+{
+  "mcpServers": {
+    "ai-usage": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/lib/node_modules/ai-usage-mcp/dist/mcp/server.js"]
+    }
+  }
+}
+```
+
+Get both paths with `command -v node` and `npm root -g` after `npm install -g ai-usage-mcp`.
+This pins the Node version, so prefer the `npx` form unless you need it.
 
 ### Install fails on Windows with `node-gyp rebuild` errors
 

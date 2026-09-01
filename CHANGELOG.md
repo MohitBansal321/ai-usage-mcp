@@ -26,6 +26,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Install docs rewritten around the simplest path.** The Claude Code instructions now lead
+  with `npx -y ai-usage-mcp`, which needs no global install, and document the config-file route
+  for people who use the VS Code or JetBrains extension and have no `claude` command:
+  `.mcp.json` in a project root, or an `mcpServers` block in `~/.claude.json`. Neither needs a
+  CLI. Previously the README assumed `claude` was on PATH, which turned a one-line install into
+  a hunt for the extension's bundled binary.
+- Troubleshooting entries for `claude: command not found` and for `/mcp` showing the server as
+  failed (editors launched without the shell's PATH, common with Snap and Flatpak builds).
+
 - **`engines.npm` now requires 11 or newer.** CI found that npm 10 on Windows ignores
   `better-sqlite3`'s `gypfile: false` and runs `node-gyp rebuild` despite a working prebuilt
   binary being bundled, failing without Visual Studio Build Tools and Python. The prebuild
