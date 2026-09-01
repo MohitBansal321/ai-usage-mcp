@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The release workflow now creates the GitHub Release itself, with notes taken from this
+  file's section for the tagged version, and skips it if one already exists. Previously it
+  published to npm and stopped there, so the Releases page kept showing an older version as
+  Latest while npm had already moved on.
+
 ### Changed
 
 - Source maps are no longer emitted into `dist`. The published tarball never carried the
