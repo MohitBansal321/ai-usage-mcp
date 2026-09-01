@@ -158,6 +158,16 @@ describe('CLI and MCP parity', () => {
     expect(cli(['clients'])).toBe(await toolText('client_usage', {}));
   });
 
+  it('projects matches project_usage', async () => {
+    expect(cli(['projects'])).toBe(await toolText('project_usage', {}));
+  });
+
+  it('projects --project narrows both frontends the same way', async () => {
+    expect(cli(['projects', '--project', '/work/project-one'])).toBe(
+      await toolText('project_usage', { projectPath: '/work/project-one' }),
+    );
+  });
+
   it('sessions matches recent_sessions', async () => {
     expect(cli(['sessions', '--limit', '5'])).toBe(await toolText('recent_sessions', { limit: 5 }));
   });

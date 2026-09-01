@@ -52,6 +52,7 @@ child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/ini
 const EXPECTED = [
   'client_usage',
   'model_usage',
+  'project_usage',
   'recent_sessions',
   'session_usage',
   'usage_summary',
@@ -61,7 +62,13 @@ const names = (list.result?.tools ?? []).map((t) => t.name).sort();
 if (JSON.stringify(names) !== JSON.stringify(EXPECTED)) fail(`tools mismatch: ${names.join(', ')}`);
 console.log('tools/list ok:', names.join(', '));
 
-for (const name of ['usage_summary', 'client_usage', 'model_usage', 'recent_sessions']) {
+for (const name of [
+  'usage_summary',
+  'client_usage',
+  'model_usage',
+  'project_usage',
+  'recent_sessions',
+]) {
   const res = await send('tools/call', { name, arguments: {} });
   if (res.error) fail(`${name} returned an error: ${JSON.stringify(res.error)}`);
   if (!res.result?.content?.[0]?.text) fail(`${name} returned no text content`);

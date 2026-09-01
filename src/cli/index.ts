@@ -6,6 +6,7 @@ import { UsageService, type UsageQuery } from '../services/usage-service.js';
 import {
   formatClients,
   formatModels,
+  formatProjects,
   formatSessionDetail,
   formatSessions,
   formatStatus,
@@ -25,6 +26,7 @@ function queryFrom(args: ParsedArgs): UsageQuery {
   if (args.until !== undefined) query.until = args.until;
   if (args.client !== undefined) query.client = args.client;
   if (args.model !== undefined) query.model = args.model;
+  if (args.project !== undefined) query.projectPath = args.project;
   return query;
 }
 
@@ -92,6 +94,12 @@ async function run(argv: string[]): Promise<number> {
       case 'clients': {
         const report = service.clientUsage(queryFrom(args));
         emit(args, formatClients(report, service.costService), report);
+        return 0;
+      }
+
+      case 'projects': {
+        const report = service.projectUsage(queryFrom(args), args.limit);
+        emit(args, formatProjects(report, service.costService), report);
         return 0;
       }
 

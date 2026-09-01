@@ -19,6 +19,13 @@ export const periodShape = {
       'Include subagent/sidechain turns. Defaults to true, because they are real spend. ' +
         'Set false to see only main-thread turns.',
     ),
+  projectPath: z
+    .string()
+    .optional()
+    .describe(
+      'Restrict to one project, given as the absolute working directory the turns ran in. ' +
+        'Must match exactly; use project_usage to see the available paths.',
+    ),
 };
 
 export const clientEnum = z
@@ -40,6 +47,7 @@ export type PeriodArgs = {
   includeSubagents?: boolean;
   client?: 'claude-code' | 'opencode';
   model?: string;
+  projectPath?: string;
 };
 
 export function toQuery(args: PeriodArgs): UsageQuery {
@@ -51,6 +59,7 @@ export function toQuery(args: PeriodArgs): UsageQuery {
   if (args.includeSubagents !== undefined) query.includeSubagents = args.includeSubagents;
   if (args.client !== undefined) query.client = args.client;
   if (args.model !== undefined) query.model = args.model;
+  if (args.projectPath !== undefined) query.projectPath = args.projectPath;
   return query;
 }
 

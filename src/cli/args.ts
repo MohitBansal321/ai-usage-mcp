@@ -7,6 +7,7 @@ export interface ParsedArgs {
   until?: string;
   client?: 'claude-code' | 'opencode';
   model?: string;
+  project?: string;
   limit?: number;
   includeSubagents: boolean;
   allStores: boolean;
@@ -73,6 +74,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       case '--model':
         args.model = requireValue('--model', rest.shift());
+        break;
+      case '--project':
+        args.project = requireValue('--project', rest.shift());
         break;
       case '--limit':
         args.limit = toPositiveInt('--limit', requireValue('--limit', rest.shift()));

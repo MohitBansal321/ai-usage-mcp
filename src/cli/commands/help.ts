@@ -8,6 +8,7 @@ Commands:
   stats                 Totals for a period, split by client   (same numbers as the usage_summary MCP tool)
   models                Per-model tokens and cost              (same as model_usage)
   clients               Per-client tokens and cost             (same as client_usage)
+  projects              Per-project tokens and cost            (same as project_usage)
   sessions              Recent sessions                        (same as recent_sessions)
   session <id>          One session in detail                  (same as session_usage)
   daily                 Per-day breakdown
@@ -24,7 +25,8 @@ Period options (default: all time):
 Scope options:
   --client <name>       claude-code | opencode
   --model <id>          Restrict to one model
-  --limit N             Row limit (sessions, models)
+  --project <path>      Restrict to one project (its working directory)
+  --limit N             Row limit (sessions, models, projects)
   --no-subagents        Exclude subagent/sidechain turns (included by default)
   --all-stores          Read every detected data store, not only the one the client itself uses
   --full                Ignore saved sync cursors and re-read everything
@@ -35,6 +37,7 @@ Examples:
   ai-usage stats --today
   ai-usage stats --days 7
   ai-usage models --days 30 --client claude-code
+  ai-usage projects --days 30
   ai-usage sessions --limit 5
   ai-usage verify
 

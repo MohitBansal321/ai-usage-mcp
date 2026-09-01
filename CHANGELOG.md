@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-project usage.** A `project_usage` MCP tool and an `ai-usage projects` CLI command report
+  tokens and cost grouped by the working directory a turn ran in, answering "which repository is
+  my spend going to" across both clients at once. Turns whose project could not be resolved are
+  grouped as `(unknown)` rather than dropped.
+- A `--project` CLI flag and a `projectPath` parameter on every period-based MCP tool, so any
+  existing report can be narrowed to one project.
+
 ## [0.1.2] - 2026-09-01
 
 Packaging and release plumbing. No runtime change: `src` is untouched since 0.1.1.

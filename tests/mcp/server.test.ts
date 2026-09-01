@@ -109,11 +109,12 @@ describe('MCP server over stdio', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('starts and exposes exactly the five Phase 1 tools', async () => {
+  it('starts and exposes exactly the expected tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'client_usage',
       'model_usage',
+      'project_usage',
       'recent_sessions',
       'session_usage',
       'usage_summary',
