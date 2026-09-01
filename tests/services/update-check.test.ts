@@ -218,6 +218,23 @@ describe('detectInstallKind', () => {
     expect(detectInstallKind('file:///work/ai-usage/dist/mcp/server.js')).toBe('unknown');
     expect(detectInstallKind('not a url at all')).toBe('unknown');
   });
+
+  it('classifies the same on every host, including Windows-shaped paths', () => {
+    // `fileURLToPath` rejects a POSIX file URL on Windows and a bare Windows
+    // path elsewhere. This is a string heuristic over a path nothing opens, so
+    // the answer must not depend on which runner asks.
+    expect(
+      detectInstallKind('file:///C:/Users/u/AppData/Local/npm-cache/_npx/2f3a/node_modules/x.js'),
+    ).toBe('npx');
+    expect(
+      detectInstallKind(
+        'C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\ai-usage-mcp\\dist\\x.js',
+      ),
+    ).toBe('global');
+    expect(
+      detectInstallKind('file:///C:/work/app/node_modules/ai-usage-mcp/dist/mcp/server.js'),
+    ).toBe('local');
+  });
 });
 
 describe('updateCommand', () => {
