@@ -6,13 +6,27 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # @vitest/coverage-v8 peer-depends on an EXACT vitest version, so bumping
+      # either one alone produces an uninstallable lockfile. They must move together.
+      vitest:
+        patterns: ['vitest', '@vitest/*']
       # One PR for routine dev-tooling bumps; runtime deps stay individual so
       # they get reviewed on their own.
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+        exclude-patterns: ['vitest', '@vitest/*']
+    ignore:
+      # @types/node tracks the MINIMUM supported runtime (engines.node >= 22),
+      # not the newest release. A newer major would type-check against APIs that
+      # do not exist on Node 22 and hide real breakage from users on it.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    groups:
+      github-actions:
+        patterns: ['*']

@@ -24,6 +24,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reported as unavailable, and every token class is broken out.
 - `repository`, `homepage`, `bugs` and `author` metadata, missing from 0.1.0.
 
+### Changed
+
+- Upgraded vitest and `@vitest/coverage-v8` to 4.x together. The v8 provider changed how it
+  accounts statements and branches between 2.x and 4.x, so the coverage thresholds were
+  recalibrated — no source changed.
+- Dependabot groups `vitest` with `@vitest/*`, because `@vitest/coverage-v8` peer-depends on
+  an exact `vitest` version and bumping either alone yields an uninstallable lockfile. Major
+  bumps of `@types/node` are ignored: it tracks the minimum supported runtime
+  (`engines.node >= 22`), not the newest release.
+
 ## [0.1.0] - 2026-09-01
 
 First release. Phase 1: two collectors, one normalized schema, local SQLite, five MCP tools
