@@ -12,7 +12,7 @@ A local-first MCP server that answers, from real data on your machine:
 
 Phase 1 supports two coding agents: **Claude Code** and **OpenCode**. It reads the data those
 clients already wrote to disk, normalises it into one schema, stores it in a local SQLite
-database, and exposes five MCP tools plus a debug CLI.
+database, and exposes seven MCP tools -- plus resources, prompts and a debug CLI.
 
 **It never fabricates a number.** If a source does not record something, it is reported as
 unavailable — not as zero.
@@ -135,6 +135,8 @@ Show my usage for this session.
 Which model consumed the most tokens?
 How much did Claude Code cost me today?
 Show all usage from the last 7 days.
+Which repository is my spend going to?
+Break my last 7 days down day by day.
 ```
 
 ## MCP tools
@@ -146,6 +148,31 @@ Show all usage from the last 7 days.
 | `model_usage`     | Per-model tokens and cost                                   |
 | `client_usage`    | Per-client (Claude Code vs OpenCode) tokens and cost        |
 | `recent_sessions` | Recent sessions with project, client, tokens, cost          |
+| `project_usage`   | Per-project tokens and cost, by the directory a turn ran in |
+| `daily_usage`     | Per-day tokens and cost, newest day first                   |
+
+Every period-based tool takes `projectPath` to narrow the report to one project.
+
+## Resources and prompts
+
+Two resources can be pulled into a conversation with an `@` mention, instead of asking for a
+tool call:
+
+| Resource                 | Contents                          |
+| ------------------------ | --------------------------------- |
+| `usage://today`          | Today's totals, split by client   |
+| `usage://session/latest` | The most recent session in detail |
+
+Three prompts appear as slash commands in a client that surfaces them:
+
+| Prompt                    | Asks                                                |
+| ------------------------- | --------------------------------------------------- |
+| `daily-review`            | What did I spend today, and on what                 |
+| `why-was-today-expensive` | Which model, session and project drove today's cost |
+| `project-cost`            | What one project has cost over a period             |
+
+Each prompt names the tools to call and carries the reported-vs-estimated cost rule with it,
+so a paraphrased summary cannot quietly merge the two cost bases.
 
 ## Debug CLI
 
@@ -157,13 +184,15 @@ ai-usage sync        # run the collectors
 ai-usage stats       # totals   (--today, --days N, --since/--until)
 ai-usage models      # per-model
 ai-usage clients     # per-client
+ai-usage projects    # per-project  (--limit N)
 ai-usage sessions    # recent sessions
 ai-usage session ID  # one session in detail
 ai-usage daily       # per-day breakdown
 ai-usage verify      # re-read the sources and diff them against the local database
 ```
 
-Add `--json` to any command for machine-readable output.
+Add `--json` to any command for machine-readable output, and `--project <path>` to any
+period-based command to restrict it to one project.
 
 `ai-usage stats --today` returns exactly what the `usage_summary` tool returns; a test in
 `tests/mcp/parity.test.ts` asserts they are byte-identical.

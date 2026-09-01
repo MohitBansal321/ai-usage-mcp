@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-01
+
+The MCP surface grows past period summaries. Usage can now be sliced by project, asked for
+day by day, pulled into a conversation as a resource or a slash command, and read one turn at
+a time. One correctness fix rides along: per-day buckets were UTC while the period filter was
+local, so evening turns east of Greenwich landed on the wrong day.
+
 ### Fixed
 
 - **Per-day totals were bucketed in UTC while the period filter used local midnight.** A turn made
@@ -42,6 +49,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since the first release and never read back, so no period could be re-priced: the two TTLs bill
   at 1.25x and 2x of the input rate.
 - The first direct tests for `UsageRepository`, previously only exercised through `UsageService`.
+- The README documents the two new tools, the resources and the prompts, and the `--project`
+  flag.
 
 ## [0.1.2] - 2026-09-01
 
@@ -157,7 +166,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MohitBansal321/ai-usage-mcp/releases/tag/v0.1.0
