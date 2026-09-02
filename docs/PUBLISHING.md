@@ -102,8 +102,85 @@ npm version patch        # or minor / major -- commits and tags if this is a git
 npm publish
 ```
 
-The version the MCP server advertises is read from `package.json` at runtime, so bumping the
-version is all that is needed — there is no constant to keep in sync.
+The version the MCP server advertises is read from `package.json` at runtime, so there is no
+constant in `src/` to keep in sync. `server.json` **is** a second place the version lives —
+see [Version agreement](#version-agreement) below.
+
+---
+
+## Publishing to the MCP registry
+
+The official MCP registry (`registry.modelcontextprotocol.io`) is what feeds PulseMCP, Glama,
+mcp.so and the other directories. Two files drive it:
+
+- `package.json` → `"mcpName": "io.github.MohitBansal321/ai-usage-mcp"`
+- `server.json` at the repo root — the registry entry itself.
+
+The `registry` job in `.github/workflows/release.yml` does the publish on a `v*` tag, using
+`mcp-publisher login github-oidc`. There is no secret: the OIDC token is exchanged for a
+registry JWT granting `io.github.<repository_owner>/*`, which is why the job needs
+`id-token: write`.
+
+### Ordering constraint: npm first, always
+
+**The registry verifies package ownership by downloading the published npm tarball and
+reading `mcpName` out of the `package.json` inside it.** It does not read this repository. So:
+
+1. A **new npm version must be published first**, and it must be a version whose tarball
+   already contains `mcpName`. Version 0.4.1 was published before `mcpName` existed, so the
+   first registry publish cannot happen until 0.4.2 (or later) is on npm.
+2. Only then can `mcp-publisher publish` succeed.
+
+That is exactly why the registry publish is a `needs: publish` job inside `release.yml`
+rather than a separate tag-triggered workflow — a second workflow would start in parallel
+with the npm publish and fail validation against a version npm is not serving yet. The job
+also polls `npm view` until the new version is visible, because npm's read path lags the
+write by a few seconds.
+
+### Version agreement
+
+`server.json` carries the version twice (`version` and `packages[0].version`) and both must
+equal `package.json`'s version. The release workflow fails fast if they drift, alongside the
+existing tag-vs-package.json check. So a version bump is a three-line edit:
+
+```bash
+npm version patch --no-git-tag-version          # package.json
+# then set the same version in server.json: .version and .packages[0].version
+node -e '
+  const fs=require("fs");
+  const v=require("./package.json").version;
+  const s=JSON.parse(fs.readFileSync("server.json","utf8"));
+  s.version=v; s.packages[0].version=v;
+  fs.writeFileSync("server.json", JSON.stringify(s,null,2)+"\n");
+'
+```
+
+### Namespace casing is significant
+
+The server name is `io.github.MohitBansal321/ai-usage-mcp` — matching the GitHub account's
+canonical casing exactly, **not** lowercased. GitHub OIDC grants
+`io.github.<repository_owner>/*` using the claim verbatim, and the registry's permission check
+is a case-sensitive `strings.HasPrefix`
+([`internal/auth/jwt.go`](https://github.com/modelcontextprotocol/registry/blob/main/internal/auth/jwt.go)).
+A lowercase `io.github.mohitbansal321/...` would be granted nothing and fail with a 403. This
+is a known open bug — [registry#689](https://github.com/modelcontextprotocol/registry/issues/689)
+— and the maintainers' guidance there is to match your account's casing.
+
+Because `mcpName` ships inside an immutable npm tarball, getting this wrong costs a whole npm
+version to correct. Do not "tidy" the casing.
+
+### Validating before you tag
+
+```bash
+curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+./mcp-publisher validate server.json
+```
+
+### Confirming it landed
+
+```bash
+curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.MohitBansal321/ai-usage-mcp"
+```
 
 ---
 
