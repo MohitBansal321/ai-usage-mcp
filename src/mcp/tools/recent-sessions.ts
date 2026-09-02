@@ -1,13 +1,20 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSessions } from '../../services/formatter.js';
-import { clientEnum, periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  clientEnum,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerRecentSessions(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'recent_sessions',
     {
-      title: 'Recent sessions',
+      ...readOnlyTool('Recent sessions'),
       description:
         'Most recently active sessions with project path, client, model(s), duration, ' +
         'token breakdown and cost. Use the returned session id with session_usage for detail.',

@@ -1,13 +1,20 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatProjects } from '../../services/formatter.js';
-import { clientEnum, periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  clientEnum,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerProjectUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'project_usage',
     {
-      title: 'Usage by project',
+      ...readOnlyTool('Usage by project'),
       description:
         'Per-project token usage and cost, highest token count first. A project is the working ' +
         'directory a turn ran in. Use this to answer "which repository is my spend going to". ' +

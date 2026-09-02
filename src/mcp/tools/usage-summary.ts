@@ -1,12 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSummary } from '../../services/formatter.js';
-import { clientEnum, periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  clientEnum,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerUsageSummary(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'usage_summary',
     {
-      title: 'Usage summary',
+      ...readOnlyTool('Usage summary'),
       description:
         'Total token usage and cost for a period, split by client (Claude Code, OpenCode). ' +
         'Tokens are broken out into input / output / cache-read / cache-write / reasoning, ' +

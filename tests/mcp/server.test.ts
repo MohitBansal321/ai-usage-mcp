@@ -126,6 +126,32 @@ describe('MCP server over stdio', () => {
     ]);
   });
 
+  it('annotates every tool as a read-only, closed-world reader', async () => {
+    const { tools } = await client.listTools();
+
+    // Asserted over the whole surface rather than a list of names, so a tool
+    // added later cannot ship without annotations: without them a client
+    // prompts for confirmation on every call, which for a reporting server
+    // that only reads local files is pure friction.
+    expect(tools).toHaveLength(7);
+
+    for (const tool of tools) {
+      expect(tool.annotations?.readOnlyHint, `${tool.name} readOnlyHint`).toBe(true);
+      expect(tool.annotations?.openWorldHint, `${tool.name} openWorldHint`).toBe(false);
+
+      // destructiveHint and idempotentHint are meaningful only when
+      // readOnlyHint is false, so they must stay absent.
+      expect(tool.annotations?.destructiveHint, `${tool.name} destructiveHint`).toBeUndefined();
+      expect(tool.annotations?.idempotentHint, `${tool.name} idempotentHint`).toBeUndefined();
+
+      // Display-name precedence is title -> annotations.title -> name. Both are
+      // populated so no client revision has to fall back to the snake_case name.
+      expect(tool.title, `${tool.name} title`).toBeTruthy();
+      expect(tool.annotations?.title, `${tool.name} annotations.title`).toBe(tool.title);
+      expect(tool.title, `${tool.name} title`).not.toBe(tool.name);
+    }
+  });
+
   it('exposes resources the user can pull in with an @ mention', async () => {
     const { resources } = await client.listResources();
     expect(resources.map((r) => r.uri).sort()).toEqual([

@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSessionDetail } from '../../services/formatter.js';
-import { errorResult, textResult, type ToolContext } from './shared.js';
+import { errorResult, readOnlyTool, textResult, type ToolContext } from './shared.js';
 
 export function registerSessionUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'session_usage',
     {
-      title: 'Session usage',
+      ...readOnlyTool('Session usage'),
       description:
         'Usage for one session: client, model(s), duration, token breakdown and cost. ' +
         'Accepts a full session id or an unambiguous fragment of one. Subagent turns are ' +
