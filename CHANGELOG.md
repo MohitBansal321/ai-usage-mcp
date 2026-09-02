@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-02
+
+No behaviour change for anyone running this. A path heuristic could not be exercised on the
+platform half of it exists for.
+
+### Fixed
+
+- `detectInstallKind` classifies the same on every host. `fileURLToPath` is platform-specific
+  about what it accepts -- on Windows a POSIX-style `file:///home/...` has no drive letter, so
+  it throws and the fallback answered `unknown`. Real installs were never affected, because
+  `import.meta.url` on Windows is `file:///C:/...`, which parses fine; what broke was the test
+  suite on a Windows runner, which left the `%APPDATA%/npm/node_modules` branch -- the one that
+  exists _for_ Windows -- unassertable there. It now falls back to the URL's own decoded
+  pathname and normalises a literal backslash as well as `path.sep`, and the suite asserts the
+  Windows-shaped forms alongside the POSIX ones on every runner. (#21)
+
 ## [0.4.0] - 2026-09-01
 
 0.3.0 taught a stale install to say so, in the CLI. This says it where the people who never
@@ -229,7 +245,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.1.2...v0.2.0
