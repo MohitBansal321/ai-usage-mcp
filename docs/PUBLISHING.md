@@ -204,8 +204,17 @@ npm publish --tag next          # installable only via ai-usage-mcp@next
 
 ## Why installs won't break for users
 
-The one native dependency, `better-sqlite3` v13, ships **prebuilt N-API binaries inside its
-own npm tarball** for 8 platforms:
+Storage uses Node's built-in **`node:sqlite`**, so a normal install compiles nothing and
+needs no toolchain, no Python and no particular npm. `better-sqlite3` is retained only as an
+`optionalDependencies` fallback for hosts whose Node predates 22.13.0 (where `node:sqlite` is
+still behind `--experimental-sqlite` and has no `iterate()`); npm skips it silently when it
+cannot be built. `ai-usage status` prints which driver is live.
+
+The rest of this section is the history of why that changed, kept because it explains the
+constraint.
+
+`better-sqlite3` v13 ships **prebuilt N-API binaries inside its own npm tarball** for 8
+platforms:
 
 ```text
 darwin-arm64  darwin-x64        (macOS Apple Silicon + Intel)
@@ -226,13 +235,13 @@ macOS and Linux does not, and npm 11 does not on any platform. The bundled Windo
 perfectly usable — installing with `--ignore-scripts` on Windows + Node 22 loads and runs it
 correctly. So this is an npm-version behaviour, not a packaging defect.
 
-That is why `package.json` pins `better-sqlite3: ^13` and declares
-`engines: { node: '>=22', npm: '>=11' }`, and why CI raises npm to 11 on every matrix leg
-before installing.
+That used to be why `package.json` declared `engines.npm >= 11` and why CI raised npm to 11 on
+every matrix leg.
 
-If supporting npm 10 on Windows ever becomes a requirement, the fix is not to downgrade the
-dependency (v11 has no Node 24 binaries) — it is to drop the native dependency entirely and
-use Node's built-in `node:sqlite`, which needs no binary at all.
+**That is now fixed the way this section recommended:** the native dependency is no longer
+required. `engines.npm` is gone, CI no longer touches the runner's npm — so an npm 10 Windows
+install is now a genuine regression test — and `engines.node` is `>=22.13.0`, the release that
+unflagged `node:sqlite` and added `StatementSync.prototype.iterate()`.
 
 If you later need to support Node 20, do not downgrade the dependency — switch the storage
 layer to Node's built-in `node:sqlite` instead.

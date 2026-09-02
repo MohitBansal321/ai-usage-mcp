@@ -1,4 +1,4 @@
-import type { Database } from 'better-sqlite3';
+import type { SqliteDatabase } from '../driver.js';
 
 export interface SyncState {
   source: string;
@@ -8,7 +8,7 @@ export interface SyncState {
 }
 
 export class SyncRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: SqliteDatabase) {}
 
   get(source: string): SyncState | undefined {
     const row = this.db

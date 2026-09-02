@@ -1,4 +1,4 @@
-import type { Database } from 'better-sqlite3';
+import { sqliteDriver, type SqliteDatabase, type SqliteDriverName } from '../db/driver.js';
 import { openDatabase, resolveDatabasePath, schemaVersion } from '../db/database.js';
 import { SyncRepository, type SyncState } from '../db/repositories/sync-repository.js';
 import {
@@ -44,6 +44,8 @@ export interface CollectorStatus {
 
 export interface StatusReport {
   databasePath: string;
+  /** Which SQLite implementation produced these numbers. */
+  sqliteDriver: SqliteDriverName;
   schemaVersion: number;
   totalRecords: number;
   collectors: CollectorStatus[];
@@ -69,7 +71,7 @@ export class UsageService {
   private readonly collectors: UsageCollector[];
 
   private constructor(
-    private readonly db: Database,
+    private readonly db: SqliteDatabase,
     private readonly dbPath: string,
   ) {
     this.costService = new CostService();
@@ -134,6 +136,7 @@ export class UsageService {
 
     return {
       databasePath: this.dbPath,
+      sqliteDriver: sqliteDriver(),
       schemaVersion: schemaVersion(this.db),
       totalRecords: this.usageRepo.recordCount(),
       collectors,

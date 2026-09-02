@@ -47,20 +47,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      # npm 10 on Windows ignores better-sqlite3's `gypfile: false` and runs
-      # `node-gyp rebuild` even though a working prebuilt binary is bundled --
-      # then fails if no toolchain is present. npm 11 does not. The prebuild
-      # itself is fine on that platform (verified: installing with
-      # --ignore-scripts loads and runs it), so this is purely an npm-version
-      # issue, and package.json declares `engines.npm >= 11` accordingly.
-      - name: Ensure npm 11+ (matches engines.npm)
-        shell: bash
-        run: |
-          major="$(npm -v | cut -d. -f1)"
-          if [ "$major" -lt 11 ]; then
-            echo "npm $(npm -v) is below the supported minimum; upgrading"
-            npm install -g npm@11
-          fi
+      # Deliberately does NOT force a newer npm. Storage uses the built-in
+      # `node:sqlite`, and `better-sqlite3` is optional, so whatever npm the
+      # runner ships with must be able to install this package -- including
+      # npm 10 on Windows, which used to fail here inside node-gyp. Leaving
+      # the runner's npm alone is what keeps that regression caught.
       - name: Toolchain versions
         shell: bash
         run: |

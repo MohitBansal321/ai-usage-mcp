@@ -1,4 +1,4 @@
-import BetterSqlite3 from 'better-sqlite3';
+import { openSqlite } from '../db/driver.js';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { UsageRepository } from '../db/repositories/usage-repository.js';
@@ -145,7 +145,7 @@ export class VerifyService {
     const session = { ...ZERO, cost: 0, records: 0 };
 
     for (const store of targets) {
-      const db = new BetterSqlite3(store.path, { readonly: true });
+      const db = openSqlite(store.path, { readonly: true });
       try {
         for (const row of db.prepare('SELECT data FROM message').iterate() as IterableIterator<{
           data: string;

@@ -23,9 +23,12 @@ unavailable — not as zero.
 
 ## Install
 
-Requires **Node.js 22+** and **npm 11+**. No compiler or build tools needed — the one native
-dependency ships prebuilt binaries for macOS, Linux (glibc and musl/Alpine) and Windows, on
-x64 and arm64.
+Requires **Node.js 22.13+**. No compiler, build tools or particular npm version needed:
+storage uses Node's built-in `node:sqlite`, which is unflagged from 22.13.0 onward. There is
+no mandatory native dependency.
+
+<sub>`better-sqlite3` remains an <em>optional</em> fallback for hosts whose Node predates
+that. It is never required — if it cannot be built, npm skips it and the server still runs.</sub>
 
 ### Claude Code
 
@@ -118,10 +121,11 @@ Or run it without installing:
 npx -y -p ai-usage-mcp ai-usage stats --today
 ```
 
-> **Windows + Node 22:** run `npm install -g npm@11` first. npm 10 on Windows ignores a
-> dependency's `gypfile: false` flag and tries to compile it from source even though a working
-> prebuilt binary is bundled, and the install then fails without Visual Studio Build Tools.
-> npm 11 uses the prebuild; so does npm 10 on macOS and Linux. Node 24 ships npm 11 already.
+> **Windows:** no longer needs a particular npm. The `node-gyp` failure that used to break
+> this install came from the native `better-sqlite3` dependency, which is now optional and
+> unused on Node 22.13+. If npm still reports a build failure for it, that message is a
+> skipped optional dependency, not a failed install — `ai-usage status` will show
+> `SQLite driver: node:sqlite` and everything works.
 
 Verified against Claude Code **2.1.251** and OpenCode **1.18.25**.
 
@@ -386,6 +390,7 @@ It prints the reason and every path it looked at. Point it at the right place:
 | `AI_USAGE_PRICING_FILE`    | Pricing override file                                                   |
 | `AI_USAGE_FRESHNESS_MS`    | How long a sync stays fresh before a tool call re-syncs (default 30000) |
 | `AI_USAGE_NO_UPDATE_CHECK` | Set to `1` to stop `status` checking npm for a newer version            |
+| `AI_USAGE_SQLITE_DRIVER`   | Force `node:sqlite` or `better-sqlite3`; unset picks the best available |
 
 ### Numbers look lower than `opencode stats`
 
@@ -442,19 +447,21 @@ config at absolute paths to bypass PATH lookup entirely:
 Get both paths with `command -v node` and `npm root -g` after `npm install -g ai-usage-mcp`.
 This pins the Node version, so prefer the `npx` form unless you need it.
 
-### Install fails on Windows with `node-gyp rebuild` errors
+### `node-gyp rebuild` errors during install
 
-You are on npm 10. It ignores the `gypfile: false` flag on `better-sqlite3` and tries to
-compile it despite a working prebuilt binary being bundled. Fix it with:
+On Node 22.13+ this no longer fails the install. `better-sqlite3` is an **optional**
+dependency, so npm reports the build failure and carries on; storage falls back to Node's
+built-in `node:sqlite`. Confirm with:
 
 ```bash
-npm install -g npm@11
-npm install -g ai-usage-mcp
+ai-usage status        # expect: SQLite driver: node:sqlite
 ```
 
-The prebuilt binary itself is fine on Windows — verified by installing with `--ignore-scripts`
-and running it. This is purely an npm-version behaviour, which is why `engines.npm` requires
-11 or newer. macOS and Linux are unaffected on both npm 10 and 11.
+If that line instead reads `better-sqlite3`, your Node is older than 22.13.0 and the native
+module is genuinely required — upgrade Node, which is the simplest fix. Historically this bit
+Windows on npm 10, which ignores `better-sqlite3`'s `gypfile: false` flag and compiles from
+source even though a usable prebuilt binary is bundled; `npm install -g npm@11` fixed that,
+and remains the fix if you are pinned to an older Node and need the fallback to build.
 
 ### A model shows cost as unavailable
 

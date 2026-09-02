@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Database } from 'better-sqlite3';
+import type { SqliteDatabase } from '../../src/db/driver.js';
 import { openDatabase } from '../../src/db/database.js';
 import {
   TURNS_DEFAULT_LIMIT,
@@ -46,7 +46,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
 
 describe('UsageRepository', () => {
   let dir: string;
-  let db: Database;
+  let db: SqliteDatabase;
   let repo: UsageRepository;
 
   beforeEach(() => {
