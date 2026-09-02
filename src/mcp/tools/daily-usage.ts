@@ -1,12 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatDaily } from '../../services/formatter.js';
-import { clientEnum, periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  clientEnum,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerDailyUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'daily_usage',
     {
-      title: 'Usage by day',
+      ...readOnlyTool('Usage by day'),
       description:
         'Per-day token usage and cost, newest day first. Use this for "how much did I use ' +
         'yesterday" or to see a trend over a period. Days are local calendar days, so they ' +

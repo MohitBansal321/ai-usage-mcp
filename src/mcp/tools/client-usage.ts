@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatClients } from '../../services/formatter.js';
-import { periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import { periodShape, readOnlyTool, textResult, toQuery, type ToolContext } from './shared.js';
 
 export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'client_usage',
     {
-      title: 'Usage by client',
+      ...readOnlyTool('Usage by client'),
       description:
         'Token usage and cost per coding agent (Claude Code vs OpenCode). ' +
         'Note that the two cost figures are not comparable as a single number: OpenCode ' +

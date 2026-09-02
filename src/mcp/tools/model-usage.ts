@@ -1,13 +1,20 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatModels } from '../../services/formatter.js';
-import { clientEnum, periodShape, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  clientEnum,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerModelUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'model_usage',
     {
-      title: 'Usage by model',
+      ...readOnlyTool('Usage by model'),
       description:
         'Per-model token usage and cost, highest token count first. Use this to answer ' +
         '"which model consumed the most tokens". Cost is labelled reported vs estimated per model.',
