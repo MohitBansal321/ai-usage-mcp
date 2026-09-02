@@ -51,6 +51,23 @@ jobs:
           fi
           echo "tag and package.json agree on $PKG"
 
+      - name: Confirm server.json agrees with package.json
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          SRV=$(node -p "require('./server.json').version")
+          PKGV=$(node -p "require('./server.json').packages[0].version")
+          MCP_PKG=$(node -p "require('./package.json').mcpName")
+          MCP_SRV=$(node -p "require('./server.json').name")
+          if [ "$SRV" != "$PKG" ] || [ "$PKGV" != "$PKG" ]; then
+            echo "::error::server.json version ($SRV) / packages[0].version ($PKGV) do not match package.json ($PKG)"
+            exit 1
+          fi
+          if [ "$MCP_PKG" != "$MCP_SRV" ]; then
+            echo "::error::package.json mcpName ($MCP_PKG) does not match server.json name ($MCP_SRV); the registry rejects a mismatch"
+            exit 1
+          fi
+          echo "server.json and package.json agree on $PKG / $MCP_SRV"
+
       - name: Skip if this version is already on the registry
         id: check
         run: |
@@ -102,3 +119,53 @@ jobs:
       - name: Dry run
         if: inputs.dry-run == true
         run: npm pack --dry-run
+
+  registry:
+    name: Publish to the MCP registry
+    needs: publish
+    # Only for a real tagged release. The registry reads `mcpName` out of the
+    # published npm tarball, so this must run strictly after the npm publish
+    # job -- a separate tag-triggered workflow would race it and fail
+    # validation on a version npm has not served yet.
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.dry-run != true
+    runs-on: ubuntu-latest
+    permissions:
+      # github-oidc login exchanges this token for a registry JWT; the grant it
+      # returns is io.github.<repository_owner>/*, so no secret is involved.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate server.json
+
+      # npm needs a moment before a just-published version is readable from the
+      # registry's side; without this the ownership check can 404 on the tarball.
+      - name: Wait for the new version to be visible on npm
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          for i in $(seq 1 20); do
+            if npm view "ai-usage-mcp@$PKG" version >/dev/null 2>&1; then
+              echo "ai-usage-mcp@$PKG is live on npm"
+              exit 0
+            fi
+            echo "attempt $i: ai-usage-mcp@$PKG not visible yet; retrying in 15s"
+            sleep 15
+          done
+          echo "::error::ai-usage-mcp@$PKG never became visible on npm"
+          exit 1
+
+      - name: Authenticate to the MCP registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
