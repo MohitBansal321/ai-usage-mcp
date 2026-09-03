@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-03
+
+Nothing about how usage is counted has changed. This release fixes the feature that was
+supposed to tell you a release like this one exists.
+
+The update notice has never worked. It shipped in 0.4.0 and has been silent in every release
+since, so no MCP user has ever been told their install was stale — which is the awkward part
+of shipping the fix: the people who most need it are the ones who will not hear about it. The
+design was fine; a single wrong header meant the registry lookup underneath it always failed,
+and a failed lookup is indistinguishable from "you are up to date".
+
 ### Fixed
 
 - **The update notice never reached anyone.** The registry lookup asked `/ai-usage-mcp/latest`
@@ -321,7 +332,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...v0.4.0
