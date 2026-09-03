@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   checkForUpdate,
   detectInstallKind,
+  fetchLatestFromRegistry,
   formatUpdateNotice,
   isNewer,
   readCachedUpdate,
@@ -315,5 +316,100 @@ describe('readCachedUpdate', () => {
       }),
     ).toBeNull();
     expect(readCachedUpdate({ current: '0.2.0', cachePath: path, env: { CI: 'true' } })).toBeNull();
+  });
+});
+
+/**
+ * The registry lookup itself, which every other test in this file stubs out.
+ *
+ * It shipped from 0.4.0 asking `/ai-usage-mcp/latest` for the abbreviated
+ * `vnd.npm.install-v1+json` metadata type -- a combination some registry edges
+ * answer 406 with an empty body. `if (!res.ok) return null` turned that into
+ * "no update available", so an MCP user could be told nothing at all.
+ */
+describe('fetchLatestFromRegistry', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetch(...responses: Response[]) {
+    const calls: RequestInit[] = [];
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return Promise.resolve(responses[Math.min(calls.length - 1, responses.length - 1)]!);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { calls, fetchMock };
+  }
+
+  const ok = (version: unknown) =>
+    new Response(JSON.stringify({ name: 'ai-usage-mcp', version }), { status: 200 });
+
+  it('returns the published version', async () => {
+    stubFetch(ok('0.5.0'));
+    await expect(fetchLatestFromRegistry()).resolves.toBe('0.5.0');
+  });
+
+  it('does not ask for the abbreviated type that makes /latest answer 406', async () => {
+    const { calls } = stubFetch(ok('0.5.0'));
+    await fetchLatestFromRegistry();
+
+    const accept = new Headers(calls[0]!.headers).get('accept');
+    expect(accept).toBe('application/json');
+    expect(accept).not.toContain('vnd.npm.install-v1');
+  });
+
+  it('retries a transient 406 rather than reporting no update', async () => {
+    const { fetchMock } = stubFetch(new Response('', { status: 406 }), ok('0.5.0'));
+
+    await expect(fetchLatestFromRegistry()).resolves.toBe('0.5.0');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after a bounded number of attempts', async () => {
+    const { fetchMock } = stubFetch(new Response('', { status: 503 }));
+
+    await expect(fetchLatestFromRegistry()).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers null rather than throwing when the network fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('ENOTFOUND'))),
+    );
+    await expect(fetchLatestFromRegistry()).resolves.toBeNull();
+  });
+
+  it('answers null when the body carries no version string', async () => {
+    stubFetch(ok(undefined));
+    await expect(fetchLatestFromRegistry()).resolves.toBeNull();
+
+    vi.unstubAllGlobals();
+    stubFetch(ok(42));
+    await expect(fetchLatestFromRegistry()).resolves.toBeNull();
+  });
+
+  it('answers null on a malformed body', async () => {
+    stubFetch(new Response('not json', { status: 200 }));
+    await expect(fetchLatestFromRegistry()).resolves.toBeNull();
+  });
+
+  it('is what checkForUpdate uses when no fetcher is injected', async () => {
+    stubFetch(ok('0.9.9'));
+
+    const info = await checkForUpdate({
+      current: '0.5.0',
+      cachePath: cachePath(),
+      env: noEnv,
+      installKind: 'npx',
+    });
+
+    expect(info).toEqual({
+      current: '0.5.0',
+      latest: '0.9.9',
+      isOutdated: true,
+      installKind: 'npx',
+    });
   });
 });

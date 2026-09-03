@@ -7,6 +7,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The update notice never reached anyone.** The registry lookup asked `/ai-usage-mcp/latest`
+  for the abbreviated `application/vnd.npm.install-v1+json` metadata type, which is only
+  defined for the packument endpoint. On `/latest` the registry answers `406` with an empty
+  body, and `if (!res.ok) return null` reported that as "no update available" — so both
+  notice channels stayed silent and the cache under the config directory was never even
+  created. How often the 406 comes back varies by edge and by day (measured at both 0% and
+  100% of requests, hours apart on one machine), which is why it survived review. It now asks
+  for `application/json`: the same ~3 KB manifest, against a content type the endpoint
+  actually serves. Affects every release since 0.4.0, where the notice was introduced.
+- The lookup now retries once inside the existing 1500 ms budget, sharing one deadline across
+  both attempts so a retry cannot double the wait. This is not what fixes the above — two
+  attempts against a 406 both fail — it covers genuinely transient failures, which a
+  once-per-process check would otherwise turn into silence for the life of a long-running
+  MCP server.
+- `fetchLatestFromRegistry` is now covered by tests. Every existing test injected the
+  registry answer through `fetchLatest`, so the one code path that runs in production was
+  the only one nothing exercised — which is why the above went unnoticed.
+
 ## [0.5.0] - 2026-09-03
 
 Nothing about how usage is counted has changed. This release is about the two ways the project
