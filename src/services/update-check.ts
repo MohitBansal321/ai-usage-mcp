@@ -8,6 +8,12 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** A status report must not hang on a slow or unreachable registry. */
 const TIMEOUT_MS = 1500;
 const REGISTRY_URL = 'https://registry.npmjs.org/ai-usage-mcp/latest';
+/**
+ * Two tries, sharing one deadline. The registry answers this endpoint in tens of
+ * milliseconds, so a second attempt costs nothing when the first one was a blip
+ * -- and the deadline still caps the whole thing at `TIMEOUT_MS`.
+ */
+const ATTEMPTS = 2;
 
 /**
  * How this build was launched. It decides what the fix actually is, which is not
@@ -75,22 +81,45 @@ function writeCache(path: string, latest: string, now: number): void {
   }
 }
 
-async function fetchLatestFromRegistry(): Promise<string | null> {
-  try {
-    const res = await fetch(REGISTRY_URL, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: {
-        // Abbreviated metadata: a fraction of the full packument.
-        accept: 'application/vnd.npm.install-v1+json',
-      },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { version?: unknown };
-    return typeof body.version === 'string' ? body.version : null;
-  } catch {
-    // Offline, DNS failure, timeout, malformed JSON -- all the same answer.
-    return null;
+/**
+ * The one function in this file that talks to the network.
+ *
+ * Exported for the tests: every other test in the suite injects `fetchLatest`,
+ * which left this -- the only code path that runs in production -- unexercised.
+ *
+ * `accept: application/json` on purpose, and it is the whole bug fix. The
+ * abbreviated `application/vnd.npm.install-v1+json` type is only defined for
+ * the packument endpoint (`/<pkg>`); on `/<pkg>/latest` the registry answers
+ * 406 with an empty body, which `!res.ok` then reported as "no update
+ * available". How often it does that varies by edge and by day -- measured at
+ * both 0% and 100% of requests hours apart from one machine -- so it reads as a
+ * flake but can silently disable the notice outright, which is what it did for
+ * every release from 0.4.0 on. It also buys nothing here: `/latest` is a single
+ * ~3 KB manifest, where the abbreviated packument is ~9 KB.
+ *
+ * The retry below is deliberately not the fix -- two attempts against a 406
+ * both fail. It only covers genuinely transient trouble.
+ */
+export async function fetchLatestFromRegistry(): Promise<string | null> {
+  // One deadline for all attempts, so a retry can never double the wait.
+  const deadline = AbortSignal.timeout(TIMEOUT_MS);
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(REGISTRY_URL, {
+        signal: deadline,
+        headers: { accept: 'application/json' },
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { version?: unknown };
+        return typeof body.version === 'string' ? body.version : null;
+      }
+      // A 4xx/5xx may be this edge, this moment: worth one more try.
+    } catch {
+      // Offline, DNS failure, timeout, malformed JSON -- all the same answer.
+    }
+    if (deadline.aborted) break;
   }
+  return null;
 }
 
 /**
