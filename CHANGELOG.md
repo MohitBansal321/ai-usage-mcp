@@ -7,6 +7,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-03
+
+Nothing about how usage is counted has changed. This release is about the two ways the project
+was failing people before it got to count anything: it would not install on a common Windows
+setup, and it could not be found.
+
+The install failure was the worst of the two, because of _where_ it failed. `better-sqlite3` is
+a native addon, and npm 10 on Windows ignores its `gypfile: false` and compiles from source
+anyway, which dies without Visual Studio Build Tools. That happened inside `npx`, so the user
+never reached the troubleshooting section that explained the fix.
+
+### Changed
+
+- **Storage uses Node's built-in `node:sqlite`, and nothing needs compiling.** `better-sqlite3`
+  is now an `optionalDependencies` fallback, so a failed native build is a warning npm carries
+  on from rather than an install that stops. Confirmed on the configuration that used to fail:
+  Windows with npm 10.9.8 now installs cleanly and runs on the built-in driver.
+- **`engines.node` is `>=22.13.0`**, up from `>=22.0.0`. That is the release where `node:sqlite`
+  came out from behind `--experimental-sqlite` and where `StatementSync.prototype.iterate()`
+  landed -- the same release, so it is one boundary rather than two. Below it the native module
+  would be mandatory again, which would defeat the point. Node 22.0-22.12 are no longer
+  supported; every later 22.x, and 24.x, are.
+- **`engines.npm` is gone.** It only ever existed to force an npm that avoided the node-gyp
+  bug. CI no longer upgrades the runner's npm either, which turns an npm 10 Windows install
+  into a standing regression test instead of a configuration the project stepped around.
+- Every SQLite handle now comes from `openSqlite()` in `src/db/driver.ts`, and no other module
+  may import a driver directly. `node:sqlite` has no `.pragma()` or `.transaction()`, so the
+  driver supplies both, nesting transactions via savepoints the way better-sqlite3 does.
+
+  Your existing `usage.db` is untouched and needs no migration -- the file format belongs to
+  SQLite, not to the binding. `ai-usage verify` reports a zero delta through either driver,
+  with byte-identical figures.
+
+### Added
+
+- **The package can be listed in the official MCP registry**, which is what feeds PulseMCP,
+  Glama, mcp.so and similar directories. Adds `mcpName`, a root `server.json` validated
+  against the registry's current schema, and a `registry` job that publishes on a tag using
+  GitHub OIDC -- no secret involved. This is the first release whose npm tarball carries
+  `mcpName`, which is what the registry reads to verify ownership; 0.4.1's predates it.
+- **All seven tools declare themselves read-only**, so a client can stop asking permission on
+  every call. `readOnlyHint: true` plus `openWorldHint: false`, the latter because the server
+  makes no network calls at all. The existing human-readable titles are now also sent as
+  `annotations.title`, since the spec's display-name precedence is
+  `title` -> `annotations.title` -> `name` and a client written against an earlier revision
+  would otherwise show the snake_case tool name.
+- `ai-usage status` reports which SQLite driver produced the numbers, and
+  `AI_USAGE_SQLITE_DRIVER` forces one -- which is how the fallback stays tested on a Node that
+  does not need it.
+
+### Fixed
+
+- Install no longer fails with `node-gyp rebuild` errors on Windows with npm 10. The README
+  and troubleshooting notes about it are reworded to apply to the optional fallback rather
+  than deleted, because the fallback still exists. (#27)
+
 ## [0.4.1] - 2026-09-02
 
 No behaviour change for anyone running this. A path heuristic could not be exercised on the
@@ -245,7 +301,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.2.0...v0.3.0

@@ -127,8 +127,9 @@ registry JWT granting `io.github.<repository_owner>/*`, which is why the job nee
 reading `mcpName` out of the `package.json` inside it.** It does not read this repository. So:
 
 1. A **new npm version must be published first**, and it must be a version whose tarball
-   already contains `mcpName`. Version 0.4.1 was published before `mcpName` existed, so the
-   first registry publish cannot happen until 0.4.2 (or later) is on npm.
+   already contains `mcpName`. Version 0.4.1 was published before `mcpName` existed, so
+   **0.5.0 is the first release the registry can accept** -- its tarball is the first to
+   carry `mcpName`.
 2. Only then can `mcp-publisher publish` succeed.
 
 That is exactly why the registry publish is a `needs: publish` job inside `release.yml`

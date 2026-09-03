@@ -3,7 +3,7 @@
   "name": "io.github.MohitBansal321/ai-usage-mcp",
   "title": "AI Usage",
   "description": "Reports real token usage and cost from Claude Code and OpenCode data. Nothing leaves your machine.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "websiteUrl": "https://github.com/MohitBansal321/ai-usage-mcp#readme",
   "repository": {
     "url": "https://github.com/MohitBansal321/ai-usage-mcp",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "ai-usage-mcp",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       }
