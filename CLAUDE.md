@@ -73,6 +73,13 @@ Data flow:
   value a source does not report is `undefined` and surfaces as _unavailable_, never as `0`.
   `id` is derived deterministically from source identifiers so re-sync is idempotent
   (`upsertMany`).
+- **Store** — every SQLite handle comes from `openSqlite()` in
+  [src/db/driver.ts](src/db/driver.ts), which prefers Node's built-in `node:sqlite` and falls
+  back to the optional `better-sqlite3`. **No other module may import a SQLite driver
+  directly** — that is what keeps the fallback honest, and `tests/db/driver.test.ts` asserts
+  the two drivers agree on a file either one wrote. `node:sqlite` has no `.pragma()` or
+  `.transaction()`, so the driver supplies both (transactions nest via savepoints, matching
+  better-sqlite3).
 - **Store** — `usage_records` + `sync_state`, via append-only migrations in
   [src/db/migrations/index.ts](src/db/migrations/index.ts) (add a new `{version, name, up}`
   entry; never edit an applied one). Our DB path is deliberately homedir-based, _not_

@@ -1,5 +1,4 @@
-import BetterSqlite3 from 'better-sqlite3';
-import type { Database } from 'better-sqlite3';
+import { openSqlite, type SqliteDatabase } from '../../db/driver.js';
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -237,7 +236,7 @@ export class OpenCodeCollector implements UsageCollector {
 }
 
 interface OpenedDb {
-  db: Database;
+  db: SqliteDatabase;
   close(): void;
 }
 
@@ -252,7 +251,7 @@ interface OpenedDb {
  */
 function openReadOnly(path: string, notes: string[]): OpenedDb {
   try {
-    const db = new BetterSqlite3(path, { readonly: true });
+    const db = openSqlite(path, { readonly: true });
     // Touch the schema so a failure surfaces here rather than mid-iteration.
     db.prepare('SELECT 1 FROM session LIMIT 1').get();
     return { db, close: () => db.close() };
@@ -269,7 +268,7 @@ function openReadOnly(path: string, notes: string[]): OpenedDb {
     const src = `${path}${suffix}`;
     if (existsSync(src)) copyFileSync(src, `${target}${suffix}`);
   }
-  const db = new BetterSqlite3(target, { readonly: true });
+  const db = openSqlite(target, { readonly: true });
   return {
     db,
     close: () => {

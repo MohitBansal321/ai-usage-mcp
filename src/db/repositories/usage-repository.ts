@@ -1,4 +1,4 @@
-import type { Database, Statement } from 'better-sqlite3';
+import type { SqliteDatabase, SqliteStatement } from '../driver.js';
 import type {
   ClientId,
   CostTotals,
@@ -187,9 +187,9 @@ function toAggregate(raw: RawAgg | undefined): AggregateRow {
 }
 
 export class UsageRepository {
-  private readonly upsertStmt: Statement;
+  private readonly upsertStmt: SqliteStatement;
 
-  constructor(private readonly db: Database) {
+  constructor(private readonly db: SqliteDatabase) {
     this.upsertStmt = db.prepare(`
       INSERT INTO usage_records (
         id, client, provider, model, session_id, project_path, timestamp,

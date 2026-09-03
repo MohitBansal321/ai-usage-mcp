@@ -268,6 +268,7 @@ describe('formatStatus', () => {
   const status = {
     databasePath: '/tmp/ai-usage.db',
     schemaVersion: 3,
+    sqliteDriver: 'node:sqlite' as const,
     totalRecords: 12,
     collectors: [],
     pricing: { version: '2026-06-24', provenance: 'built-in' },

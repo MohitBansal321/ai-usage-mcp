@@ -1,9 +1,9 @@
-import type { Database } from 'better-sqlite3';
+import type { SqliteDatabase } from '../driver.js';
 
 export interface Migration {
   version: number;
   name: string;
-  up(db: Database): void;
+  up(db: SqliteDatabase): void;
 }
 
 export const migrations: Migration[] = [

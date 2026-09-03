@@ -305,6 +305,7 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
   out.push('');
   out.push(`Version:        ${update?.current ?? VERSION}`);
   out.push(`Database:       ${status.databasePath}`);
+  out.push(`SQLite driver:  ${status.sqliteDriver}`);
   out.push(`Schema version: ${status.schemaVersion}`);
   out.push(`Total records:  ${int(status.totalRecords)}`);
   out.push(`Pricing table:  ${status.pricing.version}  (${status.pricing.provenance})`);

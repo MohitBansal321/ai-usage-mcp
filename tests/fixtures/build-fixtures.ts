@@ -1,4 +1,4 @@
-import BetterSqlite3 from 'better-sqlite3';
+import { openSqlite } from '../../src/db/driver.js';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +36,7 @@ export function buildOpenCodeDb(
   },
 ): string {
   const path = join(dir, 'opencode.db');
-  const db = new BetterSqlite3(path);
+  const db = openSqlite(path);
   db.exec(`
     CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL, time_created INTEGER, time_updated INTEGER);
     CREATE TABLE session (

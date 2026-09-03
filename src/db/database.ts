@@ -1,9 +1,8 @@
-import BetterSqlite3 from 'better-sqlite3';
-import type { Database } from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { migrations } from './migrations/index.js';
+import { openSqlite, type SqliteDatabase } from './driver.js';
 
 /**
  * Resolves where *our* database lives.
@@ -25,12 +24,12 @@ export interface OpenDatabaseOptions {
   readonly?: boolean;
 }
 
-export function openDatabase(options: OpenDatabaseOptions = {}): Database {
+export function openDatabase(options: OpenDatabaseOptions = {}): SqliteDatabase {
   const path = options.path ?? resolveDatabasePath();
   if (path !== ':memory:' && !options.readonly) {
     mkdirSync(dirname(path), { recursive: true });
   }
-  const db = new BetterSqlite3(path, options.readonly ? { readonly: true } : {});
+  const db = openSqlite(path, options.readonly ? { readonly: true } : {});
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
@@ -38,7 +37,7 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database {
   return db;
 }
 
-export function migrate(db: Database): void {
+export function migrate(db: SqliteDatabase): void {
   db.exec(
     'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
   );
@@ -60,7 +59,7 @@ export function migrate(db: Database): void {
   }
 }
 
-export function schemaVersion(db: Database): number {
+export function schemaVersion(db: SqliteDatabase): number {
   const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as
     { v: number | null } | undefined;
   return row?.v ?? 0;
