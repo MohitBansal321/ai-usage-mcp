@@ -8,7 +8,32 @@
 [![node](https://img.shields.io/node/v/ai-usage-mcp?logo=node.js&color=5fa04e)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
 
-A local-first MCP server that answers, from real data on your machine:
+**Whatever is telling you what your coding agent costs is probably inflating it.** Claude Code
+writes one JSONL line _per content block_, and every line repeats the same `usage` object with a
+cumulative `output_tokens`. Summing those lines — the obvious thing to do, and what naive tools
+do — inflated every figure by **2.15× to 3.05×** on the development machine: 1.79B cache-read
+tokens claimed where the truth was 800M.
+
+Cache tokens are also where the money actually is. Cache-read outweighed input by roughly
+**33,000×** (800,839,432 vs 24,381), so any tool that blends token classes into a single "total"
+has told you nothing you can act on.
+
+This one reads the same files, deduplicates on `requestId` + `message.id`, and then **proves
+it**: `ai-usage verify` re-reads both sources with a _second, independent implementation_ that
+shares no reduction code with the collectors, and diffs the result against its own database.
+
+```text
+$ ai-usage verify
+
+== claude-code ==
+  MATCH    claude JSONL, deduped by stop_reason line (independent rule)
+  INFO     claude JSONL, naive sum of every usage line (NOT used -- shows the double count)
+           delta:  cache-read 990,824,820 ...
+
+RESULT: every client reconciles exactly against at least one independent read of its source.
+```
+
+So the question it answers, from real data on your machine:
 
 > How many tokens have I used, from which client, model and session — and what did it cost?
 
@@ -18,6 +43,44 @@ database, and exposes seven MCP tools -- plus resources, prompts and a debug CLI
 
 **It never fabricates a number.** If a source does not record something, it is reported as
 unavailable — not as zero.
+
+<details>
+<summary><b>What the output looks like</b> (sample data)</summary>
+
+```text
+$ ai-usage stats --today
+Usage summary -- today (local time)
+Subagent/sidechain turns: INCLUDED (3 main + 1 subagent turns).
+
+Records: 4   Sessions: 2
+
+Tokens (all clients):
+  Input:        1,871
+  Output:       16,909 (16.9K)
+  Cache read:   2,452,000 (2.45M)
+  Cache write:  37,300 (37.3K)
+  Reasoning:    2,600
+  Total:        2,508,080 (2.51M)
+
+  Cost (reported by client, exact): $0.41  [1 records]
+  Cost (estimated, API-equivalent):  $1.50  [3 records]
+
+By client:
+  claude-code  --  3 records, 1 sessions
+    Cache read:   2,238,000 (2.24M)
+    Total:        2,280,001 (2.28M)
+    Cost (estimated, API-equivalent):  $1.50  [3 records]
+
+  opencode  --  1 records, 1 sessions
+    Cache read:   214,000 (214.0K)
+    Total:        228,079 (228.1K)
+    Cost (reported by client, exact): $0.41  [1 records]
+```
+
+The two cost lines are never added together, and never will be — see
+[How cost is reported](#how-cost-is-reported).
+
+</details>
 
 ---
 
@@ -37,6 +100,19 @@ Nothing to install first — `npx` fetches it on demand:
 ```bash
 claude mcp add ai-usage -s user -- npx -y ai-usage-mcp
 ```
+
+On **native Windows** (not WSL), wrap it in `cmd /c` instead:
+
+```bash
+claude mcp add ai-usage -s user -- cmd /c npx -y ai-usage-mcp
+```
+
+<sub>Why: on Windows `npx` is `npx.cmd`, and the MCP TypeScript SDK spawns servers with
+<code>shell: false</code>. Node cannot execute a <code>.cmd</code> file that way — its docs say
+such files "can be invoked using <code>child_process.spawn()</code> with the shell option set …
+or by spawning <code>cmd.exe</code> and passing the <code>.bat</code> or <code>.cmd</code> file
+as an argument". <code>cmd /c</code> is that second form. This applies to every SDK-based
+client below, not just Claude Code.</sub>
 
 `-s user` makes it available in every project. Drop it to add the server to the current
 project only. Then run `/mcp` inside Claude Code to confirm it connected.
@@ -105,6 +181,88 @@ Or add it to `~/.config/opencode/opencode.jsonc`:
 ```
 
 Confirm with `opencode mcp list`.
+
+### Other MCP clients
+
+**The client you ask from does not have to be a client you measure.** This server reports on the
+Claude Code and OpenCode data already on your disk no matter who asks for it — so if you spend
+your day in Cursor but your tokens go through Claude Code, ask Cursor and you still get the real
+numbers.
+
+**Cursor**, **Google Antigravity**, **Windsurf** and **Claude Desktop** all take the same block.
+Only the file path changes:
+
+```json
+{
+  "mcpServers": {
+    "ai-usage": {
+      "command": "npx",
+      "args": ["-y", "ai-usage-mcp"]
+    }
+  }
+}
+```
+
+| Client                 | File to put it in                                                      |
+| ---------------------- | ---------------------------------------------------------------------- |
+| **Cursor**             | `~/.cursor/mcp.json` (all projects), or `.cursor/mcp.json` in one repo |
+| **Google Antigravity** | `~/.gemini/antigravity/mcp_config.json`                                |
+| **Windsurf**           | `~/.codeium/windsurf/mcp_config.json`                                  |
+| **Claude Desktop**     | **Settings → Developer → Edit Config** — see the paths below           |
+
+For **Claude Desktop**, that button creates the file if it does not exist and opens it either
+way, which is more reliable than editing by hand:
+
+| Platform | Path                                                              |
+| -------- | ----------------------------------------------------------------- |
+| macOS    | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows  | `%APPDATA%\Claude\claude_desktop_config.json`                     |
+
+Claude Desktop on Linux is in beta and Anthropic publishes no config path for it, so use the
+**Edit Config** button rather than guessing one. Fully quit and relaunch afterwards — the file is
+read at startup.
+
+Two clients need a different shape:
+
+**Codex** uses TOML, not JSON. Easiest is the CLI:
+
+```bash
+codex mcp add ai-usage -- npx -y ai-usage-mcp
+```
+
+Or add the table by hand to `~/.codex/config.toml` (or a project-scoped `.codex/config.toml`):
+
+```toml
+[mcp_servers.ai-usage]
+command = "npx"
+args = ["-y", "ai-usage-mcp"]
+```
+
+Confirm with `codex mcp list`.
+
+**GitHub Copilot CLI** uses `~/.copilot/mcp-config.json`, where the top-level key is `servers`,
+**not** `mcpServers`:
+
+```json
+{
+  "servers": {
+    "ai-usage": {
+      "command": "npx",
+      "args": ["-y", "ai-usage-mcp"]
+    }
+  }
+}
+```
+
+On native Windows, use the `cmd /c` form in any of these — `"command": "cmd"` with
+`"args": ["/c", "npx", "-y", "ai-usage-mcp"]`, or `command = "cmd"` with
+`args = ["/c", "npx", "-y", "ai-usage-mcp"]` for Codex. See the note under
+[Claude Code](#claude-code) for why.
+
+<sub>Provenance, 2026-09-08: Cursor, Windsurf, Codex and Claude Desktop paths are from each
+vendor's own documentation. The Antigravity and Copilot CLI paths and key names were read off
+installed copies of those apps on Linux, since neither publishes the path — including Copilot
+CLI's `servers` key, which differs from every other client here.</sub>
 
 ### The debug CLI
 
@@ -298,7 +456,8 @@ Both source formats are internal and undocumented, and both contain traps that p
 badly wrong numbers if taken at face value. What this tool does about them:
 
 - **Claude Code writes one line per content block**, repeating the same `usage` object with a
-  cumulative `output_tokens`. Summing those lines inflates every figure by ~2.4×. Records are
+  cumulative `output_tokens`. Summing those lines inflates every figure by 2.15×-3.05×
+  depending on the token class ([measured](docs/DATA_SOURCES.md)). Records are
   deduplicated on `requestId` + `message.id`, taking the maximum of each field.
 - **`usage.iterations[]` is already included in the top-level totals** and is never summed.
 - **Subagent turns live in separate files** (`<session>/subagents/…`), not behind the
