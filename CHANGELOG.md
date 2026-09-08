@@ -7,6 +7,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Documentation only. No code changed, so nothing about how usage is counted moved.
+
+### Added
+
+- **Install instructions for Cursor, Google Antigravity, Windsurf, Claude Desktop, Codex and
+  GitHub Copilot CLI.** Only Claude Code and OpenCode were documented, which conflated the
+  client you _ask from_ with the client you _measure_ — someone working in Cursor still wants to
+  know what their Claude Code sessions cost, and the answer was always the same server with a
+  different config path. Every path was verified rather than written from memory, which caught
+  two things a guess would have got wrong: Codex takes a `[mcp_servers.<name>]` table in
+  `~/.codex/config.toml` (TOML, and there is a `codex mcp add`), not the JSON file this was
+  originally planned around; and Copilot CLI's top-level key in `~/.copilot/mcp-config.json` is
+  `servers`, not the `mcpServers` every other client here uses. Claude Desktop's Linux config
+  path is deliberately absent — the Linux build is in beta and Anthropic publishes no path for
+  it, so the instructions point at the **Edit Config** button instead of guessing. The
+  Antigravity and Copilot CLI paths came off installed copies of those apps, since neither
+  vendor publishes one.
+- **The native-Windows `cmd /c` form of every install command.** `npx` is `npx.cmd` on Windows
+  and the MCP TypeScript SDK spawns servers with `shell: false`; Node cannot execute a `.cmd`
+  that way, and its own docs give "spawn `cmd.exe` and pass the file as an argument" as the
+  remedy. This is a property of the shared client transport, so it applies to every SDK-based
+  client rather than to Claude Code specifically — the note says so where a Windows user will
+  actually be standing when it fails.
+
+### Changed
+
+- **The README leads with the reason to distrust your current numbers** instead of with "a
+  local-first MCP server". Summing Claude Code's per-content-block usage lines inflated every
+  figure by 2.15×-3.05× on the development machine, and cache-read outweighed input by roughly
+  33,000× — both already measured in `docs/DATA_SOURCES.md`, neither previously visible above
+  the fold. A `verify` excerpt and a sample of `stats --today` now appear near the top, since
+  the entire output of this tool is a table of numbers and the README showed none of it. The
+  cost-basis and privacy sections moved down, not out.
+
 ## [0.5.1] - 2026-09-03
 
 Nothing about how usage is counted has changed. This release fixes the feature that was
