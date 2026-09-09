@@ -74,7 +74,11 @@ describe('Claude Code plugin manifest', () => {
   it('gives every command frontmatter with a name and a description', () => {
     const dir = resolve(root, 'commands');
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.md'))) {
-      const body = readFileSync(resolve(dir, file), 'utf8');
+      // Normalised because this asserts frontmatter STRUCTURE, not a line-ending
+      // policy. `.gitattributes` pins these files to LF for Claude Code's sake;
+      // a Windows checkout that still produced CRLF would be a delivery problem,
+      // not a reason for this assertion to fail.
+      const body = readFileSync(resolve(dir, file), 'utf8').replace(/\r\n/g, '\n');
 
       // Claude Code reads frontmatter only when the opening --- is the very
       // first line; otherwise the whole file, markers included, is content.
@@ -98,7 +102,7 @@ describe('Claude Code plugin manifest', () => {
     // instruction that forbids it lives only in the MCP prompt.
     const dir = resolve(root, 'commands');
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.md'))) {
-      const body = readFileSync(resolve(dir, file), 'utf8');
+      const body = readFileSync(resolve(dir, file), 'utf8').replace(/\r\n/g, '\n');
       expect(body, `${file} cost-basis rule`).toMatch(
         /Never add the reported and estimated cost figures together/,
       );
