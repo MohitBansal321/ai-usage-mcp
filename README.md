@@ -95,7 +95,25 @@ that. It is never required — if it cannot be built, npm skips it and the serve
 
 ### Claude Code
 
-Nothing to install first — `npx` fetches it on demand:
+**As a plugin — recommended.** Run these two inside Claude Code:
+
+```text
+/plugin marketplace add MohitBansal321/ai-usage-mcp
+/plugin install ai-usage@ai-usage-mcp
+```
+
+That wires up the MCP server _and_ installs the three prompts as real slash commands —
+`/ai-usage:daily-review`, `/ai-usage:why-was-today-expensive`, `/ai-usage:project-cost` — which
+most clients never surface from MCP prompts alone. If the install summary says
+`Run /reload-plugins to activate.`, run that. The equivalent from your shell is
+`claude plugin marketplace add MohitBansal321/ai-usage-mcp`.
+
+<sub>The plugin declares `npx -y ai-usage-mcp` as its server, so the server itself still comes
+from npm and re-resolves on each cold start. Updating the plugin and updating the server are
+therefore independent — see <a href="#updating">Updating</a>.</sub>
+
+**Or as a plain MCP server**, if you would rather not add a marketplace. Nothing to install
+first — `npx` fetches it on demand:
 
 ```bash
 claude mcp add ai-usage -s user -- npx -y ai-usage-mcp
@@ -381,6 +399,11 @@ Three prompts appear as slash commands in a client that surfaces them:
 
 Each prompt names the tools to call and carries the reported-vs-estimated cost rule with it,
 so a paraphrased summary cannot quietly merge the two cost bases.
+
+Most clients do **not** surface MCP prompts, which is why the [Claude Code
+plugin](#claude-code) ships the same three as real slash commands
+(`/ai-usage:daily-review` and friends). They are the same feature through two surfaces, and a
+test asserts the two lists cannot drift apart.
 
 ## Debug CLI
 

@@ -103,8 +103,8 @@ npm publish
 ```
 
 The version the MCP server advertises is read from `package.json` at runtime, so there is no
-constant in `src/` to keep in sync. `server.json` **is** a second place the version lives —
-see [Version agreement](#version-agreement) below.
+constant in `src/` to keep in sync. `server.json` and `.claude-plugin/plugin.json` **are** two
+further places the version lives — see [Version agreement](#version-agreement) below.
 
 ---
 
@@ -140,21 +140,36 @@ write by a few seconds.
 
 ### Version agreement
 
-`server.json` carries the version twice (`version` and `packages[0].version`) and both must
-equal `package.json`'s version. The release workflow fails fast if they drift, alongside the
-existing tag-vs-package.json check. So a version bump is a three-line edit:
+Three files carry the version and all of them must agree with `package.json`:
+
+| File                         | Field(s)                         | Why it matters if it drifts                                                                      |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `server.json`                | `version`, `packages[0].version` | The registry rejects a mismatch                                                                  |
+| `.claude-plugin/plugin.json` | `version`                        | Setting it pins the plugin, so a stale value means installed plugin users stop receiving updates |
+
+The release workflow fails fast if any of them drift, alongside the existing
+tag-vs-package.json check, and `tests/plugin/manifest.test.ts` asserts the plugin version in
+`npm run check` — so a forgotten bump is caught locally, before you tag. A version bump is:
 
 ```bash
 npm version patch --no-git-tag-version          # package.json
-# then set the same version in server.json: .version and .packages[0].version
+# then mirror it into server.json and the plugin manifest
 node -e '
   const fs=require("fs");
   const v=require("./package.json").version;
   const s=JSON.parse(fs.readFileSync("server.json","utf8"));
   s.version=v; s.packages[0].version=v;
   fs.writeFileSync("server.json", JSON.stringify(s,null,2)+"\n");
+  const p=JSON.parse(fs.readFileSync(".claude-plugin/plugin.json","utf8"));
+  p.version=v;
+  fs.writeFileSync(".claude-plugin/plugin.json", JSON.stringify(p,null,2)+"\n");
 '
 ```
+
+The plugin is **not** published to npm — `files` in `package.json` excludes `.claude-plugin/`
+and `commands/`, so the tarball stays exactly as it was. Claude Code installs the plugin from
+this Git repository, which means a plugin user gets the manifest at whatever tag or branch they
+resolved, while the MCP server itself still comes from npm via `npx -y ai-usage-mcp`.
 
 ### Namespace casing is significant
 
