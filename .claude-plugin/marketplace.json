@@ -1,0 +1,14 @@
+{
+  "name": "ai-usage-mcp",
+  "owner": {
+    "name": "Mohit Bansal",
+    "url": "https://github.com/MohitBansal321"
+  },
+  "plugins": [
+    {
+      "name": "ai-usage",
+      "source": ".",
+      "description": "Ask what your coding agents actually cost, from real data on your machine."
+    }
+  ]
+}
