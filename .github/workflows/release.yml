@@ -68,6 +68,16 @@ jobs:
           fi
           echo "server.json and package.json agree on $PKG / $MCP_SRV"
 
+      - name: Confirm the plugin manifest agrees with package.json
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          PLG=$(node -p "require('./.claude-plugin/plugin.json').version")
+          if [ "$PLG" != "$PKG" ]; then
+            echo "::error::.claude-plugin/plugin.json version ($PLG) does not match package.json ($PKG); a stale plugin version stops installed users receiving updates"
+            exit 1
+          fi
+          echo "plugin.json and package.json agree on $PKG"
+
       - name: Skip if this version is already on the registry
         id: check
         run: |

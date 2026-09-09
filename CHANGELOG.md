@@ -7,9 +7,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Documentation only. No code changed, so nothing about how usage is counted moved.
+Nothing about how usage is counted has changed. This is about installation and discovery: the
+package could only be found by people who already knew to look for an MCP server, and three of
+its features were invisible to almost everyone who had installed it.
 
 ### Added
+
+- **A Claude Code plugin.** `/plugin marketplace add MohitBansal321/ai-usage-mcp` then
+  `/plugin install ai-usage@ai-usage-mcp` replaces the `claude mcp add` invocation, and — more
+  to the point — installs the three prompts as real slash commands
+  (`/ai-usage:daily-review`, `/ai-usage:why-was-today-expensive`, `/ai-usage:project-cost`).
+  Those prompts have shipped since 0.2.0 and most clients never surface MCP prompts at all, so
+  for most users the feature existed without being reachable. The repository has also been
+  tagged `claude-code-plugin` since the beginning while shipping no manifest.
+
+  The prompts and the commands are one feature through two surfaces, and
+  `tests/plugin/manifest.test.ts` asserts the two lists are identical, so a fourth prompt
+  cannot be added without its command. It also asserts each command carries the
+  reported-vs-estimated cost rule, since a paraphrasing model must not merge the two bases just
+  because the rule lived only in the MCP prompt.
+
+  The plugin declares `npx -y ai-usage-mcp` as its server rather than bundling one, so the
+  server still comes from npm and re-resolves on a cold start. Nothing about the npm tarball
+  changed: `files` excludes `.claude-plugin/` and `commands/`.
+
+- `plugin.json` now carries a third copy of the version, so the release workflow and
+  `npm run check` both assert it against `package.json`. Setting a plugin version pins the
+  plugin, which means a stale value silently stops installed users from receiving updates —
+  the failure mode is invisible, so it is asserted rather than left to a checklist.
+
+### Added (documentation)
 
 - **Install instructions for Cursor, Google Antigravity, Windsurf, Claude Desktop, Codex and
   GitHub Copilot CLI.** Only Claude Code and OpenCode were documented, which conflated the
