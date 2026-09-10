@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
 import { registerClientUsage } from './tools/client-usage.js';
+import { registerCounterfactualCost } from './tools/counterfactual-cost.js';
 import { registerDailyUsage } from './tools/daily-usage.js';
 import { registerModelUsage } from './tools/model-usage.js';
 import { registerProjectUsage } from './tools/project-usage.js';
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
   registerClientUsage(server, ctx);
   registerProjectUsage(server, ctx);
   registerDailyUsage(server, ctx);
+  registerCounterfactualCost(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server);

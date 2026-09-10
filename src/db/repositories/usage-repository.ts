@@ -39,6 +39,17 @@ export interface AggregateRow extends TokenTotals {
 }
 
 /**
+ * Totals for one (client, model, speed) combination -- the smallest grouping that
+ * can be honestly re-priced at a different model's rates.
+ */
+export interface RepriceGroup extends AggregateRow {
+  client: ClientId;
+  model: string;
+  /** Absent when the source never recorded a speed. Not the same as 'standard'. */
+  speed?: string;
+}
+
+/**
  * One stored turn. The first non-aggregate shape in this repository: every other
  * read collapses rows, which makes per-turn questions -- how context grew, what a
  * single turn cost -- unanswerable.
@@ -288,6 +299,41 @@ export class UsageRepository {
 
   byProvider(filter: UsageFilter = {}): GroupedRow[] {
     return this.grouped('provider', filter);
+  }
+
+  /**
+   * Token totals grouped by every dimension that changes what they would cost:
+   * `client`, `model` and `speed`.
+   *
+   * `byModel` is not enough to re-price a period. `client` decides whether
+   * reasoning tokens are already inside `output_tokens` (Claude Code) or a
+   * sibling of them (OpenCode), and `speed` decides whether the premium fast-mode
+   * rates applied. Collapsing either one and then re-pricing would quietly get
+   * the arithmetic wrong -- see docs/DATA_SOURCES.md.
+   */
+  repriceGroups(filter: UsageFilter = {}): RepriceGroup[] {
+    const { sql, params } = buildWhere(filter);
+    const rows = this.db
+      .prepare(
+        `SELECT client AS group_client, model AS group_model, speed AS group_speed, ${AGG_SELECT}
+         FROM usage_records ${sql}
+         GROUP BY client, model, speed
+         ORDER BY total_tokens DESC`,
+      )
+      .all(params) as (RawAgg & {
+      group_client: ClientId;
+      group_model: string;
+      group_speed: string | null;
+    })[];
+    return rows.map((r) => {
+      const group: RepriceGroup = {
+        client: r.group_client,
+        model: r.group_model,
+        ...toAggregate(r),
+      };
+      if (r.group_speed != null) group.speed = r.group_speed;
+      return group;
+    });
   }
 
   byProject(filter: UsageFilter = {}, limit?: number): GroupedRow[] {

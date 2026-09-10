@@ -1,5 +1,40 @@
-import type { CostBasis } from '../models/usage-record.js';
+import type { ClientId, CostBasis } from '../models/usage-record.js';
 import { loadPricing, type LoadedPricing, type PricingTable } from '../pricing/index.js';
+
+/**
+ * Where each client puts reasoning tokens relative to `outputTokens`.
+ *
+ * This is a pricing concern, not a cosmetic one. Claude Code's thinking tokens
+ * are a *detail of* `output_tokens`, so they are already paid for by pricing
+ * output. OpenCode's `reasoning` is a *sibling* of `output` (verified:
+ * `tokens.total === input + output + reasoning + cache.read`), so pricing only
+ * `output` would bill nothing for them.
+ *
+ * Collection-time estimates never hit this, because only Claude Code is
+ * estimated -- OpenCode reports its own cost. Anything that RE-prices a stored
+ * row does hit it, for every client. See docs/DATA_SOURCES.md.
+ */
+export const REASONING_PLACEMENT: Record<ClientId, 'inside-output' | 'sibling-of-output'> = {
+  'claude-code': 'inside-output',
+  opencode: 'sibling-of-output',
+};
+
+/**
+ * The output-token count to price for a client, given what it stored.
+ *
+ * Use this instead of passing `outputTokens` straight through whenever you are
+ * re-pricing stored rows; a new client whose reasoning is a sibling will
+ * otherwise be under-billed with nothing to show it.
+ */
+export function billableOutputTokens(
+  client: ClientId,
+  outputTokens: number,
+  reasoningTokens = 0,
+): number {
+  return REASONING_PLACEMENT[client] === 'sibling-of-output'
+    ? outputTokens + reasoningTokens
+    : outputTokens;
+}
 
 export interface EstimateInput {
   model: string;
@@ -54,6 +89,11 @@ export class CostService {
 
   knowsModel(model: string): boolean {
     return Boolean(this.loaded.table.models[model]);
+  }
+
+  /** Every model the table can price, so a caller need not hardcode a list. */
+  pricedModels(): string[] {
+    return Object.keys(this.loaded.table.models).sort();
   }
 
   estimate(input: EstimateInput): Estimate {

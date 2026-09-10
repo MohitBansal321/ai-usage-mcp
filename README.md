@@ -366,17 +366,25 @@ Break my last 7 days down day by day.
 
 ## MCP tools
 
-| Tool              | Returns                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| `usage_summary`   | Totals for a period, split by client, tokens + cost         |
-| `session_usage`   | One session: client, model, duration, token breakdown, cost |
-| `model_usage`     | Per-model tokens and cost                                   |
-| `client_usage`    | Per-client (Claude Code vs OpenCode) tokens and cost        |
-| `recent_sessions` | Recent sessions with project, client, tokens, cost          |
-| `project_usage`   | Per-project tokens and cost, by the directory a turn ran in |
-| `daily_usage`     | Per-day tokens and cost, newest day first                   |
+| Tool                  | Returns                                                                    |
+| --------------------- | -------------------------------------------------------------------------- |
+| `usage_summary`       | Totals for a period, split by client, tokens + cost                        |
+| `session_usage`       | One session: client, model, duration, token breakdown, cost                |
+| `model_usage`         | Per-model tokens and cost                                                  |
+| `client_usage`        | Per-client (Claude Code vs OpenCode) tokens and cost                       |
+| `recent_sessions`     | Recent sessions with project, client, tokens, cost                         |
+| `project_usage`       | Per-project tokens and cost, by the directory a turn ran in                |
+| `daily_usage`         | Per-day tokens and cost, newest day first                                  |
+| `counterfactual_cost` | These tokens at another model's list rates, beside what they actually cost |
 
 Every period-based tool takes `projectPath` to narrow the report to one project.
+
+`counterfactual_cost` answers "would a cheaper model have cost less for this?" — it re-prices
+the exact token counts that were recorded, grouped by client, model **and** speed so the
+fast-mode premium and the two clients' different reasoning-token conventions are both handled.
+It is a **counterfactual, not a saving**: the same task on a different model generally takes a
+different number of turns carrying a different context on each, and nothing on disk can say
+what that would have been. The caveat ships with the numbers.
 
 ## Resources and prompts
 
@@ -419,6 +427,7 @@ ai-usage projects    # per-project  (--limit N)
 ai-usage sessions    # recent sessions
 ai-usage session ID  # one session in detail
 ai-usage daily       # per-day breakdown
+ai-usage counterfactual  # these tokens on another model (--models a,b)
 ai-usage verify      # re-read the sources and diff them against the local database
 ```
 

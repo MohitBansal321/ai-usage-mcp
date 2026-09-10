@@ -1,6 +1,11 @@
 export { UsageService, type UsageQuery, type StatusReport } from './services/usage-service.js';
-export { CostService } from './services/cost-service.js';
+export { CostService, billableOutputTokens, REASONING_PLACEMENT } from './services/cost-service.js';
 export { AggregationService } from './services/aggregation-service.js';
+export {
+  CounterfactualService,
+  type CounterfactualReport,
+  type CounterfactualScenario,
+} from './services/counterfactual-service.js';
 export { SyncService, type SyncReport } from './services/sync-service.js';
 export { VerifyService, type VerifyReport } from './services/verify-service.js';
 export { OpenCodeCollector } from './collectors/opencode/collector.js';

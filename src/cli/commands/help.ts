@@ -11,7 +11,8 @@ Commands:
   projects              Per-project tokens and cost            (same as project_usage)
   sessions              Recent sessions                        (same as recent_sessions)
   session <id>          One session in detail                  (same as session_usage)
-  daily                 Per-day breakdown
+  daily                 Per-day breakdown                      (same as daily_usage)
+  counterfactual        These tokens on another model          (same as counterfactual_cost)
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
   help                  Show this text
@@ -27,6 +28,7 @@ Scope options:
   --model <id>          Restrict to one model
   --project <path>      Restrict to one project (its working directory)
   --limit N             Row limit (sessions, models, projects)
+  --models a,b          Models to price against (counterfactual; repeatable)
   --no-subagents        Exclude subagent/sidechain turns (included by default)
   --all-stores          Read every detected data store, not only the one the client itself uses
   --full                Ignore saved sync cursors and re-read everything
@@ -39,6 +41,7 @@ Examples:
   ai-usage models --days 30 --client claude-code
   ai-usage projects --days 30
   ai-usage sessions --limit 5
+  ai-usage counterfactual --today --models claude-sonnet-5,claude-haiku-4-5
   ai-usage verify
 
 Notes:

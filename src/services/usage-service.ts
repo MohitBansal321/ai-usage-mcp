@@ -19,6 +19,7 @@ import {
   type SummaryReport,
 } from './aggregation-service.js';
 import { CostService } from './cost-service.js';
+import { CounterfactualService, type CounterfactualReport } from './counterfactual-service.js';
 import { resolvePeriod, type PeriodInput } from './period.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
 import { VerifyService, type VerifyReport } from './verify-service.js';
@@ -68,6 +69,7 @@ export class UsageService {
   private readonly aggregation: AggregationService;
   private readonly syncService: SyncService;
   private readonly verifyService: VerifyService;
+  private readonly counterfactualService: CounterfactualService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -81,6 +83,7 @@ export class UsageService {
     this.collectors = [new OpenCodeCollector(), new ClaudeCodeCollector(this.costService)];
     this.syncService = new SyncService(this.usageRepo, this.syncRepo, this.collectors);
     this.verifyService = new VerifyService(this.usageRepo);
+    this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -188,6 +191,11 @@ export class UsageService {
   dailyUsage(query: UsageQuery = {}): DailyReport {
     const { filter, label } = this.filterFor(query);
     return this.aggregation.daily(filter, label);
+  }
+
+  counterfactualCost(query: UsageQuery = {}, models?: string[]): CounterfactualReport {
+    const { filter, label } = this.filterFor(query);
+    return this.counterfactualService.counterfactual(filter, label, models);
   }
 
   /** True when there is no data at all, so frontends can say so instead of printing zeros. */

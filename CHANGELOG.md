@@ -7,6 +7,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`counterfactual_cost` — what these tokens would have cost on another model**, alongside
+  what they actually cost, as an MCP tool and as `ai-usage counterfactual`. On the development
+  machine: $929.72 of Claude Code usage, where the same tokens priced at Sonnet 5's rates come
+  to $389.41 and at Haiku 4.5's to $194.70.
+
+  Re-pricing turned out to need more than the token counts. It groups by `client`, `model` and
+  `speed`, because each one changes the arithmetic: `speed` decides whether the premium
+  fast-mode rates applied, and `client` decides whether reasoning tokens are already inside
+  `output_tokens` (Claude Code) or a sibling of them (OpenCode). Pricing `output_tokens` alone
+  would have billed nothing for OpenCode's reasoning; adding them for Claude Code would have
+  billed twice. `billableOutputTokens()` and `REASONING_PLACEMENT` put that rule in one place,
+  so a third client cannot be added without confronting it. A mixed period is priced per group
+  rather than at one blended rate.
+
+  It is presented as **a counterfactual, not a saving**, and that caveat is part of the output
+  rather than a line in this file: the same task on a different model generally takes a
+  different number of turns carrying a different context on each, and nothing on disk can say
+  what that number would have been. The actual figure keeps its own basis, the model that
+  really ran is marked in the list rather than subtracted from it, and a requested model with
+  no price is omitted and named instead of guessed at.
+
 ## [0.6.0] - 2026-09-10
 
 No figure this release reports differs from 0.5.1 -- nothing about how usage is counted has
