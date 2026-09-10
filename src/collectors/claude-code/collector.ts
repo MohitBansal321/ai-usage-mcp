@@ -371,6 +371,9 @@ export class ClaudeCodeCollector implements UsageCollector {
     if (estimate.estimatedCost !== undefined) record.estimatedCost = estimate.estimatedCost;
     if (projectPath) record.projectPath = projectPath;
     if (acc.version) record.sourceVersion = acc.version;
+    // Kept alongside the tokens it applied to. The estimate above already used
+    // it, but a re-price reads the stored row, not this accumulator.
+    if (acc.speed) record.speed = acc.speed;
     return record;
   }
 }

@@ -57,4 +57,21 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'add-speed',
+    up(db) {
+      // Claude Code records `usage.speed` per request, and 'fast' bills at premium
+      // rates. It was read at collection time, used for the estimate, and then
+      // dropped -- so the tokens were kept but the rate that applied to them was
+      // not. Anything that re-prices a stored row would silently apply standard
+      // rates to a fast-mode turn and under-report.
+      //
+      // Nullable with no backfill on purpose: rows collected before this migration
+      // genuinely have no recorded speed, and inventing 'standard' for them would
+      // assert something the source never said. They stay NULL until re-synced,
+      // which `ai-usage sync --full` will do.
+      db.exec(`ALTER TABLE usage_records ADD COLUMN speed TEXT`);
+    },
+  },
 ];

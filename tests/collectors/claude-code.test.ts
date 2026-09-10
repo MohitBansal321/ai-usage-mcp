@@ -323,6 +323,54 @@ describe('ClaudeCodeCollector', () => {
     );
   });
 
+  it('keeps the speed that priced a turn, so a re-price cannot lose the premium', async () => {
+    // The estimate below is already computed with the premium, but it was the
+    // only place `speed` survived: the record dropped it, so re-pricing a stored
+    // row would silently apply standard rates to a fast-mode turn.
+    setup([
+      {
+        slug: '-work-project-one',
+        sessions: [
+          {
+            sessionId: 'sess-1',
+            lines: [
+              assistantLine({
+                sessionId: 'sess-1',
+                requestId: 'req-fast',
+                messageId: 'msg-fast',
+                speed: 'fast',
+                input: 1_000_000,
+                stopReason: 'end_turn',
+              }),
+            ],
+          },
+          {
+            sessionId: 'sess-2',
+            lines: [
+              assistantLine({
+                sessionId: 'sess-2',
+                requestId: 'req-std',
+                messageId: 'msg-std',
+                speed: 'standard',
+                input: 1_000_000,
+                stopReason: 'end_turn',
+              }),
+            ],
+          },
+        ],
+      },
+    ]);
+    const bySession = new Map((await collector().collect({})).records.map((r) => [r.sessionId, r]));
+    expect(bySession.get('sess-1')!.speed).toBe('fast');
+    expect(bySession.get('sess-2')!.speed).toBe('standard');
+
+    // And it is the rate that actually applied: fast must cost strictly more for
+    // identical tokens, which is what makes losing it a real under-report.
+    expect(bySession.get('sess-1')!.estimatedCost).toBeGreaterThan(
+      bySession.get('sess-2')!.estimatedCost!,
+    );
+  });
+
   it('marks cost unavailable for a model with no price, rather than guessing', async () => {
     setup([
       {
