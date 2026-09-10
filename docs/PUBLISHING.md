@@ -164,7 +164,13 @@ node -e '
   p.version=v;
   fs.writeFileSync(".claude-plugin/plugin.json", JSON.stringify(p,null,2)+"\n");
 '
+npx prettier --write server.json .claude-plugin/plugin.json
 ```
+
+**The `prettier --write` is not optional.** `JSON.stringify(…, null, 2)` puts every array
+element on its own line, while Prettier keeps short arrays such as `keywords` and
+`args: ["-y", "ai-usage-mcp"]` inline — so without it `npm run check` fails on `format:check`
+immediately after a version bump. This bit the 0.6.0 release.
 
 The plugin is **not** published to npm — `files` in `package.json` excludes `.claude-plugin/`
 and `commands/`, so the tarball stays exactly as it was. Claude Code installs the plugin from

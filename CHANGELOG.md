@@ -7,9 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-10
+
 Nothing about how usage is counted has changed. This is about installation and discovery: the
-package could only be found by people who already knew to look for an MCP server, and three of
-its features were invisible to almost everyone who had installed it.
+package could only be found by people who already knew to look for an MCP server, three of its
+features were invisible to almost everyone who had installed it, and the install instructions
+covered two clients out of seven.
 
 ### Added
 
@@ -35,8 +38,6 @@ its features were invisible to almost everyone who had installed it.
   `npm run check` both assert it against `package.json`. Setting a plugin version pins the
   plugin, which means a stale value silently stops installed users from receiving updates —
   the failure mode is invisible, so it is asserted rather than left to a checklist.
-
-### Added (documentation)
 
 - **Install instructions for Cursor, Google Antigravity, Windsurf, Claude Desktop, Codex and
   GitHub Copilot CLI.** Only Claude Code and OpenCode were documented, which conflated the
@@ -393,7 +394,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.4.0...v0.4.1
