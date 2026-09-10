@@ -1,0 +1,8 @@
+# Claude Code reads a plugin command's frontmatter only when the opening `---`
+# is the first line of the file, and it reads these files straight out of a Git
+# checkout rather than the npm tarball. Git on Windows defaults to
+# core.autocrlf=true, which would hand it `---\r\n`. `.editorconfig` already
+# declares `end_of_line = lf`, but that guides editors, not Git -- so the plugin
+# surface is pinned here, where Git will actually honour it.
+/commands/*.md text eol=lf
+/.claude-plugin/*.json text eol=lf
