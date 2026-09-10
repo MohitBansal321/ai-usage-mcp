@@ -2,7 +2,7 @@
   "name": "ai-usage",
   "displayName": "AI Usage",
   "description": "Reports real token usage and cost from the Claude Code and OpenCode data already on your machine. Never fabricates a number, and never blends reported cost with estimated cost.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": {
     "name": "Mohit Bansal"
   },
