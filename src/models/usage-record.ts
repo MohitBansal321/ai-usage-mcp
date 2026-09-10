@@ -67,6 +67,15 @@ export interface UsageRecord {
 
   turnKind: TurnKind;
 
+  /**
+   * `usage.speed` exactly as the source recorded it -- 'fast' bills at premium
+   * rates. Persisted so a later re-price applies the rate that actually applied
+   * to these tokens; without it a fast-mode turn silently re-prices at standard
+   * rates. `undefined` when the source did not say (OpenCode never does), which
+   * is not the same as 'standard'.
+   */
+  speed?: string;
+
   /** e.g. 'opencode.db:message', 'claude-jsonl:main'. Traceable back to the bytes. */
   source: string;
   /** Version of the *client* that produced the data, so bad data can be traced. */

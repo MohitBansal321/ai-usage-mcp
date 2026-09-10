@@ -63,6 +63,8 @@ export interface TurnRow {
   cost?: number;
   estimatedCost?: number;
   costBasis: string;
+  /** As recorded by the source; 'fast' billed at premium rates. Absent if unsaid. */
+  speed?: string;
 }
 
 /** Sessions reach thousands of turns, so a row read is always bounded. */
@@ -195,12 +197,12 @@ export class UsageRepository {
         id, client, provider, model, session_id, project_path, timestamp,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
         cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
-        cost, estimated_cost, cost_basis, currency, turn_kind, source, source_version, created_at
+        cost, estimated_cost, cost_basis, currency, turn_kind, speed, source, source_version, created_at
       ) VALUES (
         @id, @client, @provider, @model, @sessionId, @projectPath, @timestamp,
         @inputTokens, @outputTokens, @cacheReadTokens, @cacheWriteTokens,
         @cacheWrite5mTokens, @cacheWrite1hTokens, @reasoningTokens, @totalTokens,
-        @cost, @estimatedCost, @costBasis, @currency, @turnKind, @source, @sourceVersion, @createdAt
+        @cost, @estimatedCost, @costBasis, @currency, @turnKind, @speed, @source, @sourceVersion, @createdAt
       )
       ON CONFLICT(id) DO UPDATE SET
         client=excluded.client, provider=excluded.provider, model=excluded.model,
@@ -213,7 +215,7 @@ export class UsageRepository {
         reasoning_tokens=excluded.reasoning_tokens, total_tokens=excluded.total_tokens,
         cost=excluded.cost, estimated_cost=excluded.estimated_cost,
         cost_basis=excluded.cost_basis, currency=excluded.currency,
-        turn_kind=excluded.turn_kind, source=excluded.source,
+        turn_kind=excluded.turn_kind, speed=excluded.speed, source=excluded.source,
         source_version=excluded.source_version
     `);
   }
@@ -245,6 +247,7 @@ export class UsageRepository {
           costBasis: r.costBasis,
           currency: r.currency,
           turnKind: r.turnKind,
+          speed: r.speed ?? null,
           source: r.source,
           sourceVersion: r.sourceVersion ?? null,
           createdAt,
@@ -324,7 +327,7 @@ export class UsageRepository {
         `SELECT id, client, provider, model, session_id, project_path, timestamp, turn_kind,
                 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
                 cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
-                cost, estimated_cost, cost_basis
+                cost, estimated_cost, cost_basis, speed
          FROM usage_records ${sql}
          ORDER BY timestamp ASC, id ASC
          LIMIT :limit OFFSET :offset`,
@@ -352,6 +355,7 @@ export class UsageRepository {
       if (r.project_path != null) turn.projectPath = r.project_path as string;
       if (r.cost != null) turn.cost = r.cost as number;
       if (r.estimated_cost != null) turn.estimatedCost = r.estimated_cost as number;
+      if (r.speed != null) turn.speed = r.speed as string;
       return turn;
     });
   }

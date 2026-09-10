@@ -143,4 +143,28 @@ describe('UsageRepository', () => {
     ]);
     expect([...repo.byProject().map((p) => p.key)].sort()).toEqual(['(unknown)', '/work/one']);
   });
+
+  it('round-trips speed, and reports an unrecorded speed as absent not standard', () => {
+    // The whole point of storing it: a re-price must be able to tell a fast-mode
+    // turn from one whose speed the source never mentioned. Collapsing the second
+    // case to 'standard' would assert something no source said.
+    repo.upsertMany([
+      record({ id: 'fast', speed: 'fast' }),
+      record({ id: 'standard', speed: 'standard' }),
+      record({ id: 'silent', speed: undefined }),
+    ]);
+    const byId = new Map(repo.turns().map((t) => [t.id, t]));
+    expect(byId.get('fast')!.speed).toBe('fast');
+    expect(byId.get('standard')!.speed).toBe('standard');
+    expect(byId.get('silent')!.speed).toBeUndefined();
+  });
+
+  it('updates speed on re-upsert, so a corrected re-sync is not ignored', () => {
+    repo.upsertMany([record({ id: 'r1', speed: undefined })]);
+    expect(repo.turns()[0]!.speed).toBeUndefined();
+
+    repo.upsertMany([record({ id: 'r1', speed: 'fast' })]);
+    expect(repo.turns()).toHaveLength(1);
+    expect(repo.turns()[0]!.speed).toBe('fast');
+  });
 });
