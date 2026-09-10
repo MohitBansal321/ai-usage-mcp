@@ -179,6 +179,20 @@ describe('CLI and MCP parity', () => {
     expect(cli(['daily', '--today'])).toBe(await toolText('daily_usage', { today: true }));
   });
 
+  it('counterfactual matches counterfactual_cost', async () => {
+    expect(cli(['counterfactual'])).toBe(await toolText('counterfactual_cost', {}));
+  });
+
+  it('counterfactual --models matches the tool given the same targets', async () => {
+    // Two frontends, one list of target models, one ordering. If the scenario
+    // sort or the caveat set drifted between them, this is where it shows.
+    expect(cli(['counterfactual', '--models', 'claude-sonnet-5,claude-haiku-4-5'])).toBe(
+      await toolText('counterfactual_cost', {
+        models: ['claude-sonnet-5', 'claude-haiku-4-5'],
+      }),
+    );
+  });
+
   it('sessions matches recent_sessions', async () => {
     expect(cli(['sessions', '--limit', '5'])).toBe(await toolText('recent_sessions', { limit: 5 }));
   });

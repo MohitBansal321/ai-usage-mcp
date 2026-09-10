@@ -9,6 +9,7 @@ import type {
   SummaryReport,
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
+import type { CounterfactualReport } from './counterfactual-service.js';
 import type { StatusReport } from './usage-service.js';
 import { updateCommand, type UpdateInfo } from './update-check.js';
 import { VERSION } from '../version.js';
@@ -410,5 +411,58 @@ export function formatVerify(report: VerifyReport): string {
       ? 'RESULT: every client reconciles exactly against at least one independent read of its source.'
       : 'RESULT: at least one client does NOT reconcile. Treat its numbers as suspect until resolved.',
   );
+  return out.join('\n');
+}
+
+/**
+ * "These tokens on another model."
+ *
+ * Deliberately shaped so the comparison cannot be misread as a saving: the
+ * actual figure keeps its own basis at the top, every scenario is labelled an
+ * estimate, the model that actually ran is marked in the list rather than
+ * subtracted from it, and the caveats print with the numbers instead of being
+ * left to the README.
+ */
+export function formatCounterfactual(
+  report: CounterfactualReport,
+  costService: CostService,
+): string {
+  const out: string[] = [];
+  out.push(`Counterfactual cost -- ${report.period.label}`);
+  out.push(subagentNote(report));
+  out.push('');
+
+  if (report.overall.records === 0) {
+    out.push('No usage records for this period.');
+    return out.join('\n');
+  }
+
+  out.push(`Records: ${int(report.overall.records)}   Sessions: ${int(report.overall.sessions)}`);
+  out.push('');
+  out.push('Tokens actually used:');
+  out.push(...tokenLines(report.overall, '  '));
+  out.push('');
+  out.push('What they actually cost:');
+  out.push(...costLines(report.overall.cost, costService, '  '));
+  out.push('');
+
+  out.push(`Those same tokens, priced at each model's list rates (${report.pricingVersion}):`);
+  const width = Math.max(...report.scenarios.map((s) => s.model.length));
+  for (const scenario of report.scenarios) {
+    const marker = scenario.isActual ? '  <- actually used' : '';
+    out.push(
+      `  ${scenario.model.padEnd(width)}  ${usd(scenario.estimatedCost).padStart(10)}${marker}`,
+    );
+    if (scenario.unpricedGroups > 0) {
+      out.push(
+        `  ${' '.repeat(width)}  (${int(scenario.unpricedGroups)} group(s) could not be priced)`,
+      );
+    }
+  }
+
+  out.push('');
+  for (const caveat of report.caveats) {
+    out.push(`Note: ${caveat}`);
+  }
   return out.join('\n');
 }

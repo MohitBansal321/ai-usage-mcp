@@ -6,6 +6,7 @@ import { UsageService, type UsageQuery } from '../services/usage-service.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
   formatClients,
+  formatCounterfactual,
   formatDaily,
   formatModels,
   formatProjects,
@@ -143,6 +144,12 @@ async function run(argv: string[]): Promise<number> {
       case 'daily': {
         const report = service.dailyUsage(queryFrom(args));
         emit(args, formatDaily(report), report);
+        return 0;
+      }
+
+      case 'counterfactual': {
+        const report = service.counterfactualCost(queryFrom(args), args.models);
+        emit(args, formatCounterfactual(report, service.costService), report);
         return 0;
       }
 

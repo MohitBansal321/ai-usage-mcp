@@ -9,6 +9,8 @@ export interface ParsedArgs {
   model?: string;
   project?: string;
   limit?: number;
+  /** Target models for `counterfactual`. Repeatable, or comma-separated. */
+  models?: string[];
   includeSubagents: boolean;
   allStores: boolean;
   full: boolean;
@@ -78,6 +80,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--project':
         args.project = requireValue('--project', rest.shift());
         break;
+      case '--models': {
+        const raw = requireValue('--models', rest.shift());
+        const names = raw
+          .split(',')
+          .map((m) => m.trim())
+          .filter(Boolean);
+        if (names.length === 0) throw new ArgError('--models requires at least one model name.');
+        args.models = [...(args.models ?? []), ...names];
+        break;
+      }
+
       case '--limit':
         args.limit = toPositiveInt('--limit', requireValue('--limit', rest.shift()));
         break;
