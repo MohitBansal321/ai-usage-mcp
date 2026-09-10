@@ -7,37 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- **`usage.speed` is now stored alongside the tokens it priced.** Claude Code records a speed
-  per request and `fast` bills at premium rates — double the standard input and output rates on
-  Opus 5 and Opus 4.8. It was read at collection time, used for that request's estimate, and
-  then dropped, so the tokens survived but the rate that applied to them did not.
-
-  Today's stored figures are correct, because they were priced while `speed` was still in hand:
-  `CostService.estimate()` is called from exactly one place, the collector, and nothing
-  re-prices a stored row yet. The loss was latent rather than active. But anything that
-  re-prices — a counterfactual across models, a corrected pricing table — would have silently
-  applied standard rates to a fast-mode turn and under-reported it, with no way to detect that
-  from the database.
-
-  Schema 2 adds a nullable `speed` column. **Rows collected before this release stay `NULL`
-  until you re-sync**, and `ai-usage sync --full` will fill them in; they are deliberately not
-  backfilled to `'standard'`, because a row whose source never mentioned speed is not the same
-  as one that said `standard`. All three states occur in practice: on the development machine,
-  5,884 Claude Code records report `standard`, 37 report nothing at all, and every one of the
-  6,841 OpenCode records is `NULL` because OpenCode does not record speed.
-
-  Your existing `usage.db` upgrades in place — `ALTER TABLE ADD COLUMN` on an empty column
-  rewrites no rows — and `ai-usage verify` still reconciles both clients exactly against an
-  independent read of their sources.
-
 ## [0.6.0] - 2026-09-10
 
-Nothing about how usage is counted has changed. This is about installation and discovery: the
-package could only be found by people who already knew to look for an MCP server, three of its
-features were invisible to almost everyone who had installed it, and the install instructions
-covered two clients out of seven.
+No figure this release reports differs from 0.5.1 -- nothing about how usage is counted has
+changed. This is about installation and discovery: the package could only be found by people
+who already knew to look for an MCP server, three of its features were invisible to almost
+everyone who had installed it, and the install instructions covered two clients out of seven.
+
+It does carry the database's first schema change since 1.0. The migration is additive, runs
+automatically the next time anything opens the database, and rewrites no rows -- see the
+`usage.speed` note under Fixed.
 
 ### Added
 
@@ -93,6 +72,31 @@ covered two clients out of seven.
   the fold. A `verify` excerpt and a sample of `stats --today` now appear near the top, since
   the entire output of this tool is a table of numbers and the README showed none of it. The
   cost-basis and privacy sections moved down, not out.
+
+### Fixed
+
+- **`usage.speed` is now stored alongside the tokens it priced.** Claude Code records a speed
+  per request and `fast` bills at premium rates — double the standard input and output rates on
+  Opus 5 and Opus 4.8. It was read at collection time, used for that request's estimate, and
+  then dropped, so the tokens survived but the rate that applied to them did not.
+
+  Today's stored figures are correct, because they were priced while `speed` was still in hand:
+  `CostService.estimate()` is called from exactly one place, the collector, and nothing
+  re-prices a stored row yet. The loss was latent rather than active. But anything that
+  re-prices — a counterfactual across models, a corrected pricing table — would have silently
+  applied standard rates to a fast-mode turn and under-reported it, with no way to detect that
+  from the database.
+
+  Schema 2 adds a nullable `speed` column. **Rows collected before this release stay `NULL`
+  until you re-sync**, and `ai-usage sync --full` will fill them in; they are deliberately not
+  backfilled to `'standard'`, because a row whose source never mentioned speed is not the same
+  as one that said `standard`. All three states occur in practice: on the development machine,
+  5,884 Claude Code records report `standard`, 37 report nothing at all, and every one of the
+  6,841 OpenCode records is `NULL` because OpenCode does not record speed.
+
+  Your existing `usage.db` upgrades in place — `ALTER TABLE ADD COLUMN` on an empty column
+  rewrites no rows — and `ai-usage verify` still reconciles both clients exactly against an
+  independent read of their sources.
 
 ## [0.5.1] - 2026-09-03
 
