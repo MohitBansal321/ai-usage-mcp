@@ -474,9 +474,45 @@ service. Prices change; to override without waiting for a release, drop a JSON f
 ~/.config/ai-usage-mcp/pricing.json      # or $AI_USAGE_PRICING_FILE
 ```
 
-It must contain `version`, `models`, and `cacheMultipliers.{read,write5m,write1h}`. A
-malformed override raises an error rather than silently falling back — quietly using
-different prices than you think are in effect would be worse than failing.
+A malformed override raises an error rather than silently falling back — quietly using
+different prices than you think are in effect would be worse than failing. So the exact
+shape matters:
+
+```jsonc
+{
+  "version": "my-prices-2026-09-16", // shown wherever an estimate is explained
+  "provenance": "hand-entered from each provider's pricing page, 2026-09-16",
+  "currency": "USD",
+  "unit": "per_million_tokens", // the only supported unit -- see below
+  "cacheMultipliers": {
+    "read": 0.1, //  cache reads cost this multiple of the model's input rate
+    "write5m": 1.25, // cache writes with a 5-minute TTL
+    "write1h": 2.0, //  cache writes with a 1-hour TTL
+  },
+  "models": {
+    // Keyed by the EXACT model id as the client records it -- check
+    // `ai-usage models` for the ids actually present in your data.
+    "claude-sonnet-5": { "input": 3, "output": 15 },
+
+    // `fast` is optional, and applies only to turns the source recorded as
+    // fast mode (Claude Code's `usage.speed`). Omit it and every turn is
+    // priced at the standard rate.
+    "claude-opus-5": { "input": 15, "output": 75, "fast": { "input": 22.5, "output": 112.5 } },
+  },
+}
+```
+
+**Rates are USD per _million_ tokens**, not per thousand — `"input": 3` means $3 per
+1M input tokens. Every field above is required except `fast`.
+
+Two limitations worth knowing before you start:
+
+- The file **replaces** the built-in table rather than merging with it, so it must list
+  every model you want priced, including the Anthropic ones.
+- `cacheMultipliers` is table-wide, so a provider whose cache discount differs from
+  Anthropic's cannot yet be expressed alongside it.
+
+A model that is absent is reported as _unavailable_, never guessed at.
 
 `ai-usage status` always shows which table is in force.
 

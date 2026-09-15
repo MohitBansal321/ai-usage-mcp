@@ -6,6 +6,80 @@ import type {
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
 import type { ClientId } from '../models/usage-record.js';
+import { emptyCostTotals, emptyTokenTotals } from '../models/usage-record.js';
+
+/**
+ * A day the period covers but nothing was spent on. Every figure is a real zero,
+ * not an unavailable one: the period genuinely contains this day and it genuinely
+ * had no usage, which is a fact about the data rather than a gap in it.
+ */
+function emptyDay(key: string): GroupedRow {
+  return {
+    key,
+    ...emptyTokenTotals(),
+    records: 0,
+    sessions: 0,
+    cacheWrite5mTokens: 0,
+    cacheWrite1hTokens: 0,
+    cost: emptyCostTotals(),
+  };
+}
+
+/** Local calendar day, matching SQLite's `date(timestamp,'localtime')` grouping. */
+function localDayKey(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * A period longer than this is not zero-filled. Ten years of daily rows is not a
+ * report anyone reads, and an absurd `--since` should not be able to make the
+ * process allocate its way out of memory.
+ */
+const MAX_FILLED_DAYS = 3700;
+
+/**
+ * Inserts the days a period covers that have no usage.
+ *
+ * `byDay` returns only days that have rows, so a 30-day window could come back as
+ * 10 -- and the gaps were invisible. That makes a trend actively misleading:
+ * consecutive rendered rows look adjacent, so an ordinary day reads as a spike
+ * purely because it is the only one drawn near it.
+ *
+ * The filled span is deliberately bounded by what was asked for. An explicit
+ * `since` extends the range even where no data reaches, because "I used nothing
+ * that week" is the answer to the question. With no explicit bound the range is
+ * the data's own first and last day, so "all time" cannot grow without limit.
+ */
+function zeroFillDays(days: GroupedRow[], filter: UsageFilter): GroupedRow[] {
+  const present = new Map(days.map((d) => [d.key, d]));
+  // byDay orders newest first, so the last row is the earliest day.
+  const earliest = days.at(-1)?.key;
+  const latest = days[0]?.key;
+
+  const startKey = filter.since ? localDayKey(new Date(filter.since)) : earliest;
+  const endKey = filter.until
+    ? // `until` is exclusive, so the last day it covers is the millisecond before.
+      localDayKey(new Date(new Date(filter.until).getTime() - 1))
+    : filter.since
+      ? localDayKey(new Date())
+      : latest;
+
+  if (!startKey || !endKey || startKey > endKey) return days;
+
+  const out: GroupedRow[] = [];
+  const cursor = new Date(`${startKey}T00:00:00`);
+  const end = new Date(`${endKey}T00:00:00`);
+  for (let guard = 0; cursor <= end; guard++) {
+    if (guard >= MAX_FILLED_DAYS) return days;
+    const key = localDayKey(cursor);
+    out.push(present.get(key) ?? emptyDay(key));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  // Newest first, matching what `byDay` returns.
+  return out.reverse();
+}
 
 export interface SummaryReport {
   period: { since?: string; until?: string; label: string };
@@ -131,7 +205,7 @@ export class AggregationService {
         label,
       },
       includeSubagents: filter.includeSubagents !== false,
-      days: this.repo.byDay(filter),
+      days: zeroFillDays(this.repo.byDay(filter), filter),
       overall: this.repo.totals(filter),
     };
   }

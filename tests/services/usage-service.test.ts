@@ -222,6 +222,32 @@ describe('UsageService', () => {
     for (const key of keys) expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it('fills in days the period covers that have no usage', () => {
+    // byDay returns only days that have rows, so a 14-day window could come back
+    // as 3. The gaps were invisible, which makes a trend misread: consecutive
+    // rendered rows look adjacent, so an ordinary day reads as a spike purely
+    // because it is the only one drawn near it.
+    const report = service.dailyUsage({ days: 14 });
+    expect(report.days).toHaveLength(14);
+
+    // Contiguous, newest first, no duplicates.
+    const keys = report.days.map((d) => d.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort().reverse()).toEqual(keys);
+
+    // A filled day is a real zero, and the filling must not change the totals.
+    const summed = report.days.reduce((n, d) => n + d.totalTokens, 0);
+    expect(summed).toBe(report.overall.totalTokens);
+    const empty = report.days.filter((d) => d.records === 0);
+    expect(empty.length).toBeGreaterThan(0);
+    for (const d of empty) {
+      expect(d.totalTokens).toBe(0);
+      expect(d.sessions).toBe(0);
+      expect(d.cost.estimated).toBe(0);
+      expect(d.cost.reported).toBe(0);
+    }
+  });
+
   it('buckets days in local time so they agree with the period filter', () => {
     // A turn late on a local evening is a different UTC date east of Greenwich.
     // The day it lands in must match the local date the period bounds use, or
