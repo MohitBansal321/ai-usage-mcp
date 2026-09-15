@@ -67,3 +67,35 @@ describe('CLI exit codes', () => {
     expect(withoutComments).toMatch(/process\.exitCode\s*=/);
   });
 });
+
+/**
+ * `--since`/`--until` used to escape the parser and fail several layers in, as a
+ * raw `RangeError: Invalid time value` with exit 1 -- while every other bad flag
+ * gave one clean line and exit 2.
+ */
+describe('CLI date bounds', () => {
+  const dir = tempDir('exit-code-dates-');
+  const env = {
+    ...process.env,
+    AI_USAGE_DB: join(dir, 'usage.db'),
+    AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
+    AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_NO_UPDATE_CHECK: '1',
+  };
+  const run = (...args: string[]) =>
+    spawnSync(process.execPath, [CLI, ...args], { env, encoding: 'utf8' });
+
+  it('rejects an unparseable bound with exit 2 and no stack trace', () => {
+    for (const flag of ['--since', '--until']) {
+      const r = run('stats', flag, 'not-a-date');
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(`${flag} expects an ISO 8601 date`);
+      expect(r.stderr).not.toContain('RangeError');
+      expect(r.stderr).not.toContain('at resolvePeriod');
+    }
+  });
+
+  it('still accepts a valid bound', () => {
+    expect(run('stats', '--since', '2026-09-01').status).toBe(0);
+  });
+});

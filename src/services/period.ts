@@ -15,6 +15,22 @@ export interface Period {
   label: string;
 }
 
+/**
+ * Names the bound that was unreadable, instead of letting `toISOString()` throw.
+ *
+ * `new Date('nonsense')` yields an Invalid Date rather than throwing, so the
+ * failure used to surface here as a bare `RangeError: Invalid time value` --
+ * which says nothing about *which* bound was wrong, or what it was. The CLI
+ * validates these at the flag boundary; this guards every other caller,
+ * including the MCP tools, where the argument arrives straight from a client.
+ */
+function toIso(bound: 'since' | 'until', raw: string): string {
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime()))
+    throw new RangeError(`${bound} is not a valid ISO 8601 date: "${raw}".`);
+  return parsed.toISOString();
+}
+
 function localMidnight(offsetDays = 0): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -31,8 +47,8 @@ export function resolvePeriod(input: PeriodInput = {}): Period {
     const period: Period = {
       label: `${input.since ?? 'beginning'} to ${input.until ?? 'now'}`,
     };
-    if (input.since) period.since = new Date(input.since).toISOString();
-    if (input.until) period.until = new Date(input.until).toISOString();
+    if (input.since) period.since = toIso('since', input.since);
+    if (input.until) period.until = toIso('until', input.until);
     return period;
   }
 
