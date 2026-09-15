@@ -177,9 +177,31 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
+/**
+ * The exit code is *set*, never forced with `process.exit()`.
+ *
+ * A hard exit tears the process down while libuv handles are still closing. On
+ * Windows that is not merely untidy: once the update check has opened a TLS
+ * connection to the registry, `process.exit()` trips an assertion inside libuv
+ * itself --
+ *
+ *   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c
+ *
+ * -- which aborts the process with code 127 *after* the report has already been
+ * printed in full. The output is correct and the exit status says catastrophic
+ * failure, so anything scripting this command sees a hard failure roughly once a
+ * day: the registry answer is cached for 24h, so it is the first run after that
+ * cache expires that pays. `AI_USAGE_NO_UPDATE_CHECK=1` avoided it only by
+ * skipping the fetch entirely.
+ *
+ * Setting `exitCode` and letting the loop drain is both correct and measurably
+ * faster here, because nothing is left half-closed on the way out.
+ */
 run(process.argv.slice(2))
-  .then((code) => process.exit(code))
+  .then((code) => {
+    process.exitCode = code;
+  })
   .catch((err) => {
     process.stderr.write(`ai-usage: ${(err as Error).stack ?? String(err)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   });
