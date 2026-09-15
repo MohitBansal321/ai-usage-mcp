@@ -49,6 +49,13 @@ export function resolvePeriod(input: PeriodInput = {}): Period {
     };
     if (input.since) period.since = toIso('since', input.since);
     if (input.until) period.until = toIso('until', input.until);
+    // An inverted range can only ever match nothing. Reporting "no usage records
+    // for this period" would be indistinguishable from a genuinely quiet period,
+    // which invites reading a typo as a fact about the data.
+    if (period.since && period.until && period.since >= period.until)
+      throw new RangeError(
+        `since (${period.since}) is not before until (${period.until}): the range is empty.`,
+      );
     return period;
   }
 

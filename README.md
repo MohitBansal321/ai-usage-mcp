@@ -578,6 +578,7 @@ It prints the reason and every path it looked at. Point it at the right place:
 | `AI_USAGE_OPENCODE_DB`     | Path to `opencode.db`                                                   |
 | `AI_USAGE_CLAUDE_PROJECTS` | Path to Claude Code's `projects/` directory                             |
 | `AI_USAGE_DB`              | Where to keep our database                                              |
+| `AI_USAGE_HOME`            | Relocates both the database and the config dir in one go                |
 | `AI_USAGE_PRICING_FILE`    | Pricing override file                                                   |
 | `AI_USAGE_FRESHNESS_MS`    | How long a sync stays fresh before a tool call re-syncs (default 30000) |
 | `AI_USAGE_NO_UPDATE_CHECK` | Set to `1` to stop `status` checking npm for a newer version            |

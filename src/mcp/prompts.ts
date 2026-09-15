@@ -12,6 +12,21 @@ const HONESTY =
   'actually charged, while the estimated figure is an API-equivalent list price for a client ' +
   'that records no cost. Report anything unavailable as unavailable rather than as zero.';
 
+const DEFAULT_REVIEW_DAYS = '7';
+
+/**
+ * Prompt arguments arrive as strings from a client and are pasted into text a
+ * model then acts on, so a value that is not a day count has to be dropped
+ * rather than interpolated: `days: "abc"` previously produced the instruction
+ * "usage for the last abc days", and `"-5"` asked for a negative period.
+ * Anything that is not a positive integer falls back to the documented default.
+ */
+function positiveDays(raw: string | undefined): string {
+  if (raw === undefined) return DEFAULT_REVIEW_DAYS;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? String(n) : DEFAULT_REVIEW_DAYS;
+}
+
 export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
     'daily-review',
@@ -34,7 +49,7 @@ export function registerPrompts(server: McpServer): void {
           content: {
             type: 'text' as const,
             text:
-              `Review my coding-agent usage for the last ${days ?? '7'} days.\n\n` +
+              `Review my coding-agent usage for the last ${positiveDays(days)} days.\n\n` +
               'Call usage_summary for the period, then daily_usage to see the shape of it, then ' +
               'client_usage and model_usage to see where it went. Tell me the total, which day ' +
               'was heaviest, and which client and model dominated.\n\n' +

@@ -99,3 +99,42 @@ describe('CLI date bounds', () => {
     expect(run('stats', '--since', '2026-09-01').status).toBe(0);
   });
 });
+
+/**
+ * An empty filter used to be falsy, get dropped, and let the command answer with
+ * the UNFILTERED totals -- the whole database, presented as though the filter had
+ * applied. A wrong number that looks right is the one failure mode this project
+ * cannot have.
+ */
+describe('CLI filter and range guards', () => {
+  const dir = tempDir('exit-code-filters-');
+  const env = {
+    ...process.env,
+    AI_USAGE_DB: join(dir, 'usage.db'),
+    AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
+    AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_NO_UPDATE_CHECK: '1',
+  };
+  const run = (...args: string[]) =>
+    spawnSync(process.execPath, [CLI, ...args], { env, encoding: 'utf8' });
+
+  it('refuses an empty filter rather than silently not filtering', () => {
+    for (const flag of ['--model', '--project']) {
+      const r = run('stats', flag, '');
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(`${flag} requires a non-empty value`);
+    }
+  });
+
+  it('refuses an inverted range rather than reporting an empty period', () => {
+    const r = run('stats', '--since', '2026-09-16', '--until', '2026-09-01');
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('--since must be before --until');
+    expect(r.stderr).not.toContain('RangeError');
+  });
+
+  it('still accepts a correctly ordered range and a real filter', () => {
+    expect(run('stats', '--since', '2026-09-01', '--until', '2026-09-16').status).toBe(0);
+    expect(run('stats', '--model', 'claude-opus-5').status).toBe(0);
+  });
+});
