@@ -10,7 +10,11 @@ import type {
   UsageCollector,
   UsageRecord,
 } from '../../models/usage-record.js';
-import { UNKNOWN_MODEL, UNKNOWN_PROVIDER } from '../../models/usage-record.js';
+import {
+  normaliseProjectPath,
+  UNKNOWN_MODEL,
+  UNKNOWN_PROVIDER,
+} from '../../models/usage-record.js';
 import { isWithin, msToIso, num } from '../collector.js';
 import { discoverOpenCodeStores } from './stores.js';
 
@@ -217,7 +221,7 @@ export class OpenCodeCollector implements UsageCollector {
           turnKind: row.parent_id ? 'subagent' : 'main',
           source: 'opencode.db:message',
         };
-        if (projectPath) record.projectPath = projectPath;
+        if (projectPath) record.projectPath = normaliseProjectPath(projectPath);
         if (row.client_version) record.sourceVersion = row.client_version;
 
         records.push(record);

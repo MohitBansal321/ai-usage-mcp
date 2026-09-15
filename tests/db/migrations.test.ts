@@ -153,3 +153,56 @@ describe('migrations', () => {
     db.close();
   });
 });
+
+/**
+ * Migration 3 repairs databases that already split one Windows project in two.
+ * It runs on every platform, so it must be provably inert on POSIX data.
+ */
+describe('migration 3: normalise-windows-drive-letter', () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = tempDir('migrate-drive-');
+    dbPath = join(dir, 'usage.db');
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const paths = (db: SqliteDatabase): string[] =>
+    (
+      db.prepare('SELECT DISTINCT project_path AS p FROM usage_records ORDER BY p').all() as {
+        p: string;
+      }[]
+    ).map((r) => r.p);
+
+  it('merges drive-letter variants and leaves POSIX paths untouched', () => {
+    const db = openDatabase({ path: dbPath });
+    migrate(db);
+    const repo = new UsageRepository(db);
+    repo.upsertMany([
+      record({ id: 'w1', projectPath: 'd:\\repo' }),
+      record({ id: 'w2', projectPath: 'D:\\repo' }),
+      record({ id: 'w3', projectPath: 'c:/other' }),
+      // POSIX paths differing only by case are DIFFERENT directories and must
+      // both survive: merging them would invent a number rather than repair one.
+      record({ id: 'p1', projectPath: '/home/x' }),
+      record({ id: 'p2', projectPath: '/home/X' }),
+    ]);
+
+    // The REAL migration, not a copy of its SQL. Copying it here once already
+    // hid a bug: the pattern needs `[\\/]` in source to reach SQLite as `[\/]`,
+    // and a single backslash silently degrades to "forward slashes only".
+    const normalise = migrations.find((m) => m.name === 'normalise-windows-drive-letter');
+    expect(normalise, 'migration 3 should exist').toBeDefined();
+    normalise!.up(db);
+
+    const after = paths(db);
+    expect(after).toContain('D:\\repo');
+    expect(after).not.toContain('d:\\repo');
+    expect(after).toContain('C:/other');
+    // Both POSIX spellings still present and still distinct.
+    expect(after).toContain('/home/x');
+    expect(after).toContain('/home/X');
+    db.close();
+  });
+});

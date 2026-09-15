@@ -152,6 +152,28 @@ export interface CostTotals {
   currency: 'USD';
 }
 
+/**
+ * Uppercases the drive letter of a Windows absolute path, and nothing else.
+ *
+ * The same directory reaches us as both `D:\repo` and `d:\repo` depending on how
+ * the client happened to record it, and since Windows paths are case-insensitive
+ * those are one project -- but grouping is a string comparison, so they split
+ * into two, and every per-project report answered with a fraction of the truth.
+ *
+ * Only the drive letter is touched, and only when the string is unmistakably a
+ * Windows absolute path (`X:\` or `X:/`). The rest of the path is left exactly as
+ * recorded, because case-folding it would be wrong on POSIX, where `/home/x` and
+ * `/home/X` are genuinely different directories -- merging those would invent a
+ * number rather than repair one. A POSIX path can never match this pattern, so
+ * this is a no-op there.
+ *
+ * Deliberately not `process.platform`-dependent: a database may be written on one
+ * machine and read on another, so the rule has to be the same everywhere.
+ */
+export function normaliseProjectPath(path: string): string {
+  return /^[a-z]:[\\/]/.test(path) ? `${path[0]!.toUpperCase()}${path.slice(1)}` : path;
+}
+
 export function emptyTokenTotals(): TokenTotals {
   return {
     inputTokens: 0,
