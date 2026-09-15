@@ -7,7 +7,7 @@ import type {
   UsageCollector,
   UsageRecord,
 } from '../../models/usage-record.js';
-import { UNKNOWN_MODEL } from '../../models/usage-record.js';
+import { normaliseProjectPath, UNKNOWN_MODEL } from '../../models/usage-record.js';
 import type { CostService } from '../../services/cost-service.js';
 import { isWithin, num } from '../collector.js';
 import {
@@ -369,7 +369,7 @@ export class ClaudeCodeCollector implements UsageCollector {
       source: `claude-jsonl:${file.turnKind}`,
     };
     if (estimate.estimatedCost !== undefined) record.estimatedCost = estimate.estimatedCost;
-    if (projectPath) record.projectPath = projectPath;
+    if (projectPath) record.projectPath = normaliseProjectPath(projectPath);
     if (acc.version) record.sourceVersion = acc.version;
     // Kept alongside the tokens it applied to. The estimate above already used
     // it, but a re-price reads the stored row, not this accumulator.

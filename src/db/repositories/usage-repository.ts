@@ -6,6 +6,7 @@ import type {
   TurnKind,
   UsageRecord,
 } from '../../models/usage-record.js';
+import { normaliseProjectPath } from '../../models/usage-record.js';
 
 export interface UsageFilter {
   /** Inclusive lower bound, ISO 8601. */
@@ -163,8 +164,10 @@ function buildWhere(filter: UsageFilter): { sql: string; params: Record<string, 
     params.sessionId = filter.sessionId;
   }
   if (filter.projectPath) {
+    // Normalised on the way in as well as on the way to storage, so a caller who
+    // types `d:\repo` still matches rows stored as `D:\repo`.
     clauses.push('project_path = :projectPath');
-    params.projectPath = filter.projectPath;
+    params.projectPath = normaliseProjectPath(filter.projectPath);
   }
   if (filter.includeSubagents === false) {
     clauses.push("turn_kind = 'main'");

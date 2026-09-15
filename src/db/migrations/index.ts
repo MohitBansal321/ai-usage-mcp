@@ -74,4 +74,30 @@ export const migrations: Migration[] = [
       db.exec(`ALTER TABLE usage_records ADD COLUMN speed TEXT`);
     },
   },
+  {
+    version: 3,
+    name: 'normalise-windows-drive-letter',
+    up(db) {
+      // The same directory was stored as both `D:\repo` and `d:\repo`, depending
+      // on how the client recorded it that session. Windows paths are
+      // case-insensitive, so those are one project -- but grouping is a string
+      // comparison, so every per-project report split it in two and answered with
+      // a fraction of the truth. Collection now normalises the drive letter; this
+      // repairs what is already stored, so existing databases do not stay wrong
+      // until a `sync --full`.
+      //
+      // Only the drive letter is touched, and only where the path is unmistakably
+      // a Windows absolute one. Matching is done with GLOB, which is
+      // case-SENSITIVE in SQLite (unlike LIKE), so `[a-z]:` cannot match a path
+      // that is already uppercase and the statement is idempotent. A POSIX path
+      // can never match, so this is a no-op on Linux and macOS databases -- where
+      // folding case would be actively wrong, since `/home/x` and `/home/X` are
+      // different directories there.
+      db.exec(`
+        UPDATE usage_records
+           SET project_path = UPPER(SUBSTR(project_path, 1, 1)) || SUBSTR(project_path, 2)
+         WHERE project_path GLOB '[a-z]:[\\/]*'
+      `);
+    },
+  },
 ];
