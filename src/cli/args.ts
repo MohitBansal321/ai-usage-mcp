@@ -25,6 +25,21 @@ function requireValue(flag: string, value: string | undefined): string {
   return value;
 }
 
+/**
+ * Rejects a filter that would silently stop filtering.
+ *
+ * An empty `--model ""` is falsy, so it used to be dropped on the way to the
+ * query and the command answered with the *unfiltered* totals -- the whole
+ * database, presented as though the filter had applied. That is the one failure
+ * mode this project cannot have: a wrong number that looks like a right one.
+ * `--models ""` already refused; these now agree with it.
+ */
+function requireNonEmpty(flag: string, value: string | undefined): string {
+  const v = requireValue(flag, value);
+  if (v.trim() === '') throw new ArgError(`${flag} requires a non-empty value.`);
+  return v;
+}
+
 function toPositiveInt(flag: string, raw: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0)
@@ -92,10 +107,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       }
       case '--model':
-        args.model = requireValue('--model', rest.shift());
+        args.model = requireNonEmpty('--model', rest.shift());
         break;
       case '--project':
-        args.project = requireValue('--project', rest.shift());
+        args.project = requireNonEmpty('--project', rest.shift());
         break;
       case '--models': {
         const raw = requireValue('--models', rest.shift());
@@ -136,6 +151,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.positionals.push(token);
     }
   }
+
+  // Checked here rather than per-flag, because the ordering is only knowable
+  // once both bounds have been seen, whichever order they were typed in.
+  if (args.since && args.until && new Date(args.since) >= new Date(args.until))
+    throw new ArgError(
+      `--since must be before --until, got --since "${args.since}" and --until "${args.until}".`,
+    );
 
   return args;
 }
