@@ -32,6 +32,23 @@ function toPositiveInt(flag: string, raw: string): number {
   return n;
 }
 
+/**
+ * Rejects a date the parser cannot read, rather than carrying it inwards.
+ *
+ * `new Date('nonsense')` is not an error, it is an Invalid Date -- and it stays
+ * quiet until something calls `.toISOString()` on it, which is where the period
+ * is resolved, several layers in. That surfaced a raw `RangeError: Invalid time
+ * value` stack trace and exit 1, where every other bad flag here gives one clean
+ * line and exit 2. The value is checked at the boundary it enters through.
+ */
+function toTimestamp(flag: string, raw: string): string {
+  if (Number.isNaN(new Date(raw).getTime()))
+    throw new ArgError(
+      `${flag} expects an ISO 8601 date or date-time, got "${raw}". Example: ${flag} 2026-09-01.`,
+    );
+  return raw;
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
   const args: ParsedArgs = {
     command: 'help',
@@ -61,10 +78,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.days = toPositiveInt('--days', requireValue('--days', rest.shift()));
         break;
       case '--since':
-        args.since = requireValue('--since', rest.shift());
+        args.since = toTimestamp('--since', requireValue('--since', rest.shift()));
         break;
       case '--until':
-        args.until = requireValue('--until', rest.shift());
+        args.until = toTimestamp('--until', requireValue('--until', rest.shift()));
         break;
       case '--client': {
         const value = requireValue('--client', rest.shift());

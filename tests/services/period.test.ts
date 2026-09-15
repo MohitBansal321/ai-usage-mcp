@@ -40,3 +40,19 @@ describe('resolvePeriod', () => {
     expect(period.until).toBe('2026-02-01T00:00:00.000Z');
   });
 });
+
+describe('invalid explicit bounds', () => {
+  it('names the offending bound instead of throwing Invalid time value', () => {
+    expect(() => resolvePeriod({ since: 'not-a-date' })).toThrow(
+      /since is not a valid ISO 8601 date: "not-a-date"/,
+    );
+    expect(() => resolvePeriod({ until: 'garbage' })).toThrow(
+      /until is not a valid ISO 8601 date: "garbage"/,
+    );
+  });
+
+  it('still accepts the forms a user would actually type', () => {
+    expect(resolvePeriod({ since: '2026-09-01' }).since).toBe('2026-09-01T00:00:00.000Z');
+    expect(resolvePeriod({ since: '2026-09-01T12:30:00Z' }).since).toBe('2026-09-01T12:30:00.000Z');
+  });
+});
