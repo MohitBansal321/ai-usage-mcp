@@ -69,20 +69,29 @@ const EXPECTED = [
   'project_usage',
   'recent_sessions',
   'session_usage',
+  'usage_breakdown',
   'usage_summary',
 ];
 
-// Tools that cannot be called with no arguments. Everything else is exercised
-// below, derived from tools/list rather than a second hardcoded list, so a new
-// tool gets smoke-tested without editing two places.
-const NEEDS_ARGS = new Set(['session_usage']);
+// Arguments for the tools that cannot be called with an empty object, so they
+// are still smoke-tested rather than skipped. Everything absent from here is
+// called with `{}`, and the loop below is driven by tools/list rather than a
+// second hardcoded list, so a new tool is exercised without editing two places.
+const SMOKE_ARGS = {
+  // `axes` is required: a breakdown with no dimensions is not a question.
+  usage_breakdown: { axes: ['day'] },
+};
+
+// Tools that cannot be smoke-called at all. `session_usage` needs a real session
+// id, and CI runs against an empty database where none exists.
+const SKIP = new Set(['session_usage']);
 const list = await send('tools/list', {});
 const names = (list.result?.tools ?? []).map((t) => t.name).sort();
 if (JSON.stringify(names) !== JSON.stringify(EXPECTED)) fail(`tools mismatch: ${names.join(', ')}`);
 console.log('tools/list ok:', names.join(', '));
 
-for (const name of names.filter((n) => !NEEDS_ARGS.has(n))) {
-  const res = await send('tools/call', { name, arguments: {} });
+for (const name of names.filter((n) => !SKIP.has(n))) {
+  const res = await send('tools/call', { name, arguments: SMOKE_ARGS[name] ?? {} });
   if (res.error) fail(`${name} returned an error: ${JSON.stringify(res.error)}`);
   if (!res.result?.content?.[0]?.text) fail(`${name} returned no text content`);
   console.log(`tools/call ${name} ok`);

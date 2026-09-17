@@ -9,6 +9,118 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ai-usage breakdown --by <axes>` and the `usage_breakdown` MCP tool**: totals cut by two or
+  three dimensions at once -- `project x day`, `model x day`, `client x model` -- as one tidy
+  row set. Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`,
+  `hour-of-day`.
+
+  Every metric was single-axis, so "which of my projects is getting more expensive" could not
+  be asked: `projects` reports a project's total over 60 days with no indication whether that
+  is accelerating or one old burst, and `daily --project X` gives a single series for a path
+  you must already know. Answering it meant enumerating projects, issuing one call each, and
+  joining client-side -- an N+1 that is not feasible as a tool call from an agent loop at all.
+
+  The time axes use the same expressions `daily_usage` does, so the two cannot disagree about
+  what a day is. Combinations with no activity are absent rather than returned as zero rows: a
+  project x day grid is mostly empty and filling it would bury the rows that matter. A `--` in
+  a cost column means no record in that row is priced on that basis -- deliberately not `$0`,
+  which is a different claim. `--sort`, `--limit` and `--offset` behave as on any other list,
+  with every axis joining the tie-break so paging cannot drop or repeat a cell.
+  ([#54](https://github.com/MohitBansal321/ai-usage-mcp/issues/54))
+
+### Added
+
+- **`daily` shows every bucket, including the empty ones.** It printed only the days that _had_
+  data -- ten rows for a thirty-day window -- with nothing to say the other twenty existed.
+  That made a trend actively misleading rather than merely incomplete: the gaps were
+  invisible, so an ordinary day rendered immediately beside one three weeks earlier and looked
+  like a spike next to it.
+
+  A zero row is not a fabricated number; it says out loud what the absence of a row already
+  meant. Each carries `zeroFilled: true` in JSON and MCP output, so a constructed zero stays
+  distinguishable from an observed one. Filling is bounded at 5,000 buckets and says so when
+  the bound bites, rather than quietly returning a partial series.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`stats --compare previous`**, reporting the equal-length window immediately before and the
+  delta, with the matching `compare` MCP argument. Every report described one window in
+  absolutes, so "am I trending up?" meant re-running with a second hand-computed date pair and
+  diffing mentally.
+
+  Three rules it keeps. The two cost bases are deltaed **separately and never summed**, for the
+  same reason they are reported separately. There is **no percentage change from zero** --
+  `$0 -> $5` is a new thing happening, not a rise of 100%, so the ratio is omitted rather than
+  invented. And the previous window is **aligned to the same local midnights the period uses**,
+  so `--days 7` compares against the seven whole days before rather than "the 156 hours
+  before"; the latter is what subtracting an open window's elapsed length gives, and it moves
+  every time the clock is read. Resolving it in `resolvePeriod` rather than deriving it later
+  is what makes it a pure function of the request -- and is what let the CLI/MCP parity test
+  cover it at all, since the two run in separate processes.
+
+  "All time" has no window before it, so `--compare` is refused there rather than answered.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`daily --grain hour | day | hour-of-day`**, with the matching MCP argument. `hour-of-day`
+  collapses every day in the period onto one 24-slot local clock, which is the grain that
+  answers "when during the day do I burn tokens" -- on the development machine, entirely
+  between 10:00 and 18:00, peaking at noon, with nothing in the evening. Timestamps were
+  already stored to the millisecond and day buckets already computed in local time, so both
+  the data and the timezone handling were in place.
+  ([#58](https://github.com/MohitBansal321/ai-usage-mcp/issues/58))
+
+### Added
+
+- **Rank by cost.** `sessions`, `models`, `projects` and `clients` take `--sort`
+  (`tokens` | `reported-cost` | `estimated-cost` | `records` | `sessions` | `recent`), with the
+  matching MCP argument. The data was always there -- only the ordering was missing, and its
+  absence was worse than neutral: `sessions` was strictly recency-ordered, so the `--limit` a
+  caller would naturally reach for actively _hid_ the answer. On the development machine the
+  costliest session is $373.05 and sits 300-odd rows down a recency-ordered list whose first
+  two entries are $7.62 and $3.44.
+
+  There is deliberately **no plain `--sort cost`**. Reported and estimated cost are separate
+  figures that are never summed, so ordering by one sorts every row priced on the other basis
+  as though it were $0. The flag refuses the ambiguous form and names the two to choose from,
+  and whichever is chosen the output reports how many rows that ordering could not speak for
+  (`rowsWithoutSortValue`).
+  ([#52](https://github.com/MohitBansal321/ai-usage-mcp/issues/52))
+
+- **Multi-valued scope filters.** `--client`, `--model` and `--project` are repeatable and
+  comma-separated, each matching any of the values given; different scopes still combine with
+  AND. `--model a,b` previously parsed as one literal id, matched nothing, and reported an
+  empty period at exit 0 -- a typo rendered as a fact about the data.
+
+  An **empty list now matches nothing rather than nothing-at-all-being-filtered**, which is
+  the same rule `--model ""` already followed.
+
+  A scope value present nowhere in the database is called out explicitly, because a typo and a
+  quiet week were otherwise indistinguishable. The check runs against the whole database, not
+  the period, so a project that merely had no activity this week is not reported as unknown.
+  ([#57](https://github.com/MohitBansal321/ai-usage-mcp/issues/57))
+
+- **Paging, with a completeness signal.** The same four commands take `--offset`, and every
+  list-shaped result now carries `total`, `offset`, `limit`, `hasMore`, `nextOffset` and
+  `sort`. A caller passing `--limit` previously had no way to know what it had not seen, which
+  made "the top 5" indistinguishable from "all 5 there are". Every ordering carries a
+  deterministic tie-break, so paging cannot drop or repeat a row when two rows compare equal.
+  ([#61](https://github.com/MohitBansal321/ai-usage-mcp/issues/61))
+
+### Changed
+
+- **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
+  on the CLI (`--models` still works), `targetModels` in MCP. One says which turns to include
+  and the other which rates to price them at; with `--model` now accepting a list, a single
+  `models` meaning both depending on the tool would have been exactly the ambiguity this
+  release set out to remove. The two are usable together:
+  `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5`.
+
+- `UsageFilter`'s scope fields are now lists: `clients`, `models`, `projectPaths`. The
+  singular `client`/`model`/`projectPath` are gone rather than kept as aliases -- two ways to
+  express one filter, only one of which the query consults, is how a filter silently stops
+  filtering.
+
+### Added
+
 - **Prices for models this package does not ship.** The pricing override
   (`$AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`) is now **overlaid** onto the
   built-in table rather than replacing it, keyed by model id. Adding one missing provider

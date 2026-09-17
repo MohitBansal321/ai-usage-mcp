@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSummary } from '../../services/formatter.js';
 import {
@@ -20,14 +21,35 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
         'because cache tokens typically dwarf input and a single blended total is misleading. ' +
         'Reported cost (from OpenCode) and estimated cost (computed for Claude Code, which ' +
         'records none) are always listed separately and must not be summed.',
-      inputSchema: { ...periodShape, client: clientEnum },
+      inputSchema: {
+        ...periodShape,
+        client: clientEnum,
+        compare: z
+          .enum(['previous'])
+          .optional()
+          .describe(
+            'Also report the window of equal length immediately before this one, with the ' +
+              'delta. Requires a bounded period (days/today/since): "all time" has no previous ' +
+              'window. Reported and estimated cost are deltaed separately and never summed.',
+          ),
+      },
     },
     async (args) => {
       await ctx.ensureFresh();
-      const report = ctx.service.summary(toQuery(args));
+      const report = ctx.service.summary(toQuery(args), { compare: args.compare === 'previous' });
       return textResult(formatSummary(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,
+        ...(report.unmatchedScope ? { unmatchedScope: report.unmatchedScope } : {}),
+        ...(report.comparison
+          ? {
+              comparison: {
+                previous: report.comparison.previous,
+                delta: report.comparison.delta,
+                caveats: report.comparison.caveats,
+              },
+            }
+          : {}),
         totals: {
           records: report.overall.records,
           sessions: report.overall.sessions,

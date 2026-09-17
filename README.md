@@ -427,12 +427,180 @@ ai-usage projects    # per-project  (--limit N)
 ai-usage sessions    # recent sessions
 ai-usage session ID  # one session in detail
 ai-usage daily       # per-day breakdown
-ai-usage counterfactual  # these tokens on another model (--models a,b)
+ai-usage counterfactual  # these tokens on another model (--target-models a,b)
 ai-usage verify      # re-read the sources and diff them against the local database
 ```
 
-Add `--json` to any command for machine-readable output, and `--project <path>` to any
-period-based command to restrict it to one project.
+Add `--json` to any command for machine-readable output.
+
+### Narrowing to several projects, models or clients
+
+`--client`, `--model` and `--project` are **repeatable and comma-separated**, and each matches
+_any_ of the values given:
+
+```bash
+ai-usage models   --model claude-opus-5,claude-sonnet-5
+ai-usage daily    --project /work/api --project /work/web    # same as a comma list
+ai-usage stats    --client opencode
+```
+
+Different scopes combine with **AND**: `--model claude-opus-5 --project /work/api` is Opus
+turns _in that project_.
+
+A value that matches no record anywhere in the database is called out rather than answered
+with an empty report, because a typo and a quiet week otherwise look identical:
+
+```text
+WARNING: no record anywhere in this database has model "claude-opus". An empty result below
+is that, not a quiet period. Run `ai-usage models` to see the ids actually present.
+```
+
+Note that `--model` (which turns to include) and `--target-models` (which rates to price them
+at, on `counterfactual` only) are different things, and usable together:
+`ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
+Opus turns would have cost on Sonnet.
+
+### Crossing two dimensions
+
+`projects` gives a total with no trend; `daily --project X` gives one series. Answering
+"which of my projects is getting more expensive" therefore meant enumerating projects, issuing
+one call per path, and joining the results — an N+1 that is not feasible as a single tool call
+at all. `breakdown` crosses the axes in one query:
+
+```bash
+ai-usage breakdown --by project,day --days 30
+ai-usage breakdown --by model,day --days 7 --sort estimated-cost
+ai-usage breakdown --by client,model,hour-of-day
+```
+
+```text
+project                                day         turns  total tokens  reported  estimated
+-------------------------------------  ----------  -----  ------------  --------  ---------
+/home/you/centralized_backend          2026-09-16    230    20,040,546        --     $22.23
+/home/you/centralized_backend          2026-09-15    161    19,803,069        --     $18.58
+/home/you/Videos/ai-usage              2026-09-17     82    24,592,585        --     $18.07
+```
+
+Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`, `hour-of-day` — up to
+three, each at most once. Time axes bucket in local time, identically to `daily`.
+
+Two things it deliberately does not do. Combinations with **no activity are absent** rather
+than returned as zero rows: a project × day grid is mostly empty and filling it would bury the
+rows that matter. And a `--` in a cost column means **no record in that row is priced on that
+basis** — it is not `$0`, which would be a different claim.
+
+`--sort`, `--limit` and `--offset` work here as on any other list.
+
+### Reading a trend
+
+`daily` shows **every** bucket in the window, including the ones with no activity:
+
+```text
+2026-09-17      52 turns  total 14,187,806 (14.19M)  (estimated $11.27)
+2026-09-16     333 turns  total 33,849,492 (33.85M)  (estimated $33.56)
+2026-09-15     161 turns  total 19,803,069 (19.80M)  (estimated $18.58)
+2026-09-14       0 turns  total 0   --
+2026-09-13       0 turns  total 0   --
+2026-09-12       0 turns  total 0   --
+2026-09-11     123 turns  total 12,157,650 (12.16M)  (estimated $10.89)
+```
+
+Rows marked `--` had no recorded activity. They used to be omitted, which made a trend
+_actively_ misleading rather than merely incomplete: the gaps were invisible, so the 11th
+rendered immediately below the 15th and any eye reading down the column saw a continuous
+series that did not exist. A zero row is not a fabricated number — it says what the absence of
+a row already meant. In JSON each carries `zeroFilled: true`, so a consumer can tell a
+constructed zero from an observed one.
+
+`--grain` changes the bucket:
+
+```bash
+ai-usage daily --days 7  --grain hour          # a finer timeline
+ai-usage daily --days 30 --grain hour-of-day   # every day on one 24-hour clock
+```
+
+`hour-of-day` is the one that answers _when_ you burn tokens, as opposed to _how much_:
+
+```text
+10:00     185 turns  total 43,016,467 (43.02M)   (estimated $42.61)
+11:00     526 turns  total 113,820,907 (113.82M) (estimated $99.95)
+12:00   1,413 turns  total 280,913,509 (280.91M) (estimated $213.99)
+...
+19:00       0 turns  total 0   --
+```
+
+All buckets are local time, matching the period filter, and `localtime` reads the OS timezone
+database so they stay correct across DST.
+
+### Comparing two periods
+
+`stats --compare previous` reports the equal-length window immediately before, and the delta:
+
+```bash
+ai-usage stats --days 7 --compare previous
+ai-usage stats --today  --compare previous     # vs yesterday
+```
+
+```text
+Compared with the 7 days before that
+  (2026-09-03T18:30:00.000Z -> 2026-09-10T18:30:00.000Z)
+
+  Records:                      -847   -55.9%
+  Total tokens:         -201,112,497   -71.5%
+  Cost (estimated):         -$160.06   -68.3%
+  Cost (reported):             $0.00   n/a, previous was zero
+```
+
+Three rules it keeps:
+
+- **The two cost bases are deltaed separately and never summed**, for the same reason they are
+  reported separately.
+- **There is no percentage change from zero.** `$0 → $5` is a new thing happening, not a rise
+  of 100%, so the percentage is reported as `n/a` rather than invented.
+- **The previous window is aligned to the same local midnights the period uses.** `--days 7`
+  compares against the seven whole days before, not "the 156 hours before" — which is what
+  subtracting an open window's elapsed length gives, and which changes every time you run it.
+
+"All time" has no window before it, so `--compare` is refused there rather than answered.
+
+### Ordering and paging a list
+
+`sessions`, `models`, `projects` and `clients` accept `--sort`, `--limit` and `--offset`:
+
+```bash
+ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
+ai-usage projects --sort estimated-cost
+ai-usage sessions --limit 100 --offset 100            # page two
+```
+
+| `--sort`         | Orders by                                           |
+| ---------------- | --------------------------------------------------- |
+| `tokens`         | Total tokens (default everywhere except `sessions`) |
+| `estimated-cost` | Estimated cost                                      |
+| `reported-cost`  | Reported cost                                       |
+| `records`        | Turn count                                          |
+| `sessions`       | Distinct sessions                                   |
+| `recent`         | Most recent activity (default for `sessions`)       |
+
+**There is deliberately no plain `--sort cost`.** Reported and estimated cost are separate
+figures that are never summed, so ordering by one sorts every row priced on the _other_ basis
+as though it were `$0`. The flag refuses the ambiguous form and names the two to pick from,
+and whichever you pick, the output says how many rows it could not speak for:
+
+```text
+Showing 5 of 366 sessions (offset 0), sorted by estimated-cost.
+More available: re-run with --offset 5 for the next page.
+NOTE: 280 of those sessions carry no estimated cost at all, so they sort as $0. They are not
+cheap -- they are priced on the other basis, or not priced at all.
+```
+
+That footer is why `--limit` is now safe to pass: it says what you did _not_ see. Before, the
+most expensive session was visible only if it also happened to be recent, and `--limit` made
+it less likely to be.
+
+In `--json` and MCP `structuredContent` this is a `page` object carrying `total`, `offset`,
+`hasMore`, `nextOffset`, `sort` and `rowsWithoutSortValue` — enough to walk a list to the end
+and know when you are done.
 
 `ai-usage stats --today` returns exactly what the `usage_summary` tool returns; a test in
 `tests/mcp/parity.test.ts` asserts they are byte-identical.

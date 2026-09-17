@@ -1,14 +1,19 @@
-import type { AggregateRow, SessionRow } from '../db/repositories/usage-repository.js';
+import type { AggregateRow, Page, SessionRow } from '../db/repositories/usage-repository.js';
 import type { CostTotals } from '../models/usage-record.js';
 import type {
+  BreakdownReport,
   ClientReport,
   DailyReport,
   ModelReport,
+  PageInfo,
   ProjectReport,
   SessionDetail,
   SummaryReport,
+  UnmatchedScope,
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
+import type { Comparison, Delta } from './comparison.js';
+import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
 import type { StatusReport } from './usage-service.js';
 import { updateCommand, type UpdateInfo } from './update-check.js';
@@ -60,11 +65,6 @@ export function duration(seconds: number): string {
 }
 
 /**
- * Renders cost as separate buckets, always labelled. Reported and estimated are
- * never added together -- that single blended number is the easiest way to lie
- * with this data.
- */
-/**
  * Names the models behind a count, capped.
  *
  * A machine that has drifted across a dozen OpenCode models lists all of them
@@ -81,6 +81,11 @@ function namedModels(models: string[] | undefined): string {
   return `: ${shown} and ${int(models.length - MAX_NAMED_MODELS)} more`;
 }
 
+/**
+ * Renders cost as separate buckets, always labelled. Reported and estimated are
+ * never added together -- that single blended number is the easiest way to lie
+ * with this data.
+ */
 export function costLines(cost: CostTotals, costService: CostService, indent = '  '): string[] {
   const lines: string[] = [];
   if (cost.reportedRecords > 0) {
@@ -129,6 +134,64 @@ export function tokenLines(row: AggregateRow, indent = '  '): string[] {
   ];
 }
 
+/**
+ * What this page is a page OF, and how to get the next one.
+ *
+ * A bare `--limit 5` says nothing about the other 275 rows, so "the top 5" was
+ * indistinguishable from "all 5 there are". This line makes the difference
+ * visible, and gives a caller the exact flag to walk the rest.
+ */
+export function pageLines(info: PageInfo, noun: string): string[] {
+  const lines: string[] = [];
+  const shown = info.limit === undefined ? info.total - info.offset : undefined;
+  const count = shown ?? Math.min(info.limit as number, Math.max(0, info.total - info.offset));
+
+  if (info.limit === undefined && info.offset === 0) {
+    lines.push(`Showing all ${int(info.total)} ${noun}, sorted by ${info.sort}.`);
+  } else {
+    lines.push(
+      `Showing ${int(count)} of ${int(info.total)} ${noun} ` +
+        `(offset ${int(info.offset)}), sorted by ${info.sort}.`,
+    );
+  }
+  if (info.hasMore && info.nextOffset !== undefined) {
+    lines.push(`More available: re-run with --offset ${int(info.nextOffset)} for the next page.`);
+  }
+  // The trap that makes a cost sort quietly wrong if unsaid.
+  if (info.rowsWithoutSortValue > 0 && info.sort.endsWith('-cost')) {
+    const basis = info.sort === 'reported-cost' ? 'reported' : 'estimated';
+    lines.push(
+      `NOTE: ${int(info.rowsWithoutSortValue)} of those ${noun} carry no ${basis} cost at all, ` +
+        `so they sort as $0. They are not cheap -- they are priced on the other basis, or not ` +
+        `priced at all. Reported and estimated cost are never summed, so no single ordering ` +
+        `can rank both.`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * Scope values that match nothing anywhere in the database.
+ *
+ * Without this, a typo answers "No usage records for this period" and exits 0,
+ * which is indistinguishable from a genuinely quiet period.
+ */
+export function unmatchedScopeLines(scope: UnmatchedScope | undefined): string[] {
+  if (!scope) return [];
+  const lines: string[] = [];
+  const say = (label: string, values: string[] | undefined, hint: string) => {
+    if (!values?.length) return;
+    lines.push(
+      `WARNING: no record anywhere in this database has ${label} ${values.map((v) => `"${v}"`).join(', ')}. ` +
+        `An empty result below is that, not a quiet period. ${hint}`,
+    );
+  };
+  say('model', scope.models, 'Run `ai-usage models` to see the ids actually present.');
+  say('project', scope.projectPaths, 'Run `ai-usage projects` to see the paths actually present.');
+  say('client', scope.clients, 'Known clients are claude-code and opencode.');
+  return lines;
+}
+
 function subagentNote(
   report: { includeSubagents: boolean },
   turnKinds?: { main: number; subagent: number },
@@ -146,6 +209,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   const out: string[] = [];
   out.push(`Usage summary -- ${report.period.label}`);
   out.push(subagentNote(report, report.turnKinds));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
 
   if (report.overall.records === 0) {
@@ -163,6 +227,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   out.push(...tokenLines(report.overall));
   out.push('');
   out.push(...costLines(report.overall.cost, costService));
+  if (report.comparison) out.push(...comparisonLines(report.comparison));
 
   out.push('');
   out.push('By client:');
@@ -181,6 +246,7 @@ export function formatModels(report: ModelReport, costService: CostService): str
   const out: string[] = [];
   out.push(`Usage by model -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.models.length === 0) {
     out.push('No usage records for this period.');
@@ -195,33 +261,168 @@ export function formatModels(report: ModelReport, costService: CostService): str
   out.push(
     `Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`,
   );
+  out.push(...pageLines(report.page, 'models'));
   return out.join('\n');
 }
 
-/** Compact one line per day. Reported and estimated costs stay separate, as everywhere else. */
+/**
+ * A signed figure, so a delta reads as a direction rather than a quantity.
+ * `+0` and `-0` both render as `0`: nothing changed is not a direction.
+ */
+export function signed(n: number, render: (v: number) => string = int): string {
+  if (n === 0) return render(0);
+  return n > 0 ? `+${render(n)}` : `-${render(Math.abs(n))}`;
+}
+
+/**
+ * `undefined` renders as "n/a", never as 100% or Infinity: there is no
+ * percentage change from zero. Going from $0 to $5 is a new thing happening,
+ * not a rise of any particular size.
+ */
+export function percent(ratio: number | undefined): string {
+  if (ratio === undefined) return 'n/a, previous was zero';
+  return `${signed(ratio * 100, (v) => v.toFixed(1))}%`;
+}
+
+function comparisonLines(comparison: Comparison): string[] {
+  const d = comparison.delta;
+  const row = (label: string, change: Delta, render: (v: number) => string = int): string =>
+    `  ${`${label}:`.padEnd(18)}${signed(change.absolute, render).padStart(16)}   ${percent(change.ratio)}`;
+
+  const out: string[] = [
+    '',
+    `Compared with ${comparison.previous.label}`,
+    `  (${comparison.previous.since} -> ${comparison.previous.until})`,
+    '',
+    row('Records', d.records),
+    row('Sessions', d.sessions),
+    row('Total tokens', d.totalTokens),
+    row('Cache read', d.cacheReadTokens),
+  ];
+  // The two cost bases are deltaed separately and never summed, exactly as they
+  // are reported. A single "spend is up $40" across both would be the same lie
+  // in motion.
+  if (comparison.previousTotals.cost.reportedRecords > 0 || d.reportedCost.absolute !== 0) {
+    out.push(row('Cost (reported)', d.reportedCost, usd));
+  }
+  if (comparison.previousTotals.cost.estimatedRecords > 0 || d.estimatedCost.absolute !== 0) {
+    out.push(row('Cost (estimated)', d.estimatedCost, usd));
+  }
+  for (const caveat of comparison.caveats) out.push(`  Note: ${caveat}`);
+  return out;
+}
+
+const GRAIN_NOUN: Record<TimeGrain, { one: string; many: string; title: string }> = {
+  hour: { one: 'hour', many: 'hours', title: 'Usage by hour' },
+  day: { one: 'day', many: 'days', title: 'Usage by day' },
+  'hour-of-day': { one: 'hour', many: 'hours of the day', title: 'Usage by hour of day' },
+};
+
+/** Compact one line per bucket. Reported and estimated costs stay separate, as everywhere else. */
 export function formatDaily(report: DailyReport): string {
+  const noun = GRAIN_NOUN[report.grain];
   const out: string[] = [];
-  out.push(`Daily usage -- ${report.period.label}`);
+  out.push(`${noun.title} -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
-  if (report.days.length === 0) {
+  if (report.overall.records === 0) {
     out.push('No usage records for this period.');
     return out.join('\n');
   }
-  for (const day of report.days) {
+
+  const active = report.days.filter((d) => d.records > 0);
+  for (const bucket of report.days) {
     const cost: string[] = [];
-    if (day.cost.reportedRecords > 0) cost.push(`reported ${usd(day.cost.reported)}`);
-    if (day.cost.estimatedRecords > 0) cost.push(`estimated ${usd(day.cost.estimated)}`);
+    if (bucket.cost.reportedRecords > 0) cost.push(`reported ${usd(bucket.cost.reported)}`);
+    if (bucket.cost.estimatedRecords > 0) cost.push(`estimated ${usd(bucket.cost.estimated)}`);
+    const label = report.grain === 'hour-of-day' ? `${bucket.key}:00` : bucket.key;
     out.push(
-      `${day.key}  ${int(day.records).padStart(6)} turns  total ${tokens(day.totalTokens)}` +
-        (cost.length ? `  (${cost.join(', ')})` : ''),
+      `${label}  ${int(bucket.records).padStart(6)} turns  total ${tokens(bucket.totalTokens)}` +
+        (cost.length ? `  (${cost.join(', ')})` : '') +
+        // A constructed zero is marked, so a reader can tell "nothing happened"
+        // from "nothing was recorded" without going to the JSON.
+        (bucket.zeroFilled ? '   --' : ''),
     );
   }
   out.push('');
   out.push(
-    `Total across ${int(report.days.length)} day(s): ${tokens(report.overall.totalTokens)} tokens`,
+    `Total across ${int(active.length)} active of ${int(report.days.length)} ${noun.many} shown: ` +
+      `${tokens(report.overall.totalTokens)} tokens`,
   );
-  out.push('Days are local calendar days, matching the period filter.');
+  if (report.days.length > active.length) {
+    out.push(
+      report.grain === 'hour-of-day'
+        ? `Rows marked -- had no recorded activity on any day in this period.`
+        : `Rows marked -- had no recorded activity. They are shown so the gaps in the series ` +
+            `are visible; a trend read from active ${noun.many} alone puts them side by side and ` +
+            `turns an ordinary one into an apparent spike.`,
+    );
+  }
+  if (report.zeroFillNote) out.push(report.zeroFillNote);
+  out.push(
+    report.grain === 'hour-of-day'
+      ? 'Hours are local, aggregated across every day in the period.'
+      : `Buckets are local ${noun.many}, matching the period filter.`,
+  );
+  return out.join('\n');
+}
+
+/**
+ * A tidy row set, one row per combination of the requested axes.
+ *
+ * Rendered as a table rather than the nested blocks the single-axis reports use,
+ * because the whole point is to scan one dimension against another -- which
+ * nested blocks make impossible.
+ *
+ * Cost columns show `--`, never `$0.00`, where a row has no records on that
+ * basis. A rendered $0 would say "this cost nothing", which is a different claim
+ * from "nothing here is priced this way".
+ */
+export function formatBreakdown(report: BreakdownReport): string {
+  const out: string[] = [];
+  out.push(`Usage breakdown: ${report.axes.join(' x ')} -- ${report.period.label}`);
+  out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
+  out.push('');
+
+  if (report.rows.length === 0) {
+    out.push('No usage records for this period.');
+    return out.join('\n');
+  }
+
+  const headers = [...report.axes, 'turns', 'total tokens', 'reported', 'estimated'];
+  const body = report.rows.map((row) => [
+    ...report.axes.map((axis) => row.keys[axis] ?? '(unknown)'),
+    int(row.records),
+    int(row.totalTokens),
+    row.cost.reportedRecords > 0 ? usd(row.cost.reported) : '--',
+    row.cost.estimatedRecords > 0 ? usd(row.cost.estimated) : '--',
+  ]);
+
+  const widths = headers.map((header, i) =>
+    Math.max(header.length, ...body.map((r) => (r[i] ?? '').length)),
+  );
+  // Axis values read left-aligned; every number reads right-aligned, so columns
+  // of figures line up on their last digit.
+  const pad = (value: string, i: number) =>
+    i < report.axes.length
+      ? value.padEnd(widths[i] as number)
+      : value.padStart(widths[i] as number);
+
+  out.push(headers.map(pad).join('  '));
+  out.push(widths.map((w) => '-'.repeat(w)).join('  '));
+  for (const row of body) out.push(row.map(pad).join('  ').trimEnd());
+
+  out.push('');
+  out.push(...pageLines(report.page, 'rows'));
+  out.push(
+    'Combinations with no activity are absent rather than listed as zero: a project x day ' +
+      'grid is mostly empty, and filling it would bury the rows that matter.',
+  );
+  out.push(
+    'A `--` in a cost column means no record in that row is priced on that basis. It is not $0.',
+  );
   return out.join('\n');
 }
 
@@ -229,6 +430,7 @@ export function formatProjects(report: ProjectReport, costService: CostService):
   const out: string[] = [];
   out.push(`Usage by project -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.projects.length === 0) {
     out.push('No usage records for this period.');
@@ -245,6 +447,7 @@ export function formatProjects(report: ProjectReport, costService: CostService):
   out.push(
     `Total across ${int(report.projects.length)} project(s): ${tokens(report.overall.totalTokens)} tokens`,
   );
+  out.push(...pageLines(report.page, 'projects'));
   out.push(
     'A project is the working directory the turn ran in. Turns whose project could not be ' +
       'resolved are grouped as (unknown) rather than dropped.',
@@ -256,6 +459,7 @@ export function formatClients(report: ClientReport, costService: CostService): s
   const out: string[] = [];
   out.push(`Usage by client -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.clients.length === 0) {
     out.push('No usage records for this period.');
@@ -275,9 +479,14 @@ export function formatClients(report: ClientReport, costService: CostService): s
   return out.join('\n');
 }
 
-export function formatSessions(sessions: SessionRow[], costService: CostService): string {
-  if (sessions.length === 0) return 'No sessions recorded. Run `ai-usage sync` first.';
-  const out: string[] = [`Recent sessions (${sessions.length}):`, ''];
+export function formatSessions(page: Page<SessionRow>, costService: CostService): string {
+  const sessions = page.rows;
+  if (sessions.length === 0) {
+    return page.total === 0
+      ? 'No sessions recorded. Run `ai-usage sync` first.'
+      : `No sessions at offset ${int(page.offset)}; there are ${int(page.total)} in total.`;
+  }
+  const out: string[] = [`Sessions (${sessions.length}):`, ''];
   for (const s of sessions) {
     out.push(`${s.sessionId}  [${s.client}]`);
     out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
@@ -290,6 +499,7 @@ export function formatSessions(sessions: SessionRow[], costService: CostService)
     out.push(...costLines(s.cost, costService, '  '));
     out.push('');
   }
+  out.push(...pageLines(page, 'sessions'));
   return out.join('\n').trimEnd();
 }
 

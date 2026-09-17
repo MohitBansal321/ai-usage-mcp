@@ -13,10 +13,19 @@ export interface UsageFilter {
   since?: string;
   /** Exclusive upper bound, ISO 8601. */
   until?: string;
-  client?: ClientId;
-  model?: string;
+  /**
+   * Scope filters, each matching ANY of the values given.
+   *
+   * Lists rather than single values because one value could not answer "these
+   * two projects" or "these three models" without N calls and a client-side
+   * join. An EMPTY list means "none of them" and matches nothing -- it is not
+   * treated as "no filter", which is how an empty `--model ""` used to answer a
+   * narrowed question with the whole database.
+   */
+  clients?: ClientId[];
+  models?: string[];
+  projectPaths?: string[];
   sessionId?: string;
-  projectPath?: string;
   /**
    * Include subagent/sidechain turns. Defaults to true: they are real spend.
    * The same default is used by the CLI and the MCP tools -- see README.
@@ -96,6 +105,145 @@ export const TURNS_MAX_LIMIT = 5000;
 
 export interface GroupedRow extends AggregateRow {
   key: string;
+}
+
+/**
+ * How a list of rows is ordered.
+ *
+ * There is deliberately no plain `cost`. Reported and estimated cost are
+ * separate figures that must never be summed, so "order by cost" has no single
+ * answer: ordering by one silently sorts every row priced on the other basis as
+ * though it were $0. The caller has to say which, and the report says how many
+ * rows that ordering could not speak for.
+ */
+export type SortKey =
+  'tokens' | 'reported-cost' | 'estimated-cost' | 'records' | 'sessions' | 'recent';
+
+export const SORT_KEYS: SortKey[] = [
+  'tokens',
+  'reported-cost',
+  'estimated-cost',
+  'records',
+  'sessions',
+  'recent',
+];
+
+/**
+ * The ORDER BY behind each sort key. Every one is followed by a deterministic
+ * tie-break, or paging would silently drop and repeat rows between pages when
+ * two rows compare equal.
+ */
+const SORT_SQL: Record<SortKey, string> = {
+  tokens: 'total_tokens DESC',
+  'reported-cost': 'reported DESC',
+  'estimated-cost': 'estimated DESC',
+  records: 'records DESC',
+  sessions: 'sessions DESC',
+  recent: 'last_ts DESC',
+};
+
+/**
+ * For the two cost sorts, the record count that must be non-zero for a row to
+ * carry a figure on that basis. Non-cost sorts have no such notion.
+ */
+const COST_SORT_COLUMN: Partial<Record<SortKey, string>> = {
+  'reported-cost': 'reported_records',
+  'estimated-cost': 'estimated_records',
+};
+
+/**
+ * Time buckets, all evaluated in local time.
+ *
+ * `hour-of-day` is not a finer timeline -- it collapses every day onto one
+ * 24-slot clock, which is the only grain that answers "when during the day do I
+ * burn tokens". The other two are ordinary timelines.
+ */
+export type TimeGrain = 'hour' | 'day' | 'hour-of-day';
+
+export const TIME_GRAINS: TimeGrain[] = ['hour', 'day', 'hour-of-day'];
+
+const TIME_GRAIN_SQL: Record<TimeGrain, string> = {
+  hour: "strftime('%Y-%m-%dT%H:00', timestamp, 'localtime')",
+  day: "date(timestamp,'localtime')",
+  'hour-of-day': "strftime('%H', timestamp, 'localtime')",
+};
+
+/**
+ * A dimension a breakdown can be cut by.
+ *
+ * The time axes are the same expressions {@link TimeGrain} uses, so a
+ * `project x day` breakdown and `daily --project X` bucket identically -- two
+ * reports that disagreed about what a day is would be worse than one report.
+ */
+export type GroupAxis =
+  'client' | 'model' | 'provider' | 'project' | 'session' | 'day' | 'hour' | 'hour-of-day';
+
+export const GROUP_AXES: GroupAxis[] = [
+  'client',
+  'model',
+  'provider',
+  'project',
+  'session',
+  'day',
+  'hour',
+  'hour-of-day',
+];
+
+const AXIS_SQL: Record<GroupAxis, string> = {
+  client: 'client',
+  model: 'model',
+  provider: 'provider',
+  project: "COALESCE(project_path,'(unknown)')",
+  session: 'session_id',
+  day: "date(timestamp,'localtime')",
+  hour: "strftime('%Y-%m-%dT%H:00', timestamp, 'localtime')",
+  'hour-of-day': "strftime('%H', timestamp, 'localtime')",
+};
+
+/**
+ * Crossing three axes on a busy database is already tens of thousands of rows,
+ * and every one of them has to be rendered somewhere. More than that is a
+ * question better asked of the exported records.
+ */
+export const MAX_GROUP_AXES = 3;
+
+/** One cell of a cross-tab: the value on each axis, plus the usual aggregate. */
+export interface CrossTabRow extends AggregateRow {
+  /** Keyed by axis name, in the order the axes were requested. */
+  keys: Record<string, string>;
+}
+
+export interface PageRequest {
+  limit?: number;
+  offset?: number;
+  sort?: SortKey;
+}
+
+/**
+ * A page of rows that knows what it is a page OF.
+ *
+ * `--limit` alone tells a caller nothing about what it did not see, so walking a
+ * list or reporting "the top 5" was guesswork. `total` counts the groups the
+ * filter matches, ignoring limit and offset.
+ */
+export interface Page<T> {
+  rows: T[];
+  /** Groups matching the filter, before `limit`/`offset`. */
+  total: number;
+  offset: number;
+  /** Absent when the caller set no limit, i.e. every row was returned. */
+  limit?: number;
+  hasMore: boolean;
+  /** The offset that fetches the next page, or undefined when there is none. */
+  nextOffset?: number;
+  sort: SortKey;
+  /**
+   * Rows carrying no figure on the sorted basis, which therefore sort as $0.
+   *
+   * They are not cheap; they are priced on the other basis, or not at all. Only
+   * meaningful for the two cost sorts, where it is 0 otherwise.
+   */
+  rowsWithoutSortValue: number;
 }
 
 export interface SessionRow extends AggregateRow {
@@ -194,6 +342,49 @@ function bindPricedModels(
   });
 }
 
+/**
+ * `column IN (...)`, bound as parameters.
+ *
+ * An empty list yields a clause that matches nothing, deliberately. Falling back
+ * to "no filter" is precisely how an empty scope value used to answer a narrowed
+ * question with the whole database -- a wrong number that looks like a right one.
+ */
+function anyOf(
+  column: string,
+  prefix: string,
+  values: readonly string[],
+  params: Record<string, unknown>,
+): string {
+  if (values.length === 0) return '1=0';
+  const placeholders = values.map((value, i) => {
+    params[`${prefix}${i}`] = value;
+    return `:${prefix}${i}`;
+  });
+  return `${column} IN (${placeholders.join(',')})`;
+}
+
+/** The only columns `absentValues` may interpolate. */
+const SCOPE_COLUMNS = ['model', 'project_path', 'client'] as const;
+
+function toPage<T>(
+  rows: T[],
+  meta: { total: number; without: number; offset: number; limit?: number; sort: SortKey },
+): Page<T> {
+  const seen = meta.offset + rows.length;
+  const hasMore = seen < meta.total;
+  const page: Page<T> = {
+    rows,
+    total: meta.total,
+    offset: meta.offset,
+    hasMore,
+    sort: meta.sort,
+    rowsWithoutSortValue: meta.without,
+  };
+  if (meta.limit !== undefined) page.limit = meta.limit;
+  if (hasMore) page.nextOffset = seen;
+  return page;
+}
+
 function buildWhere(filter: UsageFilter): { sql: string; params: Record<string, unknown> } {
   const clauses: string[] = [];
   const params: Record<string, unknown> = {};
@@ -205,23 +396,18 @@ function buildWhere(filter: UsageFilter): { sql: string; params: Record<string, 
     clauses.push('timestamp < :until');
     params.until = filter.until;
   }
-  if (filter.client) {
-    clauses.push('client = :client');
-    params.client = filter.client;
-  }
-  if (filter.model) {
-    clauses.push('model = :model');
-    params.model = filter.model;
-  }
+  if (filter.clients) clauses.push(anyOf('client', 'cl', filter.clients, params));
+  if (filter.models) clauses.push(anyOf('model', 'md', filter.models, params));
   if (filter.sessionId) {
     clauses.push('session_id = :sessionId');
     params.sessionId = filter.sessionId;
   }
-  if (filter.projectPath) {
+  if (filter.projectPaths) {
     // Normalised on the way in as well as on the way to storage, so a caller who
     // types `d:\repo` still matches rows stored as `D:\repo`.
-    clauses.push('project_path = :projectPath');
-    params.projectPath = normaliseProjectPath(filter.projectPath);
+    clauses.push(
+      anyOf('project_path', 'pp', filter.projectPaths.map(normaliseProjectPath), params),
+    );
   }
   if (filter.includeSubagents === false) {
     clauses.push("turn_kind = 'main'");
@@ -341,30 +527,79 @@ export class UsageRepository {
     return toAggregate(raw);
   }
 
-  private grouped(column: string, filter: UsageFilter, limit?: number): GroupedRow[] {
+  /**
+   * One page of grouped rows, plus what it is a page of.
+   *
+   * The group count is a second query over the same WHERE clause rather than a
+   * window function, because `node:sqlite` and `better-sqlite3` must agree and
+   * the driver contract here is deliberately small.
+   */
+  private groupedPage(column: string, filter: UsageFilter, page: PageRequest): Page<GroupedRow> {
     const { sql, params } = buildWhere(filter);
     const priced = bindPricedModels(filter, params);
-    const limitSql = limit ? 'LIMIT :limit' : '';
-    if (limit) params.limit = limit;
+    const sort = page.sort ?? 'tokens';
+    const offset = Math.max(0, page.offset ?? 0);
+    const limit = page.limit !== undefined ? Math.max(1, page.limit) : undefined;
+
+    params.offset = offset;
+    if (limit !== undefined) params.limit = limit;
+    const window = limit !== undefined ? 'LIMIT :limit OFFSET :offset' : 'LIMIT -1 OFFSET :offset';
+
     const rows = this.db
       .prepare(
         `SELECT ${column} AS key, ${aggSelect(priced)} FROM usage_records ${sql}
-         GROUP BY ${column} ORDER BY total_tokens DESC ${limitSql}`,
+         GROUP BY ${column} ORDER BY ${SORT_SQL[sort]}, key ASC ${window}`,
       )
       .all(params) as (RawAgg & { key: string })[];
-    return rows.map((r) => ({ key: r.key, ...toAggregate(r) }));
+
+    const { total, without } = this.groupStats(column, filter, sort);
+    return toPage(
+      rows.map((r) => ({ key: r.key, ...toAggregate(r) })),
+      { total, without, offset, limit, sort },
+    );
   }
 
-  byClient(filter: UsageFilter = {}): GroupedRow[] {
-    return this.grouped('client', filter);
+  /**
+   * Total groups, and how many of them carry nothing on the sorted basis.
+   *
+   * The second number is what stops "sorted by estimated cost" from quietly
+   * presenting every reported-cost row as a $0 at the bottom of the list.
+   */
+  private groupStats(
+    column: string,
+    filter: UsageFilter,
+    sort: SortKey,
+  ): { total: number; without: number } {
+    // A FRESH binding, not the caller's: that one also carries the paging and
+    // priced-model placeholders, and `node:sqlite` rejects a named parameter the
+    // statement does not mention. better-sqlite3 tolerates it, so reusing the
+    // object failed on one driver only -- exactly the split the driver contract
+    // exists to prevent.
+    const { sql: where, params } = buildWhere(filter);
+    const havingless = COST_SORT_COLUMN[sort];
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN ${havingless ? `${havingless} = 0` : '0'} THEN 1 ELSE 0 END) AS without
+           FROM (SELECT ${column} AS key,
+                        SUM(CASE WHEN cost_basis='reported'  THEN 1 ELSE 0 END) AS reported_records,
+                        SUM(CASE WHEN cost_basis='estimated' THEN 1 ELSE 0 END) AS estimated_records
+                   FROM usage_records ${where} GROUP BY ${column})`,
+      )
+      .get(params) as { total: number; without: number | null };
+    return { total: row.total, without: row.without ?? 0 };
   }
 
-  byModel(filter: UsageFilter = {}, limit?: number): GroupedRow[] {
-    return this.grouped('model', filter, limit);
+  byClient(filter: UsageFilter = {}, page: PageRequest = {}): Page<GroupedRow> {
+    return this.groupedPage('client', filter, page);
   }
 
-  byProvider(filter: UsageFilter = {}): GroupedRow[] {
-    return this.grouped('provider', filter);
+  byModel(filter: UsageFilter = {}, page: PageRequest = {}): Page<GroupedRow> {
+    return this.groupedPage('model', filter, page);
+  }
+
+  byProvider(filter: UsageFilter = {}, page: PageRequest = {}): Page<GroupedRow> {
+    return this.groupedPage('provider', filter, page);
   }
 
   /**
@@ -403,8 +638,8 @@ export class UsageRepository {
     });
   }
 
-  byProject(filter: UsageFilter = {}, limit?: number): GroupedRow[] {
-    return this.grouped("COALESCE(project_path,'(unknown)')", filter, limit);
+  byProject(filter: UsageFilter = {}, page: PageRequest = {}): Page<GroupedRow> {
+    return this.groupedPage("COALESCE(project_path,'(unknown)')", filter, page);
   }
 
   /**
@@ -416,15 +651,111 @@ export class UsageRepository {
    * so it stays correct across DST changes where a fixed offset would not.
    */
   byDay(filter: UsageFilter = {}): GroupedRow[] {
+    return this.byTime(filter, 'day');
+  }
+
+  /**
+   * Totals bucketed on the time axis at the requested grain, newest first.
+   *
+   * Every grain is evaluated in LOCAL time with `localtime`, matching how
+   * `resolvePeriod` derives its bounds from local midnight. Bucketing on
+   * `substr(timestamp,...)` would be UTC, which puts a turn made late in the
+   * evening in the wrong bucket for every user east of Greenwich -- and silently
+   * disagrees with the very period filter that selected the rows. `localtime`
+   * reads the OS timezone database, so it stays correct across DST changes where
+   * a fixed offset would not.
+   */
+  byTime(filter: UsageFilter = {}, grain: TimeGrain = 'day'): GroupedRow[] {
     const { sql, params } = buildWhere(filter);
     const priced = bindPricedModels(filter, params);
     const rows = this.db
       .prepare(
-        `SELECT date(timestamp,'localtime') AS key, ${aggSelect(priced)} FROM usage_records ${sql}
+        `SELECT ${TIME_GRAIN_SQL[grain]} AS key, ${aggSelect(priced)} FROM usage_records ${sql}
          GROUP BY key ORDER BY key DESC`,
       )
       .all(params) as (RawAgg & { key: string })[];
     return rows.map((r) => ({ key: r.key, ...toAggregate(r) }));
+  }
+
+  /**
+   * Totals cut by two or more dimensions at once.
+   *
+   * `daily --project X` answers one project's trend, but answering "which of my
+   * projects is getting more expensive" meant enumerating projects, issuing one
+   * call each, and joining client-side -- an N+1 that is not feasible from an
+   * agent loop at all. One query, one tidy row set.
+   */
+  crossTab(axes: GroupAxis[], filter: UsageFilter = {}, page: PageRequest = {}): Page<CrossTabRow> {
+    if (axes.length === 0) throw new Error('crossTab requires at least one axis.');
+    if (axes.length > MAX_GROUP_AXES)
+      throw new Error(`crossTab accepts at most ${MAX_GROUP_AXES} axes, got ${axes.length}.`);
+    if (new Set(axes).size !== axes.length)
+      throw new Error(`crossTab axes must be distinct, got ${axes.join(', ')}.`);
+
+    const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
+    const sort = page.sort ?? 'tokens';
+    const offset = Math.max(0, page.offset ?? 0);
+    const limit = page.limit !== undefined ? Math.max(1, page.limit) : undefined;
+
+    const selected = axes.map((axis, i) => `${AXIS_SQL[axis]} AS axis${i}`).join(', ');
+    const grouped = axes.map((axis) => AXIS_SQL[axis]).join(', ');
+    // Every axis joins the tie-break, so paging a cross-tab cannot drop or
+    // repeat a cell wherever two compare equal on the sort key.
+    const tieBreak = axes.map((_, i) => `axis${i} ASC`).join(', ');
+
+    params.offset = offset;
+    if (limit !== undefined) params.limit = limit;
+    const window = limit !== undefined ? 'LIMIT :limit OFFSET :offset' : 'LIMIT -1 OFFSET :offset';
+
+    const rows = this.db
+      .prepare(
+        `SELECT ${selected}, ${aggSelect(priced)} FROM usage_records ${sql}
+         GROUP BY ${grouped} ORDER BY ${SORT_SQL[sort]}, ${tieBreak} ${window}`,
+      )
+      .all(params) as (RawAgg & Record<string, string>)[];
+
+    const { total, without } = this.crossTabStats(grouped, filter, sort);
+    return toPage(
+      rows.map((r) => ({
+        keys: Object.fromEntries(axes.map((axis, i) => [axis, r[`axis${i}`] as string])),
+        ...toAggregate(r),
+      })),
+      { total, without, offset, limit, sort },
+    );
+  }
+
+  /** Cells matching the filter, and how many carry nothing on the sorted basis. */
+  private crossTabStats(
+    grouped: string,
+    filter: UsageFilter,
+    sort: SortKey,
+  ): { total: number; without: number } {
+    // A fresh binding, for the same reason groupStats uses one.
+    const { sql: where, params } = buildWhere(filter);
+    const havingless = COST_SORT_COLUMN[sort];
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN ${havingless ? `${havingless} = 0` : '0'} THEN 1 ELSE 0 END) AS without
+           FROM (SELECT SUM(CASE WHEN cost_basis='reported'  THEN 1 ELSE 0 END) AS reported_records,
+                        SUM(CASE WHEN cost_basis='estimated' THEN 1 ELSE 0 END) AS estimated_records
+                   FROM usage_records ${where} GROUP BY ${grouped})`,
+      )
+      .get(params) as { total: number; without: number | null };
+    return { total: row.total, without: row.without ?? 0 };
+  }
+
+  /** The first and last activity matching a filter, for deciding zero-fill bounds. */
+  timeBounds(filter: UsageFilter = {}): { first?: string; last?: string } {
+    const { sql, params } = buildWhere(filter);
+    const row = this.db
+      .prepare(`SELECT MIN(timestamp) AS first, MAX(timestamp) AS last FROM usage_records ${sql}`)
+      .get(params) as { first: string | null; last: string | null };
+    return {
+      ...(row.first ? { first: row.first } : {}),
+      ...(row.last ? { last: row.last } : {}),
+    };
   }
 
   /**
@@ -483,11 +814,21 @@ export class UsageRepository {
     return row.n;
   }
 
-  /** Recent sessions, newest activity first. */
-  sessions(filter: UsageFilter = {}, limit = 20): SessionRow[] {
+  /**
+   * A page of sessions.
+   *
+   * Recency is still the default, but it is now a choice rather than the only
+   * option: `--limit` on a recency-ordered list actively HIDES the most
+   * expensive session unless it also happens to be recent.
+   */
+  sessions(filter: UsageFilter = {}, page: PageRequest = {}): Page<SessionRow> {
     const { sql, params } = buildWhere(filter);
     const priced = bindPricedModels(filter, params);
+    const sort = page.sort ?? 'recent';
+    const offset = Math.max(0, page.offset ?? 0);
+    const limit = page.limit !== undefined ? Math.max(1, page.limit) : 20;
     params.limit = limit;
+    params.offset = offset;
     const rows = this.db
       .prepare(
         `SELECT session_id, client, MAX(project_path) AS project_path,
@@ -497,8 +838,8 @@ export class UsageRepository {
                 ${aggSelect(priced)}
          FROM usage_records ${sql}
          GROUP BY session_id, client
-         ORDER BY last_ts DESC
-         LIMIT :limit`,
+         ORDER BY ${SORT_SQL[sort]}, session_id ASC
+         LIMIT :limit OFFSET :offset`,
       )
       .all(params) as (RawAgg & {
       session_id: string;
@@ -509,7 +850,7 @@ export class UsageRepository {
       subagent_records: number;
     })[];
 
-    return rows.map((r) => {
+    const sessionRows = rows.map((r) => {
       const agg = toAggregate(r);
       const startedAt = r.first_ts ?? '';
       const endedAt = r.last_ts ?? '';
@@ -531,6 +872,9 @@ export class UsageRepository {
       if (r.project_path) row.projectPath = r.project_path;
       return row;
     });
+
+    const { total, without } = this.groupStats('session_id', filter, sort);
+    return toPage(sessionRows, { total, without, offset, limit, sort });
   }
 
   /** Resolves a full or unambiguous partial session id. */
@@ -546,7 +890,35 @@ export class UsageRepository {
   }
 
   modelsForSession(sessionId: string): GroupedRow[] {
-    return this.grouped('model', { sessionId });
+    return this.groupedPage('model', { sessionId }, {}).rows;
+  }
+
+  /**
+   * Which of `values` appear in `column` nowhere in the database.
+   *
+   * Deliberately unfiltered by period: it separates "you typed a name that does
+   * not exist" from "that project was quiet last week". Both used to render as
+   * the same empty report and the same exit 0.
+   *
+   * `column` is not caller data -- it comes from a fixed set in the service --
+   * but it is asserted against an allow-list anyway, because a column name is
+   * the one part of this query that cannot be a bound parameter.
+   */
+  absentValues(column: 'model' | 'project_path' | 'client', values: string[]): string[] {
+    if (values.length === 0) return [];
+    if (!SCOPE_COLUMNS.includes(column)) throw new Error(`Not a scope column: ${column}`);
+    const wanted = column === 'project_path' ? values.map(normaliseProjectPath) : values;
+    const params: Record<string, unknown> = {};
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT ${column} AS value FROM usage_records
+          WHERE ${anyOf(column, 'sv', wanted, params)}`,
+      )
+      .all(params) as { value: string }[];
+    const present = new Set(rows.map((r) => r.value));
+    // Reported in the caller's own spelling, not the normalised one, so the
+    // message echoes back what they actually typed.
+    return values.filter((_, i) => !present.has(wanted[i] as string));
   }
 
   recordCount(): number {
