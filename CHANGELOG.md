@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-17
+
 ### Added
 
 - **`ai-usage prune --before <date>` and `ai-usage vacuum`**, so the database does not grow
@@ -39,8 +41,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-zero. Importing a half-valid row would write a turn with invented zeroes, and a merged
   database that quietly under-counts is worse than a failed import.
   ([#59](https://github.com/MohitBansal321/ai-usage-mcp/issues/59))
-
-### Added
 
 - **Cache hit rate and reads-per-write on `stats` and `clients`**, plus a break-even derived
   from the pricing table's own multipliers. Cache tokens are where the money is -- cache-read
@@ -75,8 +75,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   short to reuse it is precisely what this exists to show.
   ([#65](https://github.com/MohitBansal321/ai-usage-mcp/issues/65))
 
-### Added
-
 - **`ai-usage budget --amount N --basis reported|estimated [--period month|week]`**: spend
   against a target, with the run rate and where the period lands. Nothing in the tool surface
   accepted a budget number, so extrapolating month-end spend meant reading the active days out
@@ -107,8 +105,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   6th that pretends five whole days have passed overstates the rate by a tenth.
   ([#55](https://github.com/MohitBansal321/ai-usage-mcp/issues/55))
 
-### Added
-
 - **`ai-usage export`**: one row per stored turn, as CSV (default) or JSON Lines, honouring
   every period and scope filter. "Local-first, your data is yours" was the promise, and every
   output was a nested aggregate that no spreadsheet or CSV loader consumes; the only route to
@@ -138,8 +134,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it looks like everything is fine. The error names the fields that do exist at that level.
   ([#60](https://github.com/MohitBansal321/ai-usage-mcp/issues/60))
 
-### Added
-
 - **`ai-usage breakdown --by <axes>` and the `usage_breakdown` MCP tool**: totals cut by two or
   three dimensions at once -- `project x day`, `model x day`, `client x model` -- as one tidy
   row set. Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`,
@@ -158,8 +152,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which is a different claim. `--sort`, `--limit` and `--offset` behave as on any other list,
   with every axis joining the tie-break so paging cannot drop or repeat a cell.
   ([#54](https://github.com/MohitBansal321/ai-usage-mcp/issues/54))
-
-### Added
 
 - **`daily` shows every bucket, including the empty ones.** It printed only the days that _had_
   data -- ten rows for a thirty-day window -- with nothing to say the other twenty existed.
@@ -199,8 +191,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the data and the timezone handling were in place.
   ([#58](https://github.com/MohitBansal321/ai-usage-mcp/issues/58))
 
-### Added
-
 - **Rank by cost.** `sessions`, `models`, `projects` and `clients` take `--sort`
   (`tokens` | `reported-cost` | `estimated-cost` | `records` | `sessions` | `recent`), with the
   matching MCP argument. The data was always there -- only the ordering was missing, and its
@@ -236,34 +226,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deterministic tie-break, so paging cannot drop or repeat a row when two rows compare equal.
   ([#61](https://github.com/MohitBansal321/ai-usage-mcp/issues/61))
 
-### Changed
-
-- **Every pre-0.8.0 MCP argument spelling still works.** The singular `projectPath`, a bare
-  string `client`, and `counterfactual_cost`'s `models` are all still honoured, because
-  dropping them would not have failed loudly: an argument a tool does not declare is stripped
-  before the handler sees it, so a caller still passing `projectPath` would have had its filter
-  silently vanish and received the whole database presented as one project's usage. The
-  shipped `project-cost` prompt was one such caller. `counterfactual_cost` was worse -- `models`
-  meant "price against these" before and "include only these turns" after, so the same call
-  kept succeeding while answering a different question. Both are covered by
-  `tests/mcp/back-compat.test.ts`.
-
-- **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
-  on the CLI (`--models` still works), `targetModels` in MCP (`models` still works there too,
-  keeping its pre-0.8.0 meaning of "price against these"; model scope-filtering on that one
-  tool is `filterModels`). One says which turns to include
-  and the other which rates to price them at; with `--model` now accepting a list, a single
-  `models` meaning both depending on the tool would have been exactly the ambiguity this
-  release set out to remove. The two are usable together:
-  `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5`.
-
-- `UsageFilter`'s scope fields are now lists: `clients`, `models`, `projectPaths`. The
-  singular `client`/`model`/`projectPath` are gone rather than kept as aliases -- two ways to
-  express one filter, only one of which the query consults, is how a filter silently stops
-  filtering.
-
-### Added
-
 - **Prices for models this package does not ship.** The pricing override
   (`$AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`) is now **overlaid** onto the
   built-in table rather than replacing it, keyed by model id. Adding one missing provider
@@ -296,6 +258,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the offending field: `models["x"].output must be a number >= 0 (USD per 1,000,000 tokens)`.
   ([#64](https://github.com/MohitBansal321/ai-usage-mcp/issues/64))
 
+### Changed
+
+- **Every pre-0.8.0 MCP argument spelling still works.** The singular `projectPath`, a bare
+  string `client`, and `counterfactual_cost`'s `models` are all still honoured, because
+  dropping them would not have failed loudly: an argument a tool does not declare is stripped
+  before the handler sees it, so a caller still passing `projectPath` would have had its filter
+  silently vanish and received the whole database presented as one project's usage. The
+  shipped `project-cost` prompt was one such caller. `counterfactual_cost` was worse -- `models`
+  meant "price against these" before and "include only these turns" after, so the same call
+  kept succeeding while answering a different question. Both are covered by
+  `tests/mcp/back-compat.test.ts`.
+
+- **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
+  on the CLI (`--models` still works), `targetModels` in MCP (`models` still works there too,
+  keeping its pre-0.8.0 meaning of "price against these"; model scope-filtering on that one
+  tool is `filterModels`). One says which turns to include
+  and the other which rates to price them at; with `--model` now accepting a list, a single
+  `models` meaning both depending on the tool would have been exactly the ambiguity this
+  release set out to remove. The two are usable together:
+  `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5`.
+
+- `UsageFilter`'s scope fields are now lists: `clients`, `models`, `projectPaths`. The
+  singular `client`/`model`/`projectPath` are gone rather than kept as aliases -- two ways to
+  express one filter, only one of which the query consults, is how a filter silently stops
+  filtering.
+
 ### Fixed
 
 - **A reported cost of `$0` no longer looks the same as a price nobody has.** OpenCode reports
@@ -313,10 +301,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "not asked" is not the same as "none", which is the same rule the rest of this codebase
   applies to every value a source does not report.
   ([#66](https://github.com/MohitBansal321/ai-usage-mcp/issues/66))
-
-## [0.8.0] - 2026-09-17
-
-### Fixed
 
 - **Packaging test runs identically on Windows.** `npm pack --json` replaces `tar tzf`, and `shell: true` lets `npm.cmd` resolve correctly on Windows runners. ([#75](https://github.com/MohitBansal321/ai-usage-mcp/pull/75))
 
