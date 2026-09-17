@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatModels } from '../../services/formatter.js';
 import {
@@ -20,7 +21,7 @@ export function registerModelUsage(server: McpServer, ctx: ToolContext): void {
       description:
         'Per-model token usage and cost, highest token count first. Use this to answer ' +
         '"which model consumed the most tokens". Cost is labelled reported vs estimated per model.',
-      inputSchema: { ...periodShape, client: clientEnum, ...pageShape },
+      inputSchema: z.strictObject({ ...periodShape, client: clientEnum, ...pageShape }),
     },
     async (args) => {
       await ctx.ensureFresh();

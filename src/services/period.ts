@@ -30,6 +30,15 @@ export interface Period {
 }
 
 /**
+ * Asked to compare against a window that does not exist.
+ *
+ * Its own class so the CLI can report it as the usage error it is -- one line
+ * and exit 2, like any other bad flag combination -- rather than as an
+ * unexpected failure with a stack trace.
+ */
+export class ComparePeriodError extends RangeError {}
+
+/**
  * Names the bound that was unreadable, instead of letting `toISOString()` throw.
  *
  * `new Date('nonsense')` yields an Invalid Date rather than throwing, so the

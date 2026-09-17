@@ -65,5 +65,5 @@ export {
 } from './services/comparison.js';
 export { SyncRepository } from './db/repositories/sync-repository.js';
 export { loadPricing, anthropicPricing } from './pricing/index.js';
-export { resolvePeriod, type PeriodInput } from './services/period.js';
+export { ComparePeriodError, resolvePeriod, type PeriodInput } from './services/period.js';
 export * from './models/usage-record.js';

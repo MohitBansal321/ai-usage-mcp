@@ -7,6 +7,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-18
+
+Three places where this tool accepted something it could not honour and answered anyway. Each
+one returned a confident, ordinary-looking result to a caller that had asked for something
+else -- the failure this codebase is otherwise organised around preventing.
+
+### Fixed
+
+- **A comparison that cannot be made is refused rather than omitted.** `--compare previous`
+  (and `compare: "previous"`) on a period with no fixed length -- all time, or an open-ended
+  `--since`/`--until` on its own -- used to return an ordinary summary with the comparison
+  quietly missing from it. The caller asked what changed and got a report that reads as
+  "nothing changed" rather than "I never checked". It now names the period it could not
+  compare and exits 2 from the CLI. The refusal to _invent_ a window is unchanged; only the
+  silence is gone. The MCP description also no longer claims `since` alone is comparable, which
+  it never was: an open window's length depends on when the clock is read.
+
+- **The MCP tools reject an argument they do not declare.** Tool schemas were built from raw
+  Zod shapes, which strip unknown keys, so `{ period: "today" }` -- a plausible guess at the
+  argument name -- was accepted and answered with all-time totals under an "all time" heading.
+  A caller that mistyped one argument got a confident answer to a question it had not asked,
+  which is the same failure the pre-0.8.0 spellings exist to prevent. All nine tools now
+  advertise `additionalProperties: false` and reject the unknown key by name. Every declared
+  spelling, including the deprecated `projectPath`, keeps working.
+
+- **A pricing override file that does not exist is an error, not a silent fallback.** Setting
+  `AI_USAGE_PRICING_FILE` to a path that is not there loaded the built-in table and said
+  nothing, so a typo in the path was indistinguishable from the override working -- every cost
+  figure downstream looked ordinary while being computed from the rates the user believed they
+  had replaced. The default `<config dir>/pricing.json` still falls back silently, because not
+  having one is the normal state rather than a request.
+
 ## [0.8.0] - 2026-09-17
 
 ### Added
@@ -747,7 +779,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...v0.6.0

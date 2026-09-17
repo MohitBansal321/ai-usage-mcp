@@ -24,7 +24,7 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
         'records none) are always listed separately and must not be summed. Also reports the ' +
         'cache hit rate and reads-per-write, which are what say whether the cache is paying ' +
         'for itself -- the raw cache counts alone cannot.',
-      inputSchema: {
+      inputSchema: z.strictObject({
         ...periodShape,
         client: clientEnum,
         compare: z
@@ -32,10 +32,12 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
           .optional()
           .describe(
             'Also report the window of equal length immediately before this one, with the ' +
-              'delta. Requires a bounded period (days/today/since): "all time" has no previous ' +
-              'window. Reported and estimated cost are deltaed separately and never summed.',
+              'delta. Requires a period of fixed length -- days, today, or since AND until ' +
+              'together. An open-ended period (since alone, until alone, or all time) has no ' +
+              'equally long window before it and is rejected rather than answered without the ' +
+              'comparison. Reported and estimated cost are deltaed separately and never summed.',
           ),
-      },
+      }),
     },
     async (args) => {
       await ctx.ensureFresh();

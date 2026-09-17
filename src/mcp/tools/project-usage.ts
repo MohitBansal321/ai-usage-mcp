@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatProjects } from '../../services/formatter.js';
 import {
@@ -22,7 +23,7 @@ export function registerProjectUsage(server: McpServer, ctx: ToolContext): void 
         'directory a turn ran in. Use this to answer "which repository is my spend going to". ' +
         'Turns whose project could not be resolved are grouped as (unknown) rather than dropped, ' +
         'and cost is labelled reported vs estimated per project.',
-      inputSchema: { ...periodShape, client: clientEnum, ...pageShape },
+      inputSchema: z.strictObject({ ...periodShape, client: clientEnum, ...pageShape }),
     },
     async (args) => {
       await ctx.ensureFresh();

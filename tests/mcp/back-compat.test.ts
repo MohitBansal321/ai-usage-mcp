@@ -106,6 +106,33 @@ describe('pre-0.8.0 MCP argument spellings', () => {
     return (result.content as { type: string; text: string }[])[0]!.text;
   };
 
+  /**
+   * The other half of the same problem.
+   *
+   * Declared-but-old spellings keep working (below); undeclared ones must now
+   * fail. A raw Zod shape builds a non-strict object, which STRIPS unknown keys,
+   * so `{ period: 'today' }` -- a plausible guess at the argument name -- was
+   * accepted and answered with all-time totals under an "all time" heading. A
+   * caller that mistyped got a confident answer to a question it had not asked.
+   */
+  it('rejects an undeclared argument instead of stripping it', async () => {
+    const result = await client.callTool({
+      name: 'usage_summary',
+      arguments: { period: 'today' },
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0]!.text).toContain('period');
+  });
+
+  it('names every tool as closed to unknown arguments', async () => {
+    const { tools } = await client.listTools();
+    expect(tools).not.toHaveLength(0);
+    for (const tool of tools)
+      expect((tool.inputSchema as { additionalProperties?: unknown }).additionalProperties).toBe(
+        false,
+      );
+  });
+
   it('still filters on the singular `projectPath`', async () => {
     const out = await text('project_usage', { projectPath: '/work/one' });
     expect(out).toContain('/work/one');

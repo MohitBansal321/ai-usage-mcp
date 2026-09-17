@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatClients } from '../../services/formatter.js';
 import { cacheMetrics } from '../../services/cache-metrics.js';
@@ -22,7 +23,7 @@ export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
         'Note that the two cost figures are not comparable as a single number: OpenCode ' +
         'reports actual charged cost, while the Claude Code figure is an API-equivalent ' +
         'estimate (a Pro/Max subscription has $0 marginal cost per request).',
-      inputSchema: { ...periodShape, ...pageShape },
+      inputSchema: z.strictObject({ ...periodShape, ...pageShape }),
     },
     async (args) => {
       await ctx.ensureFresh();
