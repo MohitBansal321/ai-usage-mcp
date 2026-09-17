@@ -29,18 +29,26 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
       inputSchema: {
         ...periodShape,
         client: clientEnum,
-        models: z
-          .array(z.string())
+        // Named apart from the `models` SCOPE filter on purpose. One says which
+        // turns to include, the other says which rates to price them at, and a
+        // single `models` meaning both depending on the tool is exactly the
+        // ambiguity this argument set exists to remove. Both are usable together:
+        // `models: ['claude-opus-5'], targetModels: ['claude-sonnet-5']` asks what
+        // the Opus turns would have cost on Sonnet.
+        targetModels: z
+          .array(z.string().min(1))
           .optional()
           .describe(
-            'Models to price against. Omit to compare every model the pricing table knows. ' +
-              'A model with no price is omitted and called out rather than guessed at.',
+            'Models to price the selected tokens AGAINST -- not a filter on which turns are ' +
+              'included, which is what `models` does. Omit to compare every model the pricing ' +
+              'table knows. A model with no price is omitted and called out rather than ' +
+              'guessed at.',
           ),
       },
     },
     async (args) => {
       await ctx.ensureFresh();
-      const report = ctx.service.counterfactualCost(toQuery(args), args.models);
+      const report = ctx.service.counterfactualCost(toQuery(args), args.targetModels);
       return textResult(formatCounterfactual(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,

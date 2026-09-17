@@ -9,6 +9,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Rank by cost.** `sessions`, `models`, `projects` and `clients` take `--sort`
+  (`tokens` | `reported-cost` | `estimated-cost` | `records` | `sessions` | `recent`), with the
+  matching MCP argument. The data was always there -- only the ordering was missing, and its
+  absence was worse than neutral: `sessions` was strictly recency-ordered, so the `--limit` a
+  caller would naturally reach for actively _hid_ the answer. On the development machine the
+  costliest session is $373.05 and sits 300-odd rows down a recency-ordered list whose first
+  two entries are $7.62 and $3.44.
+
+  There is deliberately **no plain `--sort cost`**. Reported and estimated cost are separate
+  figures that are never summed, so ordering by one sorts every row priced on the other basis
+  as though it were $0. The flag refuses the ambiguous form and names the two to choose from,
+  and whichever is chosen the output reports how many rows that ordering could not speak for
+  (`rowsWithoutSortValue`).
+  ([#52](https://github.com/MohitBansal321/ai-usage-mcp/issues/52))
+
+- **Multi-valued scope filters.** `--client`, `--model` and `--project` are repeatable and
+  comma-separated, each matching any of the values given; different scopes still combine with
+  AND. `--model a,b` previously parsed as one literal id, matched nothing, and reported an
+  empty period at exit 0 -- a typo rendered as a fact about the data.
+
+  An **empty list now matches nothing rather than nothing-at-all-being-filtered**, which is
+  the same rule `--model ""` already followed.
+
+  A scope value present nowhere in the database is called out explicitly, because a typo and a
+  quiet week were otherwise indistinguishable. The check runs against the whole database, not
+  the period, so a project that merely had no activity this week is not reported as unknown.
+  ([#57](https://github.com/MohitBansal321/ai-usage-mcp/issues/57))
+
+- **Paging, with a completeness signal.** The same four commands take `--offset`, and every
+  list-shaped result now carries `total`, `offset`, `limit`, `hasMore`, `nextOffset` and
+  `sort`. A caller passing `--limit` previously had no way to know what it had not seen, which
+  made "the top 5" indistinguishable from "all 5 there are". Every ordering carries a
+  deterministic tie-break, so paging cannot drop or repeat a row when two rows compare equal.
+  ([#61](https://github.com/MohitBansal321/ai-usage-mcp/issues/61))
+
+### Changed
+
+- **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
+  on the CLI (`--models` still works), `targetModels` in MCP. One says which turns to include
+  and the other which rates to price them at; with `--model` now accepting a list, a single
+  `models` meaning both depending on the tool would have been exactly the ambiguity this
+  release set out to remove. The two are usable together:
+  `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5`.
+
+- `UsageFilter`'s scope fields are now lists: `clients`, `models`, `projectPaths`. The
+  singular `client`/`model`/`projectPath` are gone rather than kept as aliases -- two ways to
+  express one filter, only one of which the query consults, is how a filter silently stops
+  filtering.
+
+### Added
+
 - **Prices for models this package does not ship.** The pricing override
   (`$AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`) is now **overlaid** onto the
   built-in table rather than replacing it, keyed by model id. Adding one missing provider

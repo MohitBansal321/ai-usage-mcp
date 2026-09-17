@@ -120,7 +120,7 @@ describe('UsageRepository', () => {
     ]);
     expect(repo.turns({ includeSubagents: false }).map((t) => t.id)).toEqual(['main', 'other']);
     expect(repo.turns({ sessionId: 's1' })).toHaveLength(2);
-    expect(repo.turns({ projectPath: '/work/two' }).map((t) => t.id)).toEqual(['other']);
+    expect(repo.turns({ projectPaths: ['/work/two'] }).map((t) => t.id)).toEqual(['other']);
     expect(repo.countTurns({ includeSubagents: false })).toBe(2);
   });
 
@@ -141,7 +141,7 @@ describe('UsageRepository', () => {
       record({ id: 'a', projectPath: '/work/one' }),
       record({ id: 'b', projectPath: undefined }),
     ]);
-    expect([...repo.byProject().map((p) => p.key)].sort()).toEqual(['(unknown)', '/work/one']);
+    expect([...repo.byProject().rows.map((p) => p.key)].sort()).toEqual(['(unknown)', '/work/one']);
   });
 
   it('round-trips speed, and reports an unrecorded speed as absent not standard', () => {

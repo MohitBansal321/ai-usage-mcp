@@ -1,6 +1,15 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatClients } from '../../services/formatter.js';
-import { periodShape, readOnlyTool, textResult, toQuery, type ToolContext } from './shared.js';
+import {
+  pageShape,
+  pageStructured,
+  periodShape,
+  readOnlyTool,
+  textResult,
+  toPageRequest,
+  toQuery,
+  type ToolContext,
+} from './shared.js';
 
 export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
@@ -12,14 +21,16 @@ export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
         'Note that the two cost figures are not comparable as a single number: OpenCode ' +
         'reports actual charged cost, while the Claude Code figure is an API-equivalent ' +
         'estimate (a Pro/Max subscription has $0 marginal cost per request).',
-      inputSchema: periodShape,
+      inputSchema: { ...periodShape, ...pageShape },
     },
     async (args) => {
       await ctx.ensureFresh();
-      const report = ctx.service.clientUsage(toQuery(args));
+      const report = ctx.service.clientUsage(toQuery(args), toPageRequest(args));
       return textResult(formatClients(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,
+        page: pageStructured(report.page),
+        ...(report.unmatchedScope ? { unmatchedScope: report.unmatchedScope } : {}),
         clients: report.clients.map((c) => ({
           client: c.key,
           records: c.records,

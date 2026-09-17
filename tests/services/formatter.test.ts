@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AggregateRow, SessionRow } from '../../src/db/repositories/usage-repository.js';
+import type { AggregateRow, Page, SessionRow } from '../../src/db/repositories/usage-repository.js';
+import type { PageInfo } from '../../src/services/aggregation-service.js';
 import type { CostTotals } from '../../src/models/usage-record.js';
 import { CostService } from '../../src/services/cost-service.js';
 import { anthropicPricing } from '../../src/pricing/index.js';
@@ -19,6 +20,33 @@ import {
 } from '../../src/services/formatter.js';
 
 const costService = new CostService({ table: anthropicPricing });
+
+/** A page envelope for a complete, unpaged, token-sorted list. */
+function page(total: number, overrides: Partial<PageInfo> = {}): PageInfo {
+  return {
+    total,
+    offset: 0,
+    hasMore: false,
+    sort: 'tokens',
+    rowsWithoutSortValue: 0,
+    ...overrides,
+  };
+}
+
+function sessionPage(
+  rows: SessionRow[],
+  overrides: Partial<Page<SessionRow>> = {},
+): Page<SessionRow> {
+  return {
+    rows,
+    total: rows.length,
+    offset: 0,
+    hasMore: false,
+    sort: 'recent',
+    rowsWithoutSortValue: 0,
+    ...overrides,
+  };
+}
 
 function cost(overrides: Partial<CostTotals> = {}): CostTotals {
   return {
@@ -182,6 +210,7 @@ describe('report rendering', () => {
           { key: 'claude-code', ...row({ cost: cost({ estimated: 600, estimatedRecords: 10 }) }) },
         ],
         overall: row(),
+        page: page(2),
       },
       costService,
     );
@@ -204,6 +233,7 @@ describe('report rendering', () => {
           },
         ],
         overall: row({ totalTokens: 600 }),
+        page: page(2),
       },
       costService,
     );
@@ -212,7 +242,7 @@ describe('report rendering', () => {
   });
 
   it('tells the user to sync when no sessions are stored', () => {
-    expect(formatSessions([], costService)).toContain('ai-usage sync');
+    expect(formatSessions(sessionPage([]), costService)).toContain('ai-usage sync');
   });
 
   function session(overrides: Partial<SessionRow> = {}): SessionRow {
@@ -259,7 +289,7 @@ describe('report rendering', () => {
   });
 
   it('reports an unknown project and unknown models honestly', () => {
-    const text = formatSessions([session({ models: [] })], costService);
+    const text = formatSessions(sessionPage([session({ models: [] })]), costService);
     expect(text).toContain('(unknown)');
   });
 });

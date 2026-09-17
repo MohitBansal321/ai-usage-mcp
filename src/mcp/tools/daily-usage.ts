@@ -30,6 +30,7 @@ export function registerDailyUsage(server: McpServer, ctx: ToolContext): void {
       return textResult(formatDaily(report), {
         period: report.period,
         includeSubagents: report.includeSubagents,
+        ...(report.unmatchedScope ? { unmatchedScope: report.unmatchedScope } : {}),
         days: report.days.map((d) => ({
           date: d.key,
           records: d.records,

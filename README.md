@@ -427,12 +427,77 @@ ai-usage projects    # per-project  (--limit N)
 ai-usage sessions    # recent sessions
 ai-usage session ID  # one session in detail
 ai-usage daily       # per-day breakdown
-ai-usage counterfactual  # these tokens on another model (--models a,b)
+ai-usage counterfactual  # these tokens on another model (--target-models a,b)
 ai-usage verify      # re-read the sources and diff them against the local database
 ```
 
-Add `--json` to any command for machine-readable output, and `--project <path>` to any
-period-based command to restrict it to one project.
+Add `--json` to any command for machine-readable output.
+
+### Narrowing to several projects, models or clients
+
+`--client`, `--model` and `--project` are **repeatable and comma-separated**, and each matches
+_any_ of the values given:
+
+```bash
+ai-usage models   --model claude-opus-5,claude-sonnet-5
+ai-usage daily    --project /work/api --project /work/web    # same as a comma list
+ai-usage stats    --client opencode
+```
+
+Different scopes combine with **AND**: `--model claude-opus-5 --project /work/api` is Opus
+turns _in that project_.
+
+A value that matches no record anywhere in the database is called out rather than answered
+with an empty report, because a typo and a quiet week otherwise look identical:
+
+```text
+WARNING: no record anywhere in this database has model "claude-opus". An empty result below
+is that, not a quiet period. Run `ai-usage models` to see the ids actually present.
+```
+
+Note that `--model` (which turns to include) and `--target-models` (which rates to price them
+at, on `counterfactual` only) are different things, and usable together:
+`ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
+Opus turns would have cost on Sonnet.
+
+### Ordering and paging a list
+
+`sessions`, `models`, `projects` and `clients` accept `--sort`, `--limit` and `--offset`:
+
+```bash
+ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
+ai-usage projects --sort estimated-cost
+ai-usage sessions --limit 100 --offset 100            # page two
+```
+
+| `--sort`         | Orders by                                           |
+| ---------------- | --------------------------------------------------- |
+| `tokens`         | Total tokens (default everywhere except `sessions`) |
+| `estimated-cost` | Estimated cost                                      |
+| `reported-cost`  | Reported cost                                       |
+| `records`        | Turn count                                          |
+| `sessions`       | Distinct sessions                                   |
+| `recent`         | Most recent activity (default for `sessions`)       |
+
+**There is deliberately no plain `--sort cost`.** Reported and estimated cost are separate
+figures that are never summed, so ordering by one sorts every row priced on the _other_ basis
+as though it were `$0`. The flag refuses the ambiguous form and names the two to pick from,
+and whichever you pick, the output says how many rows it could not speak for:
+
+```text
+Showing 5 of 366 sessions (offset 0), sorted by estimated-cost.
+More available: re-run with --offset 5 for the next page.
+NOTE: 280 of those sessions carry no estimated cost at all, so they sort as $0. They are not
+cheap -- they are priced on the other basis, or not priced at all.
+```
+
+That footer is why `--limit` is now safe to pass: it says what you did _not_ see. Before, the
+most expensive session was visible only if it also happened to be recent, and `--limit` made
+it less likely to be.
+
+In `--json` and MCP `structuredContent` this is a `page` object carrying `total`, `offset`,
+`hasMore`, `nextOffset`, `sort` and `rowsWithoutSortValue` — enough to walk a list to the end
+and know when you are done.
 
 `ai-usage stats --today` returns exactly what the `usage_summary` tool returns; a test in
 `tests/mcp/parity.test.ts` asserts they are byte-identical.

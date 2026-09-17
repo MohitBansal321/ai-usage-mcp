@@ -3,6 +3,8 @@ import { openDatabase, resolveDatabasePath, schemaVersion } from '../db/database
 import { SyncRepository, type SyncState } from '../db/repositories/sync-repository.js';
 import {
   UsageRepository,
+  type Page,
+  type PageRequest,
   type SessionRow,
   type UsageFilter,
 } from '../db/repositories/usage-repository.js';
@@ -25,9 +27,12 @@ import { SyncService, type SyncOptions, type SyncReport } from './sync-service.j
 import { VerifyService, type VerifyReport } from './verify-service.js';
 
 export interface UsageQuery extends PeriodInput {
-  client?: ClientId;
-  model?: string;
-  projectPath?: string;
+  /** Restrict to any of these clients. */
+  clients?: ClientId[];
+  /** Restrict to any of these model ids. */
+  models?: string[];
+  /** Restrict to any of these project working directories. */
+  projectPaths?: string[];
   /** Defaults to true -- subagent turns are real spend. */
   includeSubagents?: boolean;
 }
@@ -116,9 +121,9 @@ export class UsageService {
     };
     if (period.since) filter.since = period.since;
     if (period.until) filter.until = period.until;
-    if (query.client) filter.client = query.client;
-    if (query.model) filter.model = query.model;
-    if (query.projectPath) filter.projectPath = query.projectPath;
+    if (query.clients?.length) filter.clients = query.clients;
+    if (query.models?.length) filter.models = query.models;
+    if (query.projectPaths?.length) filter.projectPaths = query.projectPaths;
     return { filter, label: period.label };
   }
 
@@ -175,24 +180,24 @@ export class UsageService {
     return this.aggregation.summary(filter, label);
   }
 
-  modelUsage(query: UsageQuery = {}, limit?: number): ModelReport {
+  modelUsage(query: UsageQuery = {}, page: PageRequest = {}): ModelReport {
     const { filter, label } = this.filterFor(query);
-    return this.aggregation.models(filter, label, limit);
+    return this.aggregation.models(filter, label, page);
   }
 
-  clientUsage(query: UsageQuery = {}): ClientReport {
+  clientUsage(query: UsageQuery = {}, page: PageRequest = {}): ClientReport {
     const { filter, label } = this.filterFor(query);
-    return this.aggregation.clients(filter, label);
+    return this.aggregation.clients(filter, label, page);
   }
 
-  projectUsage(query: UsageQuery = {}, limit?: number): ProjectReport {
+  projectUsage(query: UsageQuery = {}, page: PageRequest = {}): ProjectReport {
     const { filter, label } = this.filterFor(query);
-    return this.aggregation.projects(filter, label, limit);
+    return this.aggregation.projects(filter, label, page);
   }
 
-  recentSessions(query: UsageQuery = {}, limit = 20): SessionRow[] {
+  recentSessions(query: UsageQuery = {}, page: PageRequest = {}): Page<SessionRow> {
     const { filter } = this.filterFor(query);
-    return this.aggregation.recentSessions(filter, limit);
+    return this.aggregation.recentSessions(filter, page);
   }
 
   sessionUsage(

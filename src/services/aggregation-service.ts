@@ -1,11 +1,43 @@
 import type {
   AggregateRow,
   GroupedRow,
+  Page,
+  PageRequest,
   SessionRow,
   UsageFilter,
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
 import type { ClientId } from '../models/usage-record.js';
+
+/**
+ * What a list-shaped report says about the rows it did NOT return.
+ *
+ * Carried beside the rows rather than replacing them: existing consumers keep
+ * reading `models`/`projects`/`clients` as an array, and a caller that wants to
+ * page has something to page with.
+ */
+export interface PageInfo {
+  total: number;
+  offset: number;
+  limit?: number;
+  hasMore: boolean;
+  nextOffset?: number;
+  sort: string;
+  rowsWithoutSortValue: number;
+}
+
+function pageInfo<T>(page: Page<T>): PageInfo {
+  const info: PageInfo = {
+    total: page.total,
+    offset: page.offset,
+    hasMore: page.hasMore,
+    sort: page.sort,
+    rowsWithoutSortValue: page.rowsWithoutSortValue,
+  };
+  if (page.limit !== undefined) info.limit = page.limit;
+  if (page.nextOffset !== undefined) info.nextOffset = page.nextOffset;
+  return info;
+}
 
 export interface SummaryReport {
   period: { since?: string; until?: string; label: string };
@@ -13,20 +45,39 @@ export interface SummaryReport {
   overall: AggregateRow;
   byClient: GroupedRow[];
   turnKinds: { main: number; subagent: number };
+  /** Scope values the caller asked for that match no record at all. */
+  unmatchedScope?: UnmatchedScope;
+}
+
+/**
+ * Scope values that exist nowhere in the database.
+ *
+ * Without this, `--model does-not-exist` answers "No usage records for this
+ * period" and exits 0 -- indistinguishable from a genuinely quiet period, which
+ * invites reading a typo as a fact about the data.
+ */
+export interface UnmatchedScope {
+  models?: string[];
+  projectPaths?: string[];
+  clients?: string[];
 }
 
 export interface ModelReport {
   period: { since?: string; until?: string; label: string };
   includeSubagents: boolean;
   models: GroupedRow[];
+  page: PageInfo;
   overall: AggregateRow;
+  unmatchedScope?: UnmatchedScope;
 }
 
 export interface ClientReport {
   period: { since?: string; until?: string; label: string };
   includeSubagents: boolean;
   clients: GroupedRow[];
+  page: PageInfo;
   overall: AggregateRow;
+  unmatchedScope?: UnmatchedScope;
 }
 
 export interface ProjectReport {
@@ -34,7 +85,9 @@ export interface ProjectReport {
   includeSubagents: boolean;
   /** Keyed by project path. Records with no project resolve to `(unknown)`. */
   projects: GroupedRow[];
+  page: PageInfo;
   overall: AggregateRow;
+  unmatchedScope?: UnmatchedScope;
 }
 
 export interface DailyReport {
@@ -43,6 +96,7 @@ export interface DailyReport {
   /** Newest day first. Keyed by local calendar date, `YYYY-MM-DD`. */
   days: GroupedRow[];
   overall: AggregateRow;
+  unmatchedScope?: UnmatchedScope;
 }
 
 export interface SessionDetail {
@@ -62,61 +116,101 @@ export interface SessionDetail {
 export class AggregationService {
   constructor(private readonly repo: UsageRepository) {}
 
+  private periodOf(filter: UsageFilter, label: string) {
+    return {
+      ...(filter.since ? { since: filter.since } : {}),
+      ...(filter.until ? { until: filter.until } : {}),
+      label,
+    };
+  }
+
+  /**
+   * Scope values matching no record anywhere in the database.
+   *
+   * Checked against the whole table rather than the period, so the answer
+   * separates "you typed a name that does not exist" from "that project was
+   * quiet this week" -- two very different things that both rendered as an empty
+   * report.
+   */
+  private unmatched(filter: UsageFilter): UnmatchedScope | undefined {
+    const out: UnmatchedScope = {};
+    if (filter.models?.length) {
+      const missing = this.repo.absentValues('model', filter.models);
+      if (missing.length) out.models = missing;
+    }
+    if (filter.projectPaths?.length) {
+      const missing = this.repo.absentValues('project_path', filter.projectPaths);
+      if (missing.length) out.projectPaths = missing;
+    }
+    if (filter.clients?.length) {
+      const missing = this.repo.absentValues('client', filter.clients);
+      if (missing.length) out.clients = missing;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+
+  private withScope<T extends object>(report: T, filter: UsageFilter): T {
+    const unmatchedScope = this.unmatched(filter);
+    return unmatchedScope ? { ...report, unmatchedScope } : report;
+  }
+
   summary(filter: UsageFilter, label: string): SummaryReport {
-    return {
-      period: {
-        ...(filter.since ? { since: filter.since } : {}),
-        ...(filter.until ? { until: filter.until } : {}),
-        label,
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        overall: this.repo.totals(filter),
+        byClient: this.repo.byClient(filter).rows,
+        turnKinds: this.repo.turnKindCounts(filter),
       },
-      includeSubagents: filter.includeSubagents !== false,
-      overall: this.repo.totals(filter),
-      byClient: this.repo.byClient(filter),
-      turnKinds: this.repo.turnKindCounts(filter),
-    };
+      filter,
+    );
   }
 
-  models(filter: UsageFilter, label: string, limit?: number): ModelReport {
-    return {
-      period: {
-        ...(filter.since ? { since: filter.since } : {}),
-        ...(filter.until ? { until: filter.until } : {}),
-        label,
+  models(filter: UsageFilter, label: string, page: PageRequest = {}): ModelReport {
+    const result = this.repo.byModel(filter, page);
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        models: result.rows,
+        page: pageInfo(result),
+        overall: this.repo.totals(filter),
       },
-      includeSubagents: filter.includeSubagents !== false,
-      models: this.repo.byModel(filter, limit),
-      overall: this.repo.totals(filter),
-    };
+      filter,
+    );
   }
 
-  clients(filter: UsageFilter, label: string): ClientReport {
-    return {
-      period: {
-        ...(filter.since ? { since: filter.since } : {}),
-        ...(filter.until ? { until: filter.until } : {}),
-        label,
+  clients(filter: UsageFilter, label: string, page: PageRequest = {}): ClientReport {
+    const result = this.repo.byClient(filter, page);
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        clients: result.rows,
+        page: pageInfo(result),
+        overall: this.repo.totals(filter),
       },
-      includeSubagents: filter.includeSubagents !== false,
-      clients: this.repo.byClient(filter),
-      overall: this.repo.totals(filter),
-    };
+      filter,
+    );
   }
 
-  projects(filter: UsageFilter, label: string, limit?: number): ProjectReport {
-    return {
-      period: {
-        ...(filter.since ? { since: filter.since } : {}),
-        ...(filter.until ? { until: filter.until } : {}),
-        label,
+  projects(filter: UsageFilter, label: string, page: PageRequest = {}): ProjectReport {
+    const result = this.repo.byProject(filter, page);
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        projects: result.rows,
+        page: pageInfo(result),
+        overall: this.repo.totals(filter),
       },
-      includeSubagents: filter.includeSubagents !== false,
-      projects: this.repo.byProject(filter, limit),
-      overall: this.repo.totals(filter),
-    };
+      filter,
+    );
   }
 
-  recentSessions(filter: UsageFilter, limit: number): SessionRow[] {
-    return this.repo.sessions(filter, limit);
+  recentSessions(filter: UsageFilter, page: PageRequest = {}): Page<SessionRow> {
+    return this.repo.sessions(filter, page);
   }
 
   byDay(filter: UsageFilter): GroupedRow[] {
@@ -124,16 +218,15 @@ export class AggregationService {
   }
 
   daily(filter: UsageFilter, label: string): DailyReport {
-    return {
-      period: {
-        ...(filter.since ? { since: filter.since } : {}),
-        ...(filter.until ? { until: filter.until } : {}),
-        label,
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        days: this.repo.byDay(filter),
+        overall: this.repo.totals(filter),
       },
-      includeSubagents: filter.includeSubagents !== false,
-      days: this.repo.byDay(filter),
-      overall: this.repo.totals(filter),
-    };
+      filter,
+    );
   }
 
   /** Resolves an exact or partial session id, then assembles its detail view. */
@@ -153,13 +246,12 @@ export class AggregationService {
 
     const priced = pricedModels ? { pricedModels } : {};
     const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
-    const rows = this.repo.sessions(base, 1);
-    const session = rows[0];
+    const session = this.repo.sessions(base, { limit: 1 }).rows[0];
     if (!session) return undefined;
 
     return {
       session,
-      models: this.repo.byModel(base),
+      models: this.repo.byModel(base).rows,
       main: this.repo.totals({ sessionId: exact, includeSubagents: false, ...priced }),
       subagent: subtract(
         this.repo.totals({ sessionId: exact, ...priced }),

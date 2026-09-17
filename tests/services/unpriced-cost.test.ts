@@ -117,18 +117,18 @@ describe('unpriced records', () => {
       }),
     ]);
 
-    const byModel = repo.byModel({ pricedModels: PRICED });
+    const byModel = repo.byModel({ pricedModels: PRICED }).rows;
     expect(byModel.find((m) => m.key === 'big-pickle')?.cost.unpricedRecords).toBe(1);
     expect(byModel.find((m) => m.key === 'claude-opus-5')?.cost.unpricedRecords).toBe(0);
 
-    const byProject = repo.byProject({ pricedModels: PRICED });
+    const byProject = repo.byProject({ pricedModels: PRICED }).rows;
     expect(byProject.find((p) => p.key === '/work/one')?.cost.unpricedRecords).toBe(1);
     expect(byProject.find((p) => p.key === '/work/two')?.cost.unpricedRecords).toBe(0);
 
     const byDay = repo.byDay({ pricedModels: PRICED });
     expect(byDay[0]?.cost.unpricedRecords).toBe(1);
 
-    const sessions = repo.sessions({ pricedModels: PRICED });
+    const sessions = repo.sessions({ pricedModels: PRICED }).rows;
     expect(sessions.every((s) => s.cost.unpricedRecords !== undefined)).toBe(true);
   });
 

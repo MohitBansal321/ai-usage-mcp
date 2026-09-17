@@ -1,3 +1,5 @@
+import { SORT_KEYS, type SortKey } from '../db/repositories/usage-repository.js';
+
 export interface ParsedArgs {
   command: string;
   positionals: string[];
@@ -5,12 +7,15 @@ export interface ParsedArgs {
   days?: number;
   since?: string;
   until?: string;
-  client?: 'claude-code' | 'opencode';
-  model?: string;
-  project?: string;
-  limit?: number;
-  /** Target models for `counterfactual`. Repeatable, or comma-separated. */
+  /** Scope filters. Repeatable, or comma-separated; each matches ANY value given. */
+  clients?: ClientName[];
   models?: string[];
+  projects?: string[];
+  limit?: number;
+  offset?: number;
+  sort?: SortKey;
+  /** Target models for `counterfactual`. Repeatable, or comma-separated. */
+  counterfactualModels?: string[];
   includeSubagents: boolean;
   allStores: boolean;
   full: boolean;
@@ -18,7 +23,26 @@ export interface ParsedArgs {
   help: boolean;
 }
 
+type ClientName = 'claude-code' | 'opencode';
+
 export class ArgError extends Error {}
+
+/**
+ * Splits a repeatable, comma-separated flag.
+ *
+ * `--model a,b` used to be one literal id that matched nothing and reported an
+ * empty period at exit 0 -- a typo rendered as a fact about the data. The plural
+ * form already existed on `counterfactual --models`, which made the silent empty
+ * result more surprising, not less.
+ */
+function toList(flag: string, raw: string): string[] {
+  const values = raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (values.length === 0) throw new ArgError(`${flag} requires at least one non-empty value.`);
+  return values;
+}
 
 function requireValue(flag: string, value: string | undefined): string {
   if (value === undefined) throw new ArgError(`${flag} requires a value.`);
@@ -38,6 +62,33 @@ function requireNonEmpty(flag: string, value: string | undefined): string {
   const v = requireValue(flag, value);
   if (v.trim() === '') throw new ArgError(`${flag} requires a non-empty value.`);
   return v;
+}
+
+/**
+ * `--sort cost` is refused on purpose.
+ *
+ * Reported and estimated cost are separate figures that must never be summed, so
+ * "order by cost" has no single answer: ordering by one sorts every row priced
+ * on the other basis as though it were $0. Guessing which the user meant is
+ * exactly the wrong-number-that-looks-right this project exists to avoid.
+ */
+function toSortKey(raw: string): SortKey {
+  if (SORT_KEYS.includes(raw as SortKey)) return raw as SortKey;
+  if (raw === 'cost') {
+    throw new ArgError(
+      '--sort cost is ambiguous: reported and estimated cost are separate figures and are ' +
+        'never summed, so ordering by one would sort every row priced on the other basis as ' +
+        '$0. Use --sort reported-cost or --sort estimated-cost.',
+    );
+  }
+  throw new ArgError(`--sort expects one of ${SORT_KEYS.join(', ')}, got "${raw}".`);
+}
+
+function toNonNegativeInt(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0)
+    throw new ArgError(`${flag} expects a non-negative integer, got "${raw}".`);
+  return n;
 }
 
 function toPositiveInt(flag: string, raw: string): number {
@@ -99,32 +150,47 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.until = toTimestamp('--until', requireValue('--until', rest.shift()));
         break;
       case '--client': {
-        const value = requireValue('--client', rest.shift());
-        if (value !== 'claude-code' && value !== 'opencode') {
-          throw new ArgError(`--client expects "claude-code" or "opencode", got "${value}".`);
-        }
-        args.client = value;
+        const values = toList('--client', requireNonEmpty('--client', rest.shift()));
+        const clients: ClientName[] = values.map((value) => {
+          if (value !== 'claude-code' && value !== 'opencode') {
+            throw new ArgError(`--client expects "claude-code" or "opencode", got "${value}".`);
+          }
+          return value;
+        });
+        args.clients = [...(args.clients ?? []), ...clients];
         break;
       }
       case '--model':
-        args.model = requireNonEmpty('--model', rest.shift());
+        args.models = [
+          ...(args.models ?? []),
+          ...toList('--model', requireNonEmpty('--model', rest.shift())),
+        ];
         break;
       case '--project':
-        args.project = requireNonEmpty('--project', rest.shift());
+        args.projects = [
+          ...(args.projects ?? []),
+          ...toList('--project', requireNonEmpty('--project', rest.shift())),
+        ];
         break;
-      case '--models': {
-        const raw = requireValue('--models', rest.shift());
-        const names = raw
-          .split(',')
-          .map((m) => m.trim())
-          .filter(Boolean);
-        if (names.length === 0) throw new ArgError('--models requires at least one model name.');
-        args.models = [...(args.models ?? []), ...names];
+      // `--models` is kept as an alias: it predates `--target-models` and is in
+      // the README. The two names exist because `--model` (scope) and `--models`
+      // (targets) differ by one letter and mean entirely different things.
+      case '--models':
+      case '--target-models':
+        args.counterfactualModels = [
+          ...(args.counterfactualModels ?? []),
+          ...toList(token, requireValue(token, rest.shift())),
+        ];
         break;
-      }
 
       case '--limit':
         args.limit = toPositiveInt('--limit', requireValue('--limit', rest.shift()));
+        break;
+      case '--offset':
+        args.offset = toNonNegativeInt('--offset', requireValue('--offset', rest.shift()));
+        break;
+      case '--sort':
+        args.sort = toSortKey(requireValue('--sort', rest.shift()));
         break;
       case '--no-subagents':
         args.includeSubagents = false;

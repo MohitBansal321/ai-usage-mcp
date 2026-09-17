@@ -28,6 +28,7 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
       return textResult(formatSummary(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,
+        ...(report.unmatchedScope ? { unmatchedScope: report.unmatchedScope } : {}),
         totals: {
           records: report.overall.records,
           sessions: report.overall.sessions,

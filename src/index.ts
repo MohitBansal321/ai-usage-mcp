@@ -13,7 +13,15 @@ export { ClaudeCodeCollector } from './collectors/claude-code/collector.js';
 export { discoverOpenCodeStores } from './collectors/opencode/stores.js';
 export { discoverClaudeRoots, listTranscripts } from './collectors/claude-code/transcripts.js';
 export { openDatabase, resolveDatabasePath } from './db/database.js';
-export { UsageRepository, type UsageFilter } from './db/repositories/usage-repository.js';
+export {
+  UsageRepository,
+  SORT_KEYS,
+  type Page,
+  type PageRequest,
+  type SortKey,
+  type UsageFilter,
+} from './db/repositories/usage-repository.js';
+export type { PageInfo, UnmatchedScope } from './services/aggregation-service.js';
 export { SyncRepository } from './db/repositories/sync-repository.js';
 export { loadPricing, anthropicPricing } from './pricing/index.js';
 export { resolvePeriod, type PeriodInput } from './services/period.js';

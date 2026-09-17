@@ -193,10 +193,10 @@ describe('UsageService', () => {
   });
 
   it('filters every report by project, and reports nothing for an unknown one', () => {
-    const known = service.summary({ projectPath: '/work/project-one' });
+    const known = service.summary({ projectPaths: ['/work/project-one'] });
     expect(known.overall.records).toBe(6);
 
-    const missing = service.projectUsage({ projectPath: '/work/does-not-exist' });
+    const missing = service.projectUsage({ projectPaths: ['/work/does-not-exist'] });
     expect(missing.projects).toEqual([]);
     expect(missing.overall.records).toBe(0);
   });
@@ -266,6 +266,44 @@ describe('UsageService', () => {
       const gating = client.grains.filter((g) => g.gating !== false);
       expect(gating.some((g) => g.matches)).toBe(true);
     }
+  });
+
+  it('says a scope value matches nothing, instead of reporting a quiet period', () => {
+    // The failure this prevents: `--model typo` answering "No usage records for
+    // this period" at exit 0, which is indistinguishable from a real quiet week.
+    const report = service.summary({ models: ['claude-opus-5', 'no-such-model'] });
+    expect(report.unmatchedScope?.models).toEqual(['no-such-model']);
+    // The models that DO exist still filter normally.
+    expect(report.overall.records).toBeGreaterThan(0);
+
+    const projects = service.projectUsage({ projectPaths: ['/nope'] });
+    expect(projects.unmatchedScope?.projectPaths).toEqual(['/nope']);
+    expect(projects.projects).toEqual([]);
+  });
+
+  it('stays quiet when every scope value matches something', () => {
+    expect(service.summary({ models: ['claude-opus-5'] }).unmatchedScope).toBeUndefined();
+    expect(service.summary({}).unmatchedScope).toBeUndefined();
+  });
+
+  it('checks scope against the whole database, not the period', () => {
+    // A project that exists but was quiet this period is NOT an unmatched scope:
+    // conflating the two would cry wolf on every narrow window.
+    const report = service.projectUsage({
+      projectPaths: ['/work/project-one'],
+      since: '2000-01-01T00:00:00.000Z',
+      until: '2000-01-02T00:00:00.000Z',
+    });
+    expect(report.unmatchedScope).toBeUndefined();
+    expect(report.projects).toEqual([]);
+  });
+
+  it('pages and sorts the same rows the unpaged report returns', () => {
+    const all = service.projectUsage({}).projects.map((p) => p.key);
+    const first = service.projectUsage({}, { limit: 1 });
+    expect(first.projects.map((p) => p.key)).toEqual(all.slice(0, 1));
+    expect(first.page.total).toBe(all.length);
+    expect(first.page.hasMore).toBe(all.length > 1);
   });
 
   it('flags OpenCode records whose model the pricing table has never heard of', () => {

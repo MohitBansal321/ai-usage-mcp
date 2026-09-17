@@ -48,7 +48,7 @@ export function registerResources(server: McpServer, ctx: ToolContext): void {
     },
     async (uri) => {
       await ctx.ensureFresh();
-      const [latest] = ctx.service.recentSessions({}, 1);
+      const [latest] = ctx.service.recentSessions({}, { limit: 1 }).rows;
       const text = latest
         ? (() => {
             const detail = ctx.service.sessionUsage(latest.sessionId);
