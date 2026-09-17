@@ -99,7 +99,7 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'stats': {
-        const report = service.summary(queryFrom(args));
+        const report = service.summary(queryFrom(args), { compare: args.compare });
         emit(args, formatSummary(report, service.costService), report);
         return 0;
       }
@@ -152,7 +152,7 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'daily': {
-        const report = service.dailyUsage(queryFrom(args));
+        const report = service.dailyUsage(queryFrom(args), args.grain);
         emit(args, formatDaily(report), report);
         return 0;
       }

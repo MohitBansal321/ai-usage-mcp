@@ -5,6 +5,7 @@ import {
   UsageRepository,
   type Page,
   type PageRequest,
+  type TimeGrain,
   type SessionRow,
   type UsageFilter,
 } from '../db/repositories/usage-repository.js';
@@ -110,7 +111,11 @@ export class UsageService {
   }
 
   /** Translates a caller-facing query into a repository filter. */
-  private filterFor(query: UsageQuery = {}): { filter: UsageFilter; label: string } {
+  private filterFor(query: UsageQuery = {}): {
+    filter: UsageFilter;
+    label: string;
+    previous?: { since: string; until: string; label: string };
+  } {
     const period = resolvePeriod(query);
     const filter: UsageFilter = {
       includeSubagents: query.includeSubagents !== false,
@@ -124,7 +129,11 @@ export class UsageService {
     if (query.clients?.length) filter.clients = query.clients;
     if (query.models?.length) filter.models = query.models;
     if (query.projectPaths?.length) filter.projectPaths = query.projectPaths;
-    return { filter, label: period.label };
+    return {
+      filter,
+      label: period.label,
+      ...(period.previous ? { previous: period.previous } : {}),
+    };
   }
 
   async status(): Promise<StatusReport> {
@@ -175,9 +184,9 @@ export class UsageService {
     return this.verifyService.verify(options);
   }
 
-  summary(query: UsageQuery = {}): SummaryReport {
-    const { filter, label } = this.filterFor(query);
-    return this.aggregation.summary(filter, label);
+  summary(query: UsageQuery = {}, options: { compare?: boolean } = {}): SummaryReport {
+    const { filter, label, previous } = this.filterFor(query);
+    return this.aggregation.summary(filter, label, options.compare ? previous : undefined);
   }
 
   modelUsage(query: UsageQuery = {}, page: PageRequest = {}): ModelReport {
@@ -207,9 +216,9 @@ export class UsageService {
     return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
   }
 
-  dailyUsage(query: UsageQuery = {}): DailyReport {
+  dailyUsage(query: UsageQuery = {}, grain: TimeGrain = 'day'): DailyReport {
     const { filter, label } = this.filterFor(query);
-    return this.aggregation.daily(filter, label);
+    return this.aggregation.daily(filter, label, grain);
   }
 
   counterfactualCost(query: UsageQuery = {}, models?: string[]): CounterfactualReport {

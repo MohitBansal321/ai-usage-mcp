@@ -22,6 +22,10 @@ Period options (default: all time):
   --days N              Last N days, from local midnight
   --since <ISO>         Explicit start (inclusive)
   --until <ISO>         Explicit end (exclusive)
+  --compare previous    stats only: also report the equal-length window before this one,
+                        with the delta. Needs a bounded period; all time has no previous.
+  --grain <g>           daily only: hour | day | hour-of-day (default day).
+                        hour-of-day collapses every day onto one 24-slot local clock.
 
 Scope options (repeatable, or comma-separated; each matches ANY value given):
   --client <name>       claude-code | opencode
@@ -49,6 +53,9 @@ Examples:
   ai-usage stats --days 7
   ai-usage models --days 30 --client claude-code
   ai-usage projects --days 30
+  ai-usage stats --days 7 --compare previous
+  ai-usage daily --days 7 --grain hour
+  ai-usage daily --days 30 --grain hour-of-day
   ai-usage sessions --limit 5
   ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
   ai-usage projects --sort estimated-cost --limit 10

@@ -460,6 +460,78 @@ at, on `counterfactual` only) are different things, and usable together:
 `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
 Opus turns would have cost on Sonnet.
 
+### Reading a trend
+
+`daily` shows **every** bucket in the window, including the ones with no activity:
+
+```text
+2026-09-17      52 turns  total 14,187,806 (14.19M)  (estimated $11.27)
+2026-09-16     333 turns  total 33,849,492 (33.85M)  (estimated $33.56)
+2026-09-15     161 turns  total 19,803,069 (19.80M)  (estimated $18.58)
+2026-09-14       0 turns  total 0   --
+2026-09-13       0 turns  total 0   --
+2026-09-12       0 turns  total 0   --
+2026-09-11     123 turns  total 12,157,650 (12.16M)  (estimated $10.89)
+```
+
+Rows marked `--` had no recorded activity. They used to be omitted, which made a trend
+_actively_ misleading rather than merely incomplete: the gaps were invisible, so the 11th
+rendered immediately below the 15th and any eye reading down the column saw a continuous
+series that did not exist. A zero row is not a fabricated number — it says what the absence of
+a row already meant. In JSON each carries `zeroFilled: true`, so a consumer can tell a
+constructed zero from an observed one.
+
+`--grain` changes the bucket:
+
+```bash
+ai-usage daily --days 7  --grain hour          # a finer timeline
+ai-usage daily --days 30 --grain hour-of-day   # every day on one 24-hour clock
+```
+
+`hour-of-day` is the one that answers _when_ you burn tokens, as opposed to _how much_:
+
+```text
+10:00     185 turns  total 43,016,467 (43.02M)   (estimated $42.61)
+11:00     526 turns  total 113,820,907 (113.82M) (estimated $99.95)
+12:00   1,413 turns  total 280,913,509 (280.91M) (estimated $213.99)
+...
+19:00       0 turns  total 0   --
+```
+
+All buckets are local time, matching the period filter, and `localtime` reads the OS timezone
+database so they stay correct across DST.
+
+### Comparing two periods
+
+`stats --compare previous` reports the equal-length window immediately before, and the delta:
+
+```bash
+ai-usage stats --days 7 --compare previous
+ai-usage stats --today  --compare previous     # vs yesterday
+```
+
+```text
+Compared with the 7 days before that
+  (2026-09-03T18:30:00.000Z -> 2026-09-10T18:30:00.000Z)
+
+  Records:                      -847   -55.9%
+  Total tokens:         -201,112,497   -71.5%
+  Cost (estimated):         -$160.06   -68.3%
+  Cost (reported):             $0.00   n/a, previous was zero
+```
+
+Three rules it keeps:
+
+- **The two cost bases are deltaed separately and never summed**, for the same reason they are
+  reported separately.
+- **There is no percentage change from zero.** `$0 → $5` is a new thing happening, not a rise
+  of 100%, so the percentage is reported as `n/a` rather than invented.
+- **The previous window is aligned to the same local midnights the period uses.** `--days 7`
+  compares against the seven whole days before, not "the 156 hours before" — which is what
+  subtracting an open window's elapsed length gives, and which changes every time you run it.
+
+"All time" has no window before it, so `--compare` is refused there rather than answered.
+
 ### Ordering and paging a list
 
 `sessions`, `models`, `projects` and `clients` accept `--sort`, `--limit` and `--offset`:

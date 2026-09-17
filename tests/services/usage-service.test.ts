@@ -268,6 +268,59 @@ describe('UsageService', () => {
     }
   });
 
+  it('shows days with no activity, not just the days that had some', () => {
+    const report = service.dailyUsage({ days: 10 });
+    // Ten buckets for a ten-day window, whether or not each had usage. Returning
+    // only active days makes the gaps invisible, so an ordinary day renders
+    // beside one a week earlier and looks like a spike next to it.
+    expect(report.days).toHaveLength(10);
+    expect(report.days.some((d) => d.zeroFilled)).toBe(true);
+    // A constructed zero is marked; an observed bucket is not.
+    for (const day of report.days) {
+      if (day.zeroFilled) expect(day.records).toBe(0);
+      else expect(day.records).toBeGreaterThan(0);
+    }
+    // Zero-filling must not change any total.
+    expect(report.overall.totalTokens).toBe(service.summary({ days: 10 }).overall.totalTokens);
+  });
+
+  it('buckets by hour and by hour-of-day as well as by day', () => {
+    expect(service.dailyUsage({ days: 1 }, 'day').grain).toBe('day');
+
+    const hourly = service.dailyUsage({ days: 1 }, 'hour');
+    expect(hourly.days.every((d) => /^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(d.key))).toBe(true);
+
+    // Every day collapsed onto one 24-slot clock: always 24 rows, always in
+    // clock order, whether or not each hour was used.
+    const clock = service.dailyUsage({ days: 30 }, 'hour-of-day');
+    expect(clock.days).toHaveLength(24);
+    expect(clock.days.map((d) => d.key)).toEqual(
+      Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0')),
+    );
+    // The grain changes the buckets, never the totals.
+    expect(clock.days.reduce((sum, d) => sum + d.totalTokens, 0)).toBe(clock.overall.totalTokens);
+  });
+
+  it('compares a window against the equal-length one before it', () => {
+    const report = service.summary({ days: 1 }, { compare: true });
+    expect(report.comparison).toBeDefined();
+    expect(report.comparison?.previous.until).toBe(report.period.since);
+    // Reported and estimated are deltaed apart, and there is no combined figure.
+    expect(report.comparison?.delta.reportedCost).toBeDefined();
+    expect(report.comparison?.delta.estimatedCost).toBeDefined();
+    expect(report.comparison?.caveats.join(' ')).toContain('never summed');
+  });
+
+  it('refuses to invent a previous window for an unbounded period', () => {
+    // "All time" has no window before it, and constructing one would be
+    // answering a question nobody asked.
+    expect(service.summary({}, { compare: true }).comparison).toBeUndefined();
+  });
+
+  it('leaves the comparison out unless it was asked for', () => {
+    expect(service.summary({ days: 1 }).comparison).toBeUndefined();
+  });
+
   it('says a scope value matches nothing, instead of reporting a quiet period', () => {
     // The failure this prevents: `--model typo` answering "No usage records for
     // this period" at exit 0, which is indistinguishable from a real quiet week.

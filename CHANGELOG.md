@@ -9,6 +9,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`daily` shows every bucket, including the empty ones.** It printed only the days that _had_
+  data -- ten rows for a thirty-day window -- with nothing to say the other twenty existed.
+  That made a trend actively misleading rather than merely incomplete: the gaps were
+  invisible, so an ordinary day rendered immediately beside one three weeks earlier and looked
+  like a spike next to it.
+
+  A zero row is not a fabricated number; it says out loud what the absence of a row already
+  meant. Each carries `zeroFilled: true` in JSON and MCP output, so a constructed zero stays
+  distinguishable from an observed one. Filling is bounded at 5,000 buckets and says so when
+  the bound bites, rather than quietly returning a partial series.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`stats --compare previous`**, reporting the equal-length window immediately before and the
+  delta, with the matching `compare` MCP argument. Every report described one window in
+  absolutes, so "am I trending up?" meant re-running with a second hand-computed date pair and
+  diffing mentally.
+
+  Three rules it keeps. The two cost bases are deltaed **separately and never summed**, for the
+  same reason they are reported separately. There is **no percentage change from zero** --
+  `$0 -> $5` is a new thing happening, not a rise of 100%, so the ratio is omitted rather than
+  invented. And the previous window is **aligned to the same local midnights the period uses**,
+  so `--days 7` compares against the seven whole days before rather than "the 156 hours
+  before"; the latter is what subtracting an open window's elapsed length gives, and it moves
+  every time the clock is read. Resolving it in `resolvePeriod` rather than deriving it later
+  is what makes it a pure function of the request -- and is what let the CLI/MCP parity test
+  cover it at all, since the two run in separate processes.
+
+  "All time" has no window before it, so `--compare` is refused there rather than answered.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`daily --grain hour | day | hour-of-day`**, with the matching MCP argument. `hour-of-day`
+  collapses every day in the period onto one 24-slot local clock, which is the grain that
+  answers "when during the day do I burn tokens" -- on the development machine, entirely
+  between 10:00 and 18:00, peaking at noon, with nothing in the evening. Timestamps were
+  already stored to the millisecond and day buckets already computed in local time, so both
+  the data and the timezone handling were in place.
+  ([#58](https://github.com/MohitBansal321/ai-usage-mcp/issues/58))
+
+### Added
+
 - **Rank by cost.** `sessions`, `models`, `projects` and `clients` take `--sort`
   (`tokens` | `reported-cost` | `estimated-cost` | `records` | `sessions` | `recent`), with the
   matching MCP argument. The data was always there -- only the ordering was missing, and its

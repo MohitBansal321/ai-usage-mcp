@@ -226,6 +226,20 @@ describe('CLI and MCP parity', () => {
     );
   });
 
+  it('agrees on every time grain', async () => {
+    for (const grain of ['hour', 'day', 'hour-of-day'] as const) {
+      expect(cli(['daily', '--days', '2', '--grain', grain])).toBe(
+        await toolText('daily_usage', { days: 2, grain }),
+      );
+    }
+  });
+
+  it('agrees on a period comparison', async () => {
+    expect(cli(['stats', '--days', '1', '--compare', 'previous'])).toBe(
+      await toolText('usage_summary', { days: 1, compare: 'previous' }),
+    );
+  });
+
   it('agrees that an unmatched scope is a warning, not an empty period', async () => {
     const text = cli(['stats', '--model', 'no-such-model']);
     expect(text).toBe(await toolText('usage_summary', { models: ['no-such-model'] }));

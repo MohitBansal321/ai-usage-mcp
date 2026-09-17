@@ -151,6 +151,23 @@ const COST_SORT_COLUMN: Partial<Record<SortKey, string>> = {
   'estimated-cost': 'estimated_records',
 };
 
+/**
+ * Time buckets, all evaluated in local time.
+ *
+ * `hour-of-day` is not a finer timeline -- it collapses every day onto one
+ * 24-slot clock, which is the only grain that answers "when during the day do I
+ * burn tokens". The other two are ordinary timelines.
+ */
+export type TimeGrain = 'hour' | 'day' | 'hour-of-day';
+
+export const TIME_GRAINS: TimeGrain[] = ['hour', 'day', 'hour-of-day'];
+
+const TIME_GRAIN_SQL: Record<TimeGrain, string> = {
+  hour: "strftime('%Y-%m-%dT%H:00', timestamp, 'localtime')",
+  day: "date(timestamp,'localtime')",
+  'hour-of-day': "strftime('%H', timestamp, 'localtime')",
+};
+
 export interface PageRequest {
   limit?: number;
   offset?: number;
@@ -589,15 +606,42 @@ export class UsageRepository {
    * so it stays correct across DST changes where a fixed offset would not.
    */
   byDay(filter: UsageFilter = {}): GroupedRow[] {
+    return this.byTime(filter, 'day');
+  }
+
+  /**
+   * Totals bucketed on the time axis at the requested grain, newest first.
+   *
+   * Every grain is evaluated in LOCAL time with `localtime`, matching how
+   * `resolvePeriod` derives its bounds from local midnight. Bucketing on
+   * `substr(timestamp,...)` would be UTC, which puts a turn made late in the
+   * evening in the wrong bucket for every user east of Greenwich -- and silently
+   * disagrees with the very period filter that selected the rows. `localtime`
+   * reads the OS timezone database, so it stays correct across DST changes where
+   * a fixed offset would not.
+   */
+  byTime(filter: UsageFilter = {}, grain: TimeGrain = 'day'): GroupedRow[] {
     const { sql, params } = buildWhere(filter);
     const priced = bindPricedModels(filter, params);
     const rows = this.db
       .prepare(
-        `SELECT date(timestamp,'localtime') AS key, ${aggSelect(priced)} FROM usage_records ${sql}
+        `SELECT ${TIME_GRAIN_SQL[grain]} AS key, ${aggSelect(priced)} FROM usage_records ${sql}
          GROUP BY key ORDER BY key DESC`,
       )
       .all(params) as (RawAgg & { key: string })[];
     return rows.map((r) => ({ key: r.key, ...toAggregate(r) }));
+  }
+
+  /** The first and last activity matching a filter, for deciding zero-fill bounds. */
+  timeBounds(filter: UsageFilter = {}): { first?: string; last?: string } {
+    const { sql, params } = buildWhere(filter);
+    const row = this.db
+      .prepare(`SELECT MIN(timestamp) AS first, MAX(timestamp) AS last FROM usage_records ${sql}`)
+      .get(params) as { first: string | null; last: string | null };
+    return {
+      ...(row.first ? { first: row.first } : {}),
+      ...(row.last ? { last: row.last } : {}),
+    };
   }
 
   /**
