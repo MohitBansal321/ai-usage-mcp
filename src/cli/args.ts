@@ -37,6 +37,8 @@ export interface ParsedArgs {
   amount?: number;
   basis?: BudgetBasis;
   budgetPeriod?: BudgetPeriod;
+  before?: string;
+  yes: boolean;
   compare: boolean;
   /** Target models for `counterfactual`. Repeatable, or comma-separated. */
   counterfactualModels?: string[];
@@ -156,6 +158,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     json: false,
     help: false,
     compare: false,
+    yes: false,
   };
 
   const rest = [...argv];
@@ -239,6 +242,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.by = [...(args.by ?? []), ...(axes as GroupAxis[])];
         break;
       }
+      case '--before':
+        args.before = toTimestamp('--before', requireValue('--before', rest.shift()));
+        break;
+      case '--yes':
+        args.yes = true;
+        break;
       case '--amount':
         args.amount = toNumber('--amount', requireValue('--amount', rest.shift()));
         if (args.amount <= 0) throw new ArgError('--amount must be greater than 0.');

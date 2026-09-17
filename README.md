@@ -491,6 +491,45 @@ keeps stdout pipeable.
 usage_records'`, which bypasses the product and depends on a schema the docs explicitly call
 internal and unversioned.)
 
+### Retention and merging two machines
+
+The database grows forever unless you tell it not to. Pruning is a **command, not a policy** —
+a retention setting that silently deleted last quarter on some future run is a worse tool than
+one that never deletes, because the data is gone and nothing asked. Put it in a cron if you
+want a policy:
+
+```bash
+ai-usage prune --before 2026-01-01          # DRY RUN: says what would go, deletes nothing
+ai-usage prune --before 2026-01-01 --yes    # actually delete
+ai-usage vacuum                             # reclaim the disk
+```
+
+`--before` is **exclusive**, like every other bound here: `--before 2026-01-01` removes 2025
+and keeps New Year's Day. Scope filters apply, so a prune cannot be broader than the report
+that justified it. `vacuum` measures the database's **whole footprint** — the `.db` plus its
+`-wal` and `-shm` companions — because this package always opens in WAL mode, where freshly
+written data lives in the `-wal` until a checkpoint folds it back. Measuring only the `.db`
+would report reclaiming nothing while most of the bytes sat next door.
+
+**Two machines, one total:**
+
+```bash
+# on the laptop
+ai-usage export --format jsonl > laptop.jsonl
+
+# on the desktop
+ai-usage import laptop.jsonl
+```
+
+Merging is **idempotent**. Record ids are derived deterministically from source identifiers, so
+the same turn — imported twice, or collected on both machines — upserts to one row rather than
+double counting. The output says how many rows were updated in place rather than added, so you
+can see that happening.
+
+A row that does not fully parse is **rejected with its line number** and the import exits
+non-zero. Importing a half-valid row would write a turn with invented zeroes, and a merged
+database that quietly under-counts is worse than a failed import.
+
 ### Cache economics
 
 Cache tokens are where the money is — on the development machine cache-read is **94.7% of all

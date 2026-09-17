@@ -16,6 +16,9 @@ Commands:
   counterfactual        These tokens on another model          (same as counterfactual_cost)
   budget                Spend against a target, with run rate and projection
   export                One row per stored turn, as CSV or JSON Lines
+  import <file>         Merge JSON Lines from another machine (idempotent)
+  prune                 Remove records older than a date (dry run without --yes)
+  vacuum                Compact the database file after a prune
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
   help                  Show this text
@@ -60,6 +63,11 @@ Scripting options:
                         and a default would ignore every record priced the other way.
   --format <f>          export only: csv (default) | jsonl. --csv is shorthand for csv.
 
+Lifecycle options:
+  --before <ISO>        prune only: remove records BEFORE this instant (exclusive), so
+                        --before 2026-01-01 removes 2025 and keeps New Year's Day.
+  --yes                 prune only: actually delete. Without it, prune is a dry run.
+
 Budget options (budget command):
   --amount N            The target, in USD. Required.
   --basis <b>           reported | estimated. Required -- the two are never summed, so a
@@ -89,6 +97,10 @@ Examples:
   ai-usage budget --amount 500 --basis estimated
   ai-usage budget --amount 20 --basis reported --period week
   ai-usage export --days 30 > usage.csv
+  ai-usage export --format jsonl > laptop.jsonl   # then, on the desktop:
+  ai-usage import laptop.jsonl
+  ai-usage prune --before 2026-01-01              # dry run
+  ai-usage prune --before 2026-01-01 --yes && ai-usage vacuum
   ai-usage stats --today --field overall.cost.estimated
   ai-usage stats --today --field overall.cost.estimated --fail-over 25   # exit 1 if over
   ai-usage verify

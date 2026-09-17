@@ -946,6 +946,32 @@ export class UsageRepository {
     return out;
   }
 
+  /**
+   * How many records a prune would remove, so a destructive command can say what
+   * it is about to do before it does it.
+   */
+  countBefore(cutoff: string, filter: UsageFilter = {}): number {
+    const { sql, params } = buildWhere({ ...filter, until: cutoff });
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM usage_records ${sql}`).get(params) as {
+      n: number;
+    };
+    return row.n;
+  }
+
+  /**
+   * Removes records older than `cutoff`, honouring the same scope filters as a
+   * read so a prune cannot be broader than the report that justified it.
+   *
+   * `until` is exclusive everywhere else in this repository, and stays exclusive
+   * here: `--before 2026-01-01` removes 2025 and keeps New Year's Day. An
+   * off-by-one in the one irreversible operation is not a class of bug worth
+   * risking for a tidier boundary.
+   */
+  deleteBefore(cutoff: string, filter: UsageFilter = {}): number {
+    const { sql, params } = buildWhere({ ...filter, until: cutoff });
+    return this.db.prepare(`DELETE FROM usage_records ${sql}`).run(params).changes;
+  }
+
   deleteByClient(client: ClientId): number {
     const info = this.db.prepare('DELETE FROM usage_records WHERE client = ?').run(client);
     return info.changes;

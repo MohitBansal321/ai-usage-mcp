@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { ArgError, parseArgs, type ParsedArgs } from './args.js';
 import { FieldError, exceedsThreshold, readField, renderField } from './field.js';
 import { HELP_TEXT } from './commands/help.js';
@@ -12,13 +13,16 @@ import {
   formatClients,
   formatCounterfactual,
   formatDaily,
+  formatImport,
   formatModels,
   formatProjects,
+  formatPrune,
   formatSessionDetail,
   formatSessions,
   formatStatus,
   formatSummary,
   formatSyncReport,
+  formatVacuum,
   formatVerify,
 } from '../services/formatter.js';
 
@@ -174,6 +178,54 @@ async function run(argv: string[]): Promise<number> {
         return emit(args, formatSessionDetail(result, service.costService), result)
           ? THRESHOLD_EXIT
           : 0;
+      }
+
+      case 'prune': {
+        if (!args.before) {
+          process.stderr.write(
+            'Usage: ai-usage prune --before <ISO date> [--yes]\n' +
+              'Without --yes this is a dry run: it reports what would be removed and\n' +
+              'deletes nothing. --before is exclusive, so --before 2026-01-01 removes\n' +
+              "2025 and keeps New Year's Day.\n",
+          );
+          return 2;
+        }
+        const result = service.prune(args.before, {
+          apply: args.yes,
+          query: queryFrom(args),
+        });
+        return emit(args, formatPrune(result), result) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'vacuum': {
+        const result = service.vacuum();
+        return emit(args, formatVacuum(result), result) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'import': {
+        const path = args.positionals[0];
+        if (!path) {
+          process.stderr.write(
+            'Usage: ai-usage import <file.jsonl>\n' +
+              'Reads JSON Lines as written by `ai-usage export --format jsonl`, from this\n' +
+              'machine or another one. Merging is idempotent: record ids are derived from\n' +
+              'source identifiers, so the same turn cannot be counted twice.\n',
+          );
+          return 2;
+        }
+        let contents: string;
+        try {
+          contents = readFileSync(path, 'utf8');
+        } catch (err) {
+          process.stderr.write(`Cannot read ${path}: ${(err as Error).message}\n`);
+          return 2;
+        }
+        const result = service.importRecords(contents.split(/\r?\n/));
+        const breached = emit(args, formatImport(result), result);
+        if (breached) return THRESHOLD_EXIT;
+        // A partially rejected import is a failure worth a non-zero exit: a
+        // merge that silently dropped rows would under-count for ever after.
+        return result.rejected.length > 0 ? 1 : 0;
       }
 
       case 'budget': {

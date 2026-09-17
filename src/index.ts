@@ -13,6 +13,13 @@ export {
   type CacheMetrics,
 } from './services/cache-metrics.js';
 export {
+  LifecycleService,
+  parseExportedRecord,
+  type ImportResult,
+  type PruneResult,
+  type VacuumResult,
+} from './services/lifecycle-service.js';
+export {
   BudgetService,
   BUDGET_BASES,
   BUDGET_PERIODS,
