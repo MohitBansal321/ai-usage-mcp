@@ -13,6 +13,7 @@ import type {
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
+import type { BudgetReport, Projection } from './budget-service.js';
 import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
 import type { StatusReport } from './usage-service.js';
@@ -535,6 +536,60 @@ export function formatSessionDetail(detail: SessionDetail, costService: CostServ
       out.push(`  ${m.key}: ${tokens(m.totalTokens)} total, ${int(m.records)} turns`);
     }
   }
+  return out.join('\n');
+}
+
+/**
+ * Spend against a target.
+ *
+ * The two projections are rendered side by side, never merged. Extrapolating
+ * month-end spend by hand meant picking a denominator -- calendar days or active
+ * days -- and on a machine used on weekdays only those differ by more than 2x.
+ * Showing one would be making that modelling choice silently on the user's
+ * behalf; showing both makes the size of the assumption the visible thing.
+ */
+export function formatBudget(report: BudgetReport): string {
+  const out: string[] = [];
+  const pct = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+
+  out.push(`Budget -- ${report.period.label}, ${report.basis} cost basis`);
+  out.push('');
+  out.push(`  Budget:        ${usd(report.amount).padStart(12)}`);
+  out.push(
+    `  Spent so far:  ${usd(report.spent).padStart(12)}   ${pct(report.fractionUsed)} of budget`,
+  );
+  out.push(
+    `  ${report.remaining >= 0 ? 'Remaining:    ' : 'OVER BY:      '} ` +
+      `${usd(Math.abs(report.remaining)).padStart(12)}`,
+  );
+  out.push(
+    `  Elapsed:       ${`${report.elapsed.days.toFixed(1)} of ${report.elapsed.totalDays} days`.padStart(12)}` +
+      `   ${pct(report.elapsed.fraction)} of period`,
+  );
+  out.push('');
+
+  out.push('Run rate and projection to period end:');
+  const line = (label: string, p: Projection, denominator: string) =>
+    `  ${label.padEnd(18)} ${usd(p.ratePerDay).padStart(10)}/day  ->  ${usd(p.projected).padStart(11)}` +
+    (p.overBy !== undefined ? `   OVER by ${usd(p.overBy)}` : '   within budget') +
+    `\n  ${' '.repeat(18)} (over ${denominator})`;
+  out.push(
+    line(
+      'Per calendar day',
+      report.projections.perCalendarDay,
+      `${report.elapsed.days.toFixed(1)} elapsed calendar days`,
+    ),
+  );
+  out.push(
+    line(
+      'Per active day',
+      report.projections.perActiveDay,
+      `${int(report.activeDays)} day(s) with any recorded activity`,
+    ),
+  );
+
+  out.push('');
+  for (const caveat of report.caveats) out.push(`Note: ${caveat}`);
   return out.join('\n');
 }
 

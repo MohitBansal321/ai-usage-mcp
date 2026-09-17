@@ -1,5 +1,11 @@
 import { EXPORT_FORMATS, type ExportFormat } from '../services/export-service.js';
 import {
+  BUDGET_BASES,
+  BUDGET_PERIODS,
+  type BudgetBasis,
+  type BudgetPeriod,
+} from '../services/budget-service.js';
+import {
   GROUP_AXES,
   MAX_GROUP_AXES,
   SORT_KEYS,
@@ -28,6 +34,9 @@ export interface ParsedArgs {
   field?: string;
   failOver?: number;
   format?: ExportFormat;
+  amount?: number;
+  basis?: BudgetBasis;
+  budgetPeriod?: BudgetPeriod;
   compare: boolean;
   /** Target models for `counterfactual`. Repeatable, or comma-separated. */
   counterfactualModels?: string[];
@@ -228,6 +237,28 @@ export function parseArgs(argv: string[]): ParsedArgs {
               `Crossing more than that is a question for the underlying records.`,
           );
         args.by = [...(args.by ?? []), ...(axes as GroupAxis[])];
+        break;
+      }
+      case '--amount':
+        args.amount = toNumber('--amount', requireValue('--amount', rest.shift()));
+        if (args.amount <= 0) throw new ArgError('--amount must be greater than 0.');
+        break;
+      case '--basis': {
+        const value = requireValue('--basis', rest.shift());
+        if (!BUDGET_BASES.includes(value as BudgetBasis))
+          throw new ArgError(`--basis expects ${BUDGET_BASES.join(' or ')}, got "${value}".`);
+        args.basis = value as BudgetBasis;
+        break;
+      }
+      case '--period': {
+        const value = requireValue('--period', rest.shift());
+        if (!BUDGET_PERIODS.includes(value as BudgetPeriod))
+          throw new ArgError(
+            `--period expects ${BUDGET_PERIODS.join(' or ')}, got "${value}". ` +
+              `A budget needs a period with an END to project towards, which a rolling ` +
+              `window does not have.`,
+          );
+        args.budgetPeriod = value as BudgetPeriod;
         break;
       }
       case '--field':
