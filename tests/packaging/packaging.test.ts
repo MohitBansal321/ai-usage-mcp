@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tempDir } from '../fixtures/build-fixtures.js';
 
@@ -45,19 +45,34 @@ describe('packaging (the CI job `npm run check` used to miss)', () => {
 
   it('packs a tarball with no sources, tests or databases in it', () => {
     const out = tempDir('pack-');
-    execFileSync('npm', ['pack', '--pack-destination', out], { cwd: ROOT, encoding: 'utf8' });
-    const tarball = readdirSync(out).find((f) => f.endsWith('.tgz'));
-    expect(tarball, 'npm pack produced no tarball').toBeDefined();
-
-    const files = execFileSync('tar', ['tzf', join(out, tarball as string)], {
+    // `npm` is `npm.cmd` on Windows and Node's spawn will not resolve it without
+    // one of these. `shell: true` would also work but invites quoting bugs on a
+    // runner whose temp path is `C:\\Users\\RUNNER~1\\...`.
+    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    // `--json` reports the file list npm itself will pack, which is what the CI
+    // job greps out of `tar tzf`. Taking it from npm rather than shelling out to
+    // `tar` keeps this identical on all three runners; the tarball is still
+    // written, so the assertion is about a real artefact.
+    const raw = execFileSync(npm, ['pack', '--json', '--pack-destination', out], {
+      cwd: ROOT,
       encoding: 'utf8',
-    }).split('\n');
-    const shipped = files.filter((f) => /package\/(src\/|tests\/)|\.db$/.test(f));
+      shell: true,
+    });
+    const packed = JSON.parse(raw.slice(raw.indexOf('['))) as {
+      filename: string;
+      files: { path: string }[];
+    }[];
+    const entry = packed[0];
+    expect(entry, 'npm pack reported nothing').toBeDefined();
+    expect(existsSync(join(out, entry!.filename))).toBe(true);
+
+    const paths = entry!.files.map((f) => f.path);
+    const shipped = paths.filter((f) => /^(src\/|tests\/)|\.db$/.test(f));
 
     expect(shipped, `these must not ship:\n${shipped.join('\n')}`).toEqual([]);
-    expect(files.some((f) => f.startsWith('package/dist/'))).toBe(true);
+    expect(paths.some((f) => f.startsWith('dist/'))).toBe(true);
     rmSync(out, { recursive: true, force: true });
-  }, 60_000);
+  }, 120_000);
 
   it('runs both binaries the way the installed package does', () => {
     const version = spawnSync(process.execPath, [CLI, '--version'], { env, encoding: 'utf8' });
