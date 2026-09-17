@@ -1,15 +1,31 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { PricingTable } from './types.js';
-import { anthropicPricing } from './tables/anthropic-2026-06-24.js';
+import type {
+  CacheMultipliers,
+  ModelPrice,
+  PricingMode,
+  PricingOverride,
+  PricingTable,
+} from './types.js';
+import { builtinPricing, BUILTIN_PRICING_VERSION } from './tables/index.js';
 
-export type { PricingTable, ModelPrice, CacheMultipliers } from './types.js';
+export type {
+  PricingTable,
+  ModelPrice,
+  CacheMultipliers,
+  PricingOverride,
+  PricingMode,
+} from './types.js';
+export { anthropicPricing, openaiPricing, providerTables, builtinPricing } from './tables/index.js';
 
 /**
- * Where a user can drop a corrected pricing table without waiting for a release.
- * Prices change; a stale table would silently produce wrong estimates, so this
- * override exists and `ai-usage status` reports whether it is in use.
+ * Where a user can drop prices without waiting for a release.
+ *
+ * Two distinct jobs, and the second is the common one: correcting a built-in
+ * price that has gone stale, and adding a provider the package does not ship at
+ * all. Both are served by overlaying rather than replacing -- see
+ * {@link loadPricing}. `ai-usage status` reports which file is in force.
  */
 export function pricingOverridePath(): string {
   return process.env.AI_USAGE_PRICING_FILE ?? join(configDir(), 'pricing.json');
@@ -23,48 +39,172 @@ export function configDir(): string {
 
 export interface LoadedPricing {
   table: PricingTable;
-  /** Set when a user override file replaced the built-in table. */
+  /** Set when a user override file contributed to the table in force. */
   overridePath?: string;
+  /** How the table was assembled. `builtin` when no override file exists. */
+  mode: PricingMode;
+  /** The built-in version an overlay sits on top of. Absent for other modes. */
+  baseVersion?: string;
 }
 
-function isPricingTable(value: unknown): value is PricingTable {
-  if (typeof value !== 'object' || value === null) return false;
-  const t = value as Partial<PricingTable>;
-  return (
-    typeof t.version === 'string' &&
-    typeof t.models === 'object' &&
-    t.models !== null &&
-    typeof t.cacheMultipliers === 'object' &&
-    t.cacheMultipliers !== null &&
-    typeof t.cacheMultipliers.read === 'number' &&
-    typeof t.cacheMultipliers.write5m === 'number' &&
-    typeof t.cacheMultipliers.write1h === 'number'
-  );
+class PricingOverrideError extends Error {}
+
+function fail(path: string, detail: string): never {
+  throw new PricingOverrideError(`Pricing override at ${path} is invalid: ${detail}`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readCacheMultipliers(
+  path: string,
+  where: string,
+  value: unknown,
+): CacheMultipliers | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) fail(path, `${where} must be an object.`);
+  const out = {} as CacheMultipliers;
+  for (const key of ['read', 'write5m', 'write1h'] as const) {
+    const n = value[key];
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
+      fail(path, `${where}.${key} must be a number >= 0 (multiple of the input rate).`);
+    out[key] = n;
+  }
+  return out;
+}
+
+function readModelPrice(path: string, model: string, value: unknown): ModelPrice {
+  if (!isRecord(value)) fail(path, `models["${model}"] must be an object.`);
+  const rate = (key: 'input' | 'output'): number => {
+    const n = value[key];
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
+      fail(path, `models["${model}"].${key} must be a number >= 0 (USD per 1,000,000 tokens).`);
+    return n;
+  };
+  const price: ModelPrice = { input: rate('input'), output: rate('output') };
+
+  if (value.fast !== undefined) {
+    if (!isRecord(value.fast)) fail(path, `models["${model}"].fast must be an object.`);
+    const fast = value.fast;
+    for (const key of ['input', 'output'] as const) {
+      const n = fast[key];
+      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
+        fail(path, `models["${model}"].fast.${key} must be a number >= 0.`);
+    }
+    price.fast = { input: fast.input as number, output: fast.output as number };
+  }
+
+  const cache = readCacheMultipliers(path, `models["${model}"].cache`, value.cache);
+  if (cache) price.cache = cache;
+  return price;
+}
+
+/** Parses and validates an override file. Never guesses at a missing field. */
+export function parsePricingOverride(path: string, raw: unknown): PricingOverride {
+  if (!isRecord(raw)) fail(path, 'the file must contain a JSON object.');
+  if (typeof raw.version !== 'string' || raw.version.trim() === '')
+    fail(path, 'version is required and must be a non-empty string naming your table.');
+  if (!isRecord(raw.models))
+    fail(path, 'models is required and must be an object keyed by model id.');
+  if (raw.replace !== undefined && typeof raw.replace !== 'boolean')
+    fail(path, 'replace must be true or false.');
+
+  const models: Record<string, ModelPrice> = {};
+  for (const [model, value] of Object.entries(raw.models)) {
+    models[model] = readModelPrice(path, model, value);
+  }
+
+  const override: PricingOverride = { version: raw.version, models };
+  if (typeof raw.provenance === 'string') override.provenance = raw.provenance;
+  if (raw.replace === true) override.replace = true;
+
+  const cacheMultipliers = readCacheMultipliers(path, 'cacheMultipliers', raw.cacheMultipliers);
+  if (cacheMultipliers) override.cacheMultipliers = cacheMultipliers;
+
+  // Replacing discards the built-in defaults, so there is nothing left to
+  // inherit and the file has to say what cache rates apply.
+  if (override.replace && !cacheMultipliers)
+    fail(
+      path,
+      'cacheMultipliers.{read,write5m,write1h} is required when replace is true, ' +
+        'because there is no built-in table left to inherit it from.',
+    );
+
+  return override;
+}
+
+/** Applies an override onto the built-in table, or replaces it outright. */
+export function applyPricingOverride(
+  base: PricingTable,
+  override: PricingOverride,
+  path: string,
+): LoadedPricing {
+  if (override.replace) {
+    return {
+      table: {
+        version: override.version,
+        provenance: override.provenance ?? `User-supplied pricing table from ${path}`,
+        currency: 'USD',
+        unit: 'per_million_tokens',
+        cacheMultipliers: override.cacheMultipliers as CacheMultipliers,
+        models: override.models,
+      },
+      overridePath: path,
+      mode: 'replace',
+    };
+  }
+
+  // Per-model overlay: an entry replaces that model's price entirely rather than
+  // merging field by field. A half-overridden price (new input rate, inherited
+  // output rate) is the kind of figure nobody could reason about.
+  const models = { ...base.models, ...override.models };
+  const provenance = override.provenance
+    ? `${override.provenance} (overlaid on: ${base.provenance})`
+    : `User overlay from ${path} (overlaid on: ${base.provenance})`;
+
+  return {
+    table: {
+      version: override.version,
+      provenance,
+      currency: 'USD',
+      unit: 'per_million_tokens',
+      cacheMultipliers: override.cacheMultipliers ?? base.cacheMultipliers,
+      models,
+    },
+    overridePath: path,
+    mode: 'overlay',
+    baseVersion: base.version,
+  };
 }
 
 /**
- * Loads the built-in table, or a user override if one is present and valid.
- * A malformed override throws rather than silently falling back -- quietly using
+ * Loads the built-in table, plus a user override if one is present and valid.
+ *
+ * The override is an **overlay** by default: its models are merged over the
+ * built-in ones by model id. It used to replace the table wholesale, which meant
+ * adding a single missing provider cost you every Anthropic price you had -- so
+ * the mechanism that existed for adding a model made the tool report less.
+ * `"replace": true` still does the old thing for anyone who wants it.
+ *
+ * A malformed override throws rather than silently falling back: quietly using
  * different prices than the user thinks are in effect would be worse.
  */
 export function loadPricing(): LoadedPricing {
   const overridePath = pricingOverridePath();
-  if (existsSync(overridePath)) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(overridePath, 'utf8'));
-    } catch (err) {
-      throw new Error(`Pricing override at ${overridePath} is not valid JSON`, { cause: err });
-    }
-    if (!isPricingTable(parsed)) {
-      throw new Error(
-        `Pricing override at ${overridePath} is missing required fields ` +
-          `(version, models, cacheMultipliers.{read,write5m,write1h}).`,
-      );
-    }
-    return { table: parsed, overridePath };
+  if (!existsSync(overridePath)) return { table: builtinPricing, mode: 'builtin' };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(overridePath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Pricing override at ${overridePath} is not valid JSON`, { cause: err });
   }
-  return { table: anthropicPricing };
+  return applyPricingOverride(
+    builtinPricing,
+    parsePricingOverride(overridePath, parsed),
+    overridePath,
+  );
 }
 
-export { anthropicPricing };
+export { BUILTIN_PRICING_VERSION };

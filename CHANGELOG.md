@@ -7,6 +7,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Prices for models this package does not ship.** The pricing override
+  (`$AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`) is now **overlaid** onto the
+  built-in table rather than replacing it, keyed by model id. Adding one missing provider
+  used to cost you every Anthropic price you had -- the mechanism that existed for adding a
+  model made the tool report less. `"replace": true` still does the old thing for anyone who
+  wants it, and now requires a complete `cacheMultipliers`, since there is no base left to
+  inherit one from. ([#63](https://github.com/MohitBansal321/ai-usage-mcp/issues/63))
+
+- **Per-model cache multipliers** (`models.<id>.cache`). Not a theoretical knob: OpenAI
+  publishes a single cache-write price with no 1-hour tier, so pricing its writes at
+  Anthropic's 2x would overcharge them by 60%, and DeepSeek's cache-hit rate is 0.02x its
+  input rate rather than 0.1x. Without this a second provider could be added to the table
+  only by being priced wrongly. ([#63](https://github.com/MohitBansal321/ai-usage-mcp/issues/63))
+
+- **An OpenAI pricing table** (`openai-2026-09-16`: gpt-6-astra, gpt-5.6-sol / terra / luna /
+  cyber), so the package ships an estimate path that is not Anthropic-only. Built-in tables
+  are now one file per provider, each keeping its own capture date, composed into the single
+  table the engine consults; two tables pricing the same model id is an error rather than a
+  silent pick. These are the Standard-tier, short-context rates -- OpenAI's long-context,
+  Batch, Flex and Fast-mode rates are not modelled, because nothing in a stored record says
+  which applied, so a long-context turn is understated rather than guessed at. Providers whose
+  published pricing the table cannot express exactly (DeepSeek bills different rates at peak
+  and off-peak hours) are deliberately not shipped.
+  ([#62](https://github.com/MohitBansal321/ai-usage-mcp/issues/62))
+
+- **The pricing override format is documented**, with its units. `input` and `output` are USD
+  per 1,000,000 tokens; the three `cache*` values are multipliers of that model's input rate,
+  not prices. Required versus optional fields, what `fast` is and when it applies, and the
+  wholesale-not-field-by-field merge rule are all written down, and a malformed file now names
+  the offending field: `models["x"].output must be a number >= 0 (USD per 1,000,000 tokens)`.
+  ([#64](https://github.com/MohitBansal321/ai-usage-mcp/issues/64))
+
+### Fixed
+
+- **A reported cost of `$0` no longer looks the same as a price nobody has.** OpenCode reports
+  its own cost, so a model absent from the pricing table filed an ordinary
+  `{reported: 0, reportedRecords: 1936, unavailableRecords: 0}` -- which asserts, in this
+  tool's own vocabulary, that nothing is missing, while the _estimate_ was missing and had
+  never been attempted. A genuinely free model and an unpriced paid one rendered identically.
+
+  Every aggregate now carries `cost.unpricedRecords` and `cost.unpricedModels`, and the
+  reports say so in words, naming the models the way `counterfactual_cost` already did. On the
+  development machine that is 6,813 of 6,841 OpenCode records across 19 models, behind a
+  reported figure of $0.48.
+
+  Both fields are **absent rather than `0`** when a caller supplied no list of priced models:
+  "not asked" is not the same as "none", which is the same rule the rest of this codebase
+  applies to every value a source does not report.
+  ([#66](https://github.com/MohitBansal321/ai-usage-mcp/issues/66))
+
 ## [0.7.0] - 2026-09-10
 
 The first release that answers a question rather than reporting a total: whether a cheaper model would have cost less for the work you already did. It also carries the schema change that made that answerable -- see 0.6.0 for the `usage.speed` note, which shipped there and is what this builds on.

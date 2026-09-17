@@ -64,6 +64,23 @@ export function duration(seconds: number): string {
  * never added together -- that single blended number is the easiest way to lie
  * with this data.
  */
+/**
+ * Names the models behind a count, capped.
+ *
+ * A machine that has drifted across a dozen OpenCode models lists all of them
+ * otherwise, and the sentence that matters -- "no estimate was attempted" --
+ * disappears into the middle of it. The remainder is counted rather than
+ * dropped, so nothing is silently hidden; `--json` always carries the full list.
+ */
+const MAX_NAMED_MODELS = 5;
+
+function namedModels(models: string[] | undefined): string {
+  if (!models?.length) return '';
+  if (models.length <= MAX_NAMED_MODELS) return `: ${models.join(', ')}`;
+  const shown = models.slice(0, MAX_NAMED_MODELS).join(', ');
+  return `: ${shown} and ${int(models.length - MAX_NAMED_MODELS)} more`;
+}
+
 export function costLines(cost: CostTotals, costService: CostService, indent = '  '): string[] {
   const lines: string[] = [];
   if (cost.reportedRecords > 0) {
@@ -79,6 +96,17 @@ export function costLines(cost: CostTotals, costService: CostService, indent = '
   if (cost.unavailableRecords > 0) {
     lines.push(
       `${indent}Cost unavailable for ${int(cost.unavailableRecords)} record(s) (no price for that model).`,
+    );
+  }
+  // Said out loud because otherwise it is invisible: a client that reports its
+  // own cost files $0 for a model nobody has priced, which reads exactly like a
+  // free model. The count above cannot show it -- those records are `reported`.
+  if (cost.unpricedRecords !== undefined && cost.unpricedRecords > 0) {
+    lines.push(
+      `${indent}No estimate attempted for ${int(cost.unpricedRecords)} record(s) -- ` +
+        `no price in table ${costService.pricingVersion} for that model` +
+        `${namedModels(cost.unpricedModels)}. ` +
+        `Any $0 above covers only what was reported, not those records.`,
     );
   }
   if (cost.reportedRecords === 0 && cost.estimatedRecords === 0 && cost.unavailableRecords === 0) {
@@ -311,7 +339,14 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
   out.push(`Total records:  ${int(status.totalRecords)}`);
   out.push(`Pricing table:  ${status.pricing.version}  (${status.pricing.provenance})`);
   if (status.pricing.overridePath) {
-    out.push(`  Overridden by: ${status.pricing.overridePath}`);
+    // Which of the two override behaviours is in force matters: an overlay still
+    // has every built-in price behind it, a replacement has none of them.
+    out.push(
+      status.pricing.mode === 'replace'
+        ? `  REPLACED by:   ${status.pricing.overridePath} (built-in prices are NOT in effect)`
+        : `  Overlaid from: ${status.pricing.overridePath}` +
+            (status.pricing.baseVersion ? ` (on top of ${status.pricing.baseVersion})` : ''),
+    );
   }
   out.push('');
   out.push('Collectors:');

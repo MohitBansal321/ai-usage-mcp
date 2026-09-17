@@ -22,6 +22,17 @@ export interface UsageFilter {
    * The same default is used by the CLI and the MCP tools -- see README.
    */
   includeSubagents?: boolean;
+  /**
+   * Every model id the pricing table can price, so each aggregate can report how
+   * many of its records no estimate was even attempted for.
+   *
+   * Deliberately a caller-supplied list rather than a lookup: the repository has
+   * no business importing the pricing table, and a caller who does not supply one
+   * gets `unpricedRecords: undefined` -- "not asked" -- instead of a 0 that would
+   * claim every model is priced. An empty array is a real answer (nothing is
+   * priced) and is not the same as omitting it.
+   */
+  pricedModels?: string[];
 }
 
 export interface AggregateRow extends TokenTotals {
@@ -116,11 +127,32 @@ interface RawAgg {
   estimated: number | null;
   estimated_records: number | null;
   unavailable_records: number | null;
+  unpriced_records: number | null;
+  unpriced_models: string | null;
   first_ts: string | null;
   last_ts: string | null;
 }
 
-const AGG_SELECT = `
+/**
+ * The aggregate projection.
+ *
+ * Takes the priced-model placeholders because "how many records could not be
+ * priced" has to be counted in the same pass as everything else -- computing it
+ * from a second query would let the two disagree whenever rows change between
+ * them. With no list supplied both unpriced columns are NULL, which maps to
+ * `undefined`: the question was not asked.
+ */
+function aggSelect(pricedPlaceholders: string[] | undefined): string {
+  const unpriced =
+    pricedPlaceholders === undefined
+      ? `  NULL AS unpriced_records,
+  NULL AS unpriced_models`
+      : // An empty list means nothing is priced, so every record is unpriced.
+        // `NOT IN ()` is not valid SQL, hence the constant-false placeholder.
+        `  SUM(CASE WHEN ${pricedNotIn(pricedPlaceholders)} THEN 1 ELSE 0 END) AS unpriced_records,
+  GROUP_CONCAT(DISTINCT CASE WHEN ${pricedNotIn(pricedPlaceholders)} THEN model END) AS unpriced_models`;
+
+  return `
   COUNT(*)                          AS records,
   COUNT(DISTINCT session_id)        AS sessions,
   SUM(input_tokens)                 AS input_tokens,
@@ -136,9 +168,31 @@ const AGG_SELECT = `
   SUM(CASE WHEN cost_basis='estimated' THEN COALESCE(estimated_cost,0) ELSE 0 END) AS estimated,
   SUM(CASE WHEN cost_basis='estimated' THEN 1 ELSE 0 END)                          AS estimated_records,
   SUM(CASE WHEN cost_basis='unavailable' THEN 1 ELSE 0 END)                        AS unavailable_records,
+${unpriced},
   MIN(timestamp)                    AS first_ts,
   MAX(timestamp)                    AS last_ts
 `;
+}
+
+function pricedNotIn(placeholders: string[]): string {
+  return placeholders.length === 0 ? '1=1' : `model NOT IN (${placeholders.join(',')})`;
+}
+
+/**
+ * Binds the priced-model list, returning the placeholders `aggSelect` needs.
+ * Bound as parameters rather than interpolated: model ids come from the pricing
+ * table, but building SQL out of map keys is a habit worth not having.
+ */
+function bindPricedModels(
+  filter: UsageFilter,
+  params: Record<string, unknown>,
+): string[] | undefined {
+  if (!filter.pricedModels) return undefined;
+  return filter.pricedModels.map((model, i) => {
+    params[`pm${i}`] = model;
+    return `:pm${i}`;
+  });
+}
 
 function buildWhere(filter: UsageFilter): { sql: string; params: Record<string, unknown> } {
   const clauses: string[] = [];
@@ -197,6 +251,12 @@ function toAggregate(raw: RawAgg | undefined): AggregateRow {
       currency: 'USD',
     },
   };
+  // NULL here means no priced-model list was supplied, which is "not asked" and
+  // must stay undefined. A real 0 -- every model priced -- is reported as 0.
+  if (r.unpriced_records != null) {
+    row.cost.unpricedRecords = r.unpriced_records;
+    row.cost.unpricedModels = (r.unpriced_models ?? '').split(',').filter(Boolean).sort();
+  }
   if (r.first_ts) row.firstTimestamp = r.first_ts;
   if (r.last_ts) row.lastTimestamp = r.last_ts;
   return row;
@@ -274,18 +334,21 @@ export class UsageRepository {
 
   totals(filter: UsageFilter = {}): AggregateRow {
     const { sql, params } = buildWhere(filter);
-    const raw = this.db.prepare(`SELECT ${AGG_SELECT} FROM usage_records ${sql}`).get(params) as
-      RawAgg | undefined;
+    const priced = bindPricedModels(filter, params);
+    const raw = this.db
+      .prepare(`SELECT ${aggSelect(priced)} FROM usage_records ${sql}`)
+      .get(params) as RawAgg | undefined;
     return toAggregate(raw);
   }
 
   private grouped(column: string, filter: UsageFilter, limit?: number): GroupedRow[] {
     const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
     const limitSql = limit ? 'LIMIT :limit' : '';
     if (limit) params.limit = limit;
     const rows = this.db
       .prepare(
-        `SELECT ${column} AS key, ${AGG_SELECT} FROM usage_records ${sql}
+        `SELECT ${column} AS key, ${aggSelect(priced)} FROM usage_records ${sql}
          GROUP BY ${column} ORDER BY total_tokens DESC ${limitSql}`,
       )
       .all(params) as (RawAgg & { key: string })[];
@@ -316,9 +379,10 @@ export class UsageRepository {
    */
   repriceGroups(filter: UsageFilter = {}): RepriceGroup[] {
     const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
     const rows = this.db
       .prepare(
-        `SELECT client AS group_client, model AS group_model, speed AS group_speed, ${AGG_SELECT}
+        `SELECT client AS group_client, model AS group_model, speed AS group_speed, ${aggSelect(priced)}
          FROM usage_records ${sql}
          GROUP BY client, model, speed
          ORDER BY total_tokens DESC`,
@@ -353,9 +417,10 @@ export class UsageRepository {
    */
   byDay(filter: UsageFilter = {}): GroupedRow[] {
     const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
     const rows = this.db
       .prepare(
-        `SELECT date(timestamp,'localtime') AS key, ${AGG_SELECT} FROM usage_records ${sql}
+        `SELECT date(timestamp,'localtime') AS key, ${aggSelect(priced)} FROM usage_records ${sql}
          GROUP BY key ORDER BY key DESC`,
       )
       .all(params) as (RawAgg & { key: string })[];
@@ -421,6 +486,7 @@ export class UsageRepository {
   /** Recent sessions, newest activity first. */
   sessions(filter: UsageFilter = {}, limit = 20): SessionRow[] {
     const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
     params.limit = limit;
     const rows = this.db
       .prepare(
@@ -428,7 +494,7 @@ export class UsageRepository {
                 GROUP_CONCAT(DISTINCT model) AS models,
                 SUM(CASE WHEN turn_kind='main' THEN 1 ELSE 0 END)     AS main_records,
                 SUM(CASE WHEN turn_kind='subagent' THEN 1 ELSE 0 END) AS subagent_records,
-                ${AGG_SELECT}
+                ${aggSelect(priced)}
          FROM usage_records ${sql}
          GROUP BY session_id, client
          ORDER BY last_ts DESC
