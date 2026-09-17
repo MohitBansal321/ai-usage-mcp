@@ -14,6 +14,8 @@ import type {
 import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
 import type { BudgetReport, Projection } from './budget-service.js';
+import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
+import type { TokenTotals } from '../models/usage-record.js';
 import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
 import type { StatusReport } from './usage-service.js';
@@ -124,6 +126,38 @@ export function costLines(cost: CostTotals, costService: CostService, indent = '
   return lines;
 }
 
+/**
+ * The derived cache figures, printed beside the raw counts.
+ *
+ * Cache-read is the overwhelming majority of tokens on any real machine, and the
+ * raw counts alone cannot say whether that is a cache paying for itself or a
+ * write premium being burnt on sessions too short to reuse it.
+ */
+export function cacheLines(row: TokenTotals, costService: CostService, indent = '  '): string[] {
+  const metrics = cacheMetrics(row);
+  if (metrics.hitRate === undefined) return [];
+
+  const lines = [`${indent}Cache hit rate:    ${(metrics.hitRate * 100).toFixed(2)}%`];
+  if (metrics.readsPerWrite !== undefined) {
+    lines.push(
+      `${indent}Reads per write:   ${metrics.readsPerWrite.toFixed(1)}  ` +
+        `(1 write : ${metrics.readsPerWrite.toFixed(1)} reads)`,
+    );
+    const breakEven = breakEvenReadsPerWrite(costService.table.cacheMultipliers);
+    if (breakEven) {
+      const worst = Math.max(breakEven.write5m, breakEven.write1h);
+      lines.push(
+        `${indent}                   Break-even is ${breakEven.write5m.toFixed(2)} reads per ` +
+          `5-minute write and ${breakEven.write1h.toFixed(2)} per 1-hour write, so this cache ` +
+          `is ${metrics.readsPerWrite >= worst ? 'paying for itself' : 'NOT clearly paying for itself'}.`,
+      );
+    }
+  } else {
+    lines.push(`${indent}Reads per write:   n/a -- nothing was written to cache in this period.`);
+  }
+  return lines;
+}
+
 export function tokenLines(row: AggregateRow, indent = '  '): string[] {
   return [
     `${indent}Input:        ${tokens(row.inputTokens)}`,
@@ -226,6 +260,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   out.push('');
   out.push('Tokens (all clients):');
   out.push(...tokenLines(report.overall));
+  out.push(...cacheLines(report.overall, costService));
   out.push('');
   out.push(...costLines(report.overall.cost, costService));
   if (report.comparison) out.push(...comparisonLines(report.comparison));
@@ -237,6 +272,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
       `  ${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`,
     );
     out.push(...tokenLines(client, '    '));
+    out.push(...cacheLines(client, costService, '    '));
     out.push(...costLines(client.cost, costService, '    '));
     out.push('');
   }
@@ -469,6 +505,7 @@ export function formatClients(report: ClientReport, costService: CostService): s
   for (const client of report.clients) {
     out.push(`${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`);
     out.push(...tokenLines(client, '  '));
+    out.push(...cacheLines(client, costService, '  '));
     out.push(...costLines(client.cost, costService, '  '));
     out.push('');
   }
@@ -756,6 +793,22 @@ export function formatCounterfactual(
     if (scenario.unpricedGroups > 0) {
       out.push(
         `  ${' '.repeat(width)}  (${int(scenario.unpricedGroups)} group(s) could not be priced)`,
+      );
+    }
+  }
+
+  if (report.noCache.length > 0) {
+    out.push('');
+    out.push('Those same tokens with NO prompt caching at all:');
+    const modelWidth = Math.max(...report.noCache.map((s) => s.model.length));
+    for (const scenario of report.noCache) {
+      out.push(
+        `  ${scenario.model.padEnd(modelWidth)}  ${usd(scenario.withoutCache).padStart(11)}` +
+          `  vs ${usd(scenario.withCache).padStart(11)} actually estimated` +
+          `  ->  cache saved ${usd(scenario.saved)}` +
+          (scenario.savedFraction !== undefined
+            ? ` (${(scenario.savedFraction * 100).toFixed(1)}%)`
+            : ''),
       );
     }
   }

@@ -191,3 +191,129 @@ describe('billableOutputTokens', () => {
     expect(billableOutputTokens('claude-code', 100)).toBe(100);
   });
 });
+
+/**
+ * The one scenario in this service allowed to state a saving.
+ *
+ * Unlike a model counterfactual, the token counts really are invariant:
+ * cache-read tokens ARE the context re-sent each turn, so without a cache they
+ * would have been sent as ordinary input one for one, and the cache-write
+ * premium would simply not have been paid.
+ */
+describe('no-cache scenario', () => {
+  let dir: string;
+  let db: SqliteDatabase;
+  let service: CounterfactualService;
+  let repo: UsageRepository;
+
+  beforeEach(() => {
+    dir = tempDir('nocache-');
+    db = openDatabase({ path: join(dir, 'usage.db') });
+    repo = new UsageRepository(db);
+    service = new CounterfactualService(repo, new CostService());
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('prices every cache token at the plain input rate', () => {
+    // claude-opus-5: $5/M input, $25/M output. 1M cache-read at 0.1x = $0.50,
+    // 1M 5-minute cache-write at 1.25x = $6.25. With cache: $5 + $0.50 + $6.25.
+    // Without: 3M tokens of plain input = $15.
+    repo.upsertMany([
+      record({
+        id: 'a',
+        inputTokens: M,
+        cacheReadTokens: M,
+        cacheWriteTokens: M,
+        cacheWrite5mTokens: M,
+      }),
+    ]);
+    const [scenario] = service.counterfactual({}, 'all time', ['claude-opus-5']).noCache;
+
+    expect(scenario?.withCache).toBeCloseTo(5 + 0.5 + 6.25, 6);
+    expect(scenario?.withoutCache).toBeCloseTo(15, 6);
+    // One read per write is already above the 0.28 break-even, so caching wins
+    // even at this ratio -- which is the cross-check against
+    // `breakEvenReadsPerWrite` rather than a separate claim.
+    expect(scenario?.saved).toBeCloseTo(3.25, 6);
+  });
+
+  it('shows a LOSS below the break-even reuse ratio', () => {
+    // 0.2 reads per write, under the 0.28 break-even for a 5-minute write.
+    // With cache: 0.2M read at $0.50/M = $0.10, plus 1M write at $6.25/M.
+    // Without:    1.2M plain input at $5/M = $6.00. Caching cost $0.35 more.
+    repo.upsertMany([
+      record({
+        id: 'a',
+        cacheReadTokens: 0.2 * M,
+        cacheWriteTokens: M,
+        cacheWrite5mTokens: M,
+      }),
+    ]);
+    const [scenario] = service.counterfactual({}, 'all time', ['claude-opus-5']).noCache;
+
+    expect(scenario?.withCache).toBeCloseTo(6.35, 6);
+    expect(scenario?.withoutCache).toBeCloseTo(6, 6);
+    // A negative saving is reported as such, not clamped to zero: burning the
+    // write premium on sessions too short to reuse it is exactly what the issue
+    // asks to be able to see.
+    expect(scenario?.saved).toBeCloseTo(-0.35, 6);
+  });
+
+  it('shows a saving when reads outweigh writes, as they do in practice', () => {
+    repo.upsertMany([
+      record({
+        id: 'a',
+        inputTokens: 0,
+        cacheReadTokens: 100 * M,
+        cacheWriteTokens: M,
+        cacheWrite5mTokens: M,
+      }),
+    ]);
+    const [scenario] = service.counterfactual({}, 'all time', ['claude-opus-5']).noCache;
+
+    // With cache: 100M reads at $0.50/M + 1M write at $6.25 = $56.25.
+    // Without:    101M plain input at $5/M = $505.
+    expect(scenario?.withCache).toBeCloseTo(56.25, 6);
+    expect(scenario?.withoutCache).toBeCloseTo(505, 6);
+    expect(scenario?.saved).toBeCloseTo(448.75, 6);
+    expect(scenario?.savedFraction).toBeCloseTo(448.75 / 505, 6);
+  });
+
+  it('keeps each model separate rather than blending the answer', () => {
+    repo.upsertMany([
+      record({ id: 'a', model: 'claude-opus-5', cacheReadTokens: 10 * M }),
+      record({ id: 'b', model: 'claude-haiku-4-5', cacheReadTokens: 10 * M }),
+    ]);
+    const { noCache } = service.counterfactual({}, 'all time', ['claude-opus-5']);
+
+    expect(noCache.map((s) => s.model).sort()).toEqual(['claude-haiku-4-5', 'claude-opus-5']);
+    // Opus is 5x Haiku's input rate, so the saving differs by 5x too. One
+    // blended figure would hide that entirely.
+    const opus = noCache.find((s) => s.model === 'claude-opus-5');
+    const haiku = noCache.find((s) => s.model === 'claude-haiku-4-5');
+    expect((opus?.saved ?? 0) / (haiku?.saved ?? 1)).toBeCloseTo(5, 6);
+  });
+
+  it('says nothing at all when no cache was used', () => {
+    repo.upsertMany([record({ id: 'a', inputTokens: M, outputTokens: M })]);
+    const report = service.counterfactual({}, 'all time', ['claude-opus-5']);
+    expect(report.noCache).toEqual([]);
+    expect(report.caveats.join(' ')).not.toContain('no-cache figures');
+  });
+
+  it('states the assumption that lets it claim a saving at all', () => {
+    repo.upsertMany([record({ id: 'a', cacheReadTokens: M })]);
+    const report = service.counterfactual({}, 'all time', ['claude-opus-5']);
+    expect(report.caveats.join(' ')).toContain('cache-read tokens ARE the context');
+    expect(report.caveats.join(' ')).toContain('same requests carrying the same context');
+  });
+
+  it('skips a model the table cannot price rather than guessing', () => {
+    repo.upsertMany([record({ id: 'a', model: 'big-pickle', cacheReadTokens: M })]);
+    expect(service.counterfactual({}, 'all time', ['claude-opus-5']).noCache).toEqual([]);
+  });
+});

@@ -21,7 +21,9 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
         'than Opus for this". It re-prices the exact token counts that were recorded, ' +
         'grouped by client, model and speed so the fast-mode premium and the two different ' +
         'reasoning-token conventions are handled correctly. ' +
-        'IMPORTANT: the result is a counterfactual, not a saving — the same task on a ' +
+        'Also reports what the same tokens would have cost with NO prompt caching at all, ' +
+        'per model -- which is the figure that says whether caching is paying for itself. ' +
+        'IMPORTANT: the model scenarios are a counterfactual, not a saving — the same task on a ' +
         'different model generally takes a different number of turns with a different context ' +
         'on each, and nothing on disk can say what that would have been. Report it as such, ' +
         'keep every scenario labelled an estimate, and never subtract a scenario from the ' +
@@ -72,6 +74,17 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
           records: s.records,
           isActual: s.isActual,
           unpricedGroups: s.unpricedGroups,
+        })),
+        // The one scenario in this tool that is allowed to state a saving: the
+        // token counts are invariant, because cache-read tokens ARE the context
+        // that would otherwise have been sent as ordinary input.
+        noCache: report.noCache.map((s) => ({
+          model: s.model,
+          estimatedCostWithCache: s.withCache,
+          estimatedCostWithoutCache: s.withoutCache,
+          estimatedSaving: s.saved,
+          savedFraction: s.savedFraction,
+          records: s.records,
         })),
         caveats: report.caveats,
       });

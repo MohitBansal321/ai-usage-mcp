@@ -8,6 +8,11 @@ export {
 } from './services/counterfactual-service.js';
 export { SyncService, type SyncReport } from './services/sync-service.js';
 export {
+  cacheMetrics,
+  breakEvenReadsPerWrite,
+  type CacheMetrics,
+} from './services/cache-metrics.js';
+export {
   BudgetService,
   BUDGET_BASES,
   BUDGET_PERIODS,

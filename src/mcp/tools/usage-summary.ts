@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSummary } from '../../services/formatter.js';
+import { cacheMetrics } from '../../services/cache-metrics.js';
 import {
   clientEnum,
   periodShape,
@@ -20,7 +21,9 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
         'Tokens are broken out into input / output / cache-read / cache-write / reasoning, ' +
         'because cache tokens typically dwarf input and a single blended total is misleading. ' +
         'Reported cost (from OpenCode) and estimated cost (computed for Claude Code, which ' +
-        'records none) are always listed separately and must not be summed.',
+        'records none) are always listed separately and must not be summed. Also reports the ' +
+        'cache hit rate and reads-per-write, which are what say whether the cache is paying ' +
+        'for itself -- the raw cache counts alone cannot.',
       inputSchema: {
         ...periodShape,
         client: clientEnum,
@@ -60,6 +63,7 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
           reasoningTokens: report.overall.reasoningTokens,
           totalTokens: report.overall.totalTokens,
         },
+        cache: cacheMetrics(report.overall),
         cost: report.overall.cost,
         byClient: report.byClient.map((c) => ({
           client: c.key,
@@ -71,6 +75,7 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
           cacheWriteTokens: c.cacheWriteTokens,
           reasoningTokens: c.reasoningTokens,
           totalTokens: c.totalTokens,
+          cache: cacheMetrics(c),
           cost: c.cost,
         })),
       });
