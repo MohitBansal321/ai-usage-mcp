@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { ArgError, parseArgs, type ParsedArgs } from './args.js';
+import { FieldError, exceedsThreshold, readField, renderField } from './field.js';
 import { HELP_TEXT } from './commands/help.js';
 import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
@@ -41,9 +42,34 @@ function pageFrom(args: ParsedArgs): PageRequest {
   return page;
 }
 
-function emit(args: ParsedArgs, text: string, data: unknown): void {
+/**
+ * Renders a command's result, and reports whether a threshold was breached.
+ *
+ * `--field` prints ONE value and nothing else, so a shell can consume it without
+ * `jq`. `--fail-over` turns the same value into an exit code, which is the other
+ * half of being usable from a scheduled job: a report nobody reads cannot page
+ * anyone.
+ *
+ * @returns true when `--fail-over` was given and the threshold was exceeded.
+ */
+function emit(args: ParsedArgs, text: string, data: unknown): boolean {
+  if (args.field !== undefined) {
+    const value = readField(data, args.field);
+    process.stdout.write(`${renderField(value, args.field)}\n`);
+    if (args.failOver === undefined) return false;
+    if (!exceedsThreshold(value, args.failOver, args.field)) return false;
+    process.stderr.write(
+      `ai-usage: ${args.field} is ${String(value)}, over the --fail-over threshold ` +
+        `of ${args.failOver}.\n`,
+    );
+    return true;
+  }
   process.stdout.write(args.json ? `${JSON.stringify(data, null, 2)}\n` : `${text}\n`);
+  return false;
 }
+
+/** Exit 1 on a breached threshold, 0 otherwise -- the value a script branches on. */
+const THRESHOLD_EXIT = 1;
 
 async function run(argv: string[]): Promise<number> {
   let args: ParsedArgs;
@@ -77,12 +103,13 @@ async function run(argv: string[]): Promise<number> {
           service.status(),
           checkForUpdate({ current: VERSION }),
         ]);
-        emit(args, formatStatus(status, update), {
+        return emit(args, formatStatus(status, update), {
           version: VERSION,
           ...status,
           ...(update ? { updateAvailable: update } : {}),
-        });
-        return 0;
+        })
+          ? THRESHOLD_EXIT
+          : 0;
       }
 
       case 'sync': {
@@ -101,32 +128,27 @@ async function run(argv: string[]): Promise<number> {
 
       case 'stats': {
         const report = service.summary(queryFrom(args), { compare: args.compare });
-        emit(args, formatSummary(report, service.costService), report);
-        return 0;
+        return emit(args, formatSummary(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'models': {
         const report = service.modelUsage(queryFrom(args), pageFrom(args));
-        emit(args, formatModels(report, service.costService), report);
-        return 0;
+        return emit(args, formatModels(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'clients': {
         const report = service.clientUsage(queryFrom(args), pageFrom(args));
-        emit(args, formatClients(report, service.costService), report);
-        return 0;
+        return emit(args, formatClients(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'projects': {
         const report = service.projectUsage(queryFrom(args), pageFrom(args));
-        emit(args, formatProjects(report, service.costService), report);
-        return 0;
+        return emit(args, formatProjects(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'sessions': {
         const page = service.recentSessions(queryFrom(args), pageFrom(args));
-        emit(args, formatSessions(page, service.costService), page);
-        return 0;
+        return emit(args, formatSessions(page, service.costService), page) ? THRESHOLD_EXIT : 0;
       }
 
       case 'session': {
@@ -148,7 +170,26 @@ async function run(argv: string[]): Promise<number> {
           );
           return 1;
         }
-        emit(args, formatSessionDetail(result, service.costService), result);
+        return emit(args, formatSessionDetail(result, service.costService), result)
+          ? THRESHOLD_EXIT
+          : 0;
+      }
+
+      case 'export': {
+        // Streamed, not buffered: a record-level export of a busy database is
+        // hundreds of thousands of rows, and building one string would hold the
+        // whole export in memory only to hand it to a pipe a line at a time.
+        const { filter } = service.exportFilter(queryFrom(args));
+        const result = service.exportRecords(filter, (line) => process.stdout.write(`${line}\n`), {
+          ...(args.format ? { format: args.format } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        });
+        if (result.rows < result.total) {
+          process.stderr.write(
+            `ai-usage: exported ${result.rows} of ${result.total} matching record(s) ` +
+              `(--limit ${args.limit}). Drop --limit to export them all.\n`,
+          );
+        }
         return 0;
       }
 
@@ -161,20 +202,19 @@ async function run(argv: string[]): Promise<number> {
           return 2;
         }
         const report = service.breakdown(args.by, queryFrom(args), pageFrom(args));
-        emit(args, formatBreakdown(report), report);
-        return 0;
+        return emit(args, formatBreakdown(report), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'daily': {
         const report = service.dailyUsage(queryFrom(args), args.grain);
-        emit(args, formatDaily(report), report);
-        return 0;
+        return emit(args, formatDaily(report), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'counterfactual': {
         const report = service.counterfactualCost(queryFrom(args), args.counterfactualModels);
-        emit(args, formatCounterfactual(report, service.costService), report);
-        return 0;
+        return emit(args, formatCounterfactual(report, service.costService), report)
+          ? THRESHOLD_EXIT
+          : 0;
       }
 
       case 'verify': {
@@ -196,6 +236,15 @@ async function run(argv: string[]): Promise<number> {
         return 2;
       }
     }
+  } catch (err) {
+    // A bad --field is a usage error, like any other bad flag: one clean line
+    // and exit 2, not a stack trace. Getting this wrong matters more here than
+    // elsewhere, because the caller is a script reading the exit code.
+    if (err instanceof FieldError) {
+      process.stderr.write(`${err.message}\n`);
+      return 2;
+    }
+    throw err;
   } finally {
     service.close();
   }
