@@ -108,7 +108,7 @@ export function registerPrompts(server: McpServer): void {
             text: project
               ? `How much has the project at ${project} cost me?\n\n` +
                 `Call project_usage to confirm the exact path, then usage_summary, model_usage ` +
-                `and recent_sessions with projectPath set to it. Report tokens by class and the ` +
+                `and recent_sessions with projectPaths set to [it]. Report tokens by class and the ` +
                 `cost.\n\n${HONESTY}`
               : 'Compare what each of my projects has cost.\n\n' +
                 'Call project_usage, then look at the top few with recent_sessions to explain ' +

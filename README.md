@@ -377,7 +377,7 @@ Break my last 7 days down day by day.
 | `daily_usage`         | Per-day tokens and cost, newest day first                                  |
 | `counterfactual_cost` | These tokens at another model's list rates, beside what they actually cost |
 
-Every period-based tool takes `projectPath` to narrow the report to one project.
+Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
 `counterfactual_cost` answers "would a cheaper model have cost less for this?" — it re-prices
 the exact token counts that were recorded, grouped by client, model **and** speed so the

@@ -10,6 +10,9 @@ import {
   type ToolContext,
 } from './shared.js';
 
+/** Every shared period/scope field except `models`, which this tool redefines. */
+const { models: _scopeModels, ...withoutModels } = periodShape;
+
 export function registerCounterfactualCost(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'counterfactual_cost',
@@ -29,7 +32,12 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
         'keep every scenario labelled an estimate, and never subtract a scenario from the ' +
         'reported cost to claim a number.',
       inputSchema: {
-        ...periodShape,
+        // `models` is REDEFINED below, so the scope filter periodShape supplies
+        // under that name must not also be here -- on this one tool `models` has
+        // meant "price against these" since before 0.8.0, and quietly turning it
+        // into a filter would change what an existing caller's number means
+        // without failing. Scope filtering by model lives at `filterModels`.
+        ...withoutModels,
         client: clientEnum,
         // Named apart from the `models` SCOPE filter on purpose. One says which
         // turns to include, the other says which rates to price them at, and a
@@ -41,16 +49,38 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
           .array(z.string().min(1))
           .optional()
           .describe(
-            'Models to price the selected tokens AGAINST -- not a filter on which turns are ' +
-              'included, which is what `models` does. Omit to compare every model the pricing ' +
+            'Models to price the selected tokens AGAINST. Not a filter on which turns are ' +
+              'included -- that is `filterModels`. Omit to compare every model the pricing ' +
               'table knows. A model with no price is omitted and called out rather than ' +
               'guessed at.',
+          ),
+        models: z
+          .array(z.string().min(1))
+          .optional()
+          .describe('Deprecated spelling of targetModels. Still honoured.'),
+        filterModels: z
+          .array(z.string().min(1))
+          .optional()
+          .describe(
+            'Restrict which turns are included, by model id -- the same scope filter other ' +
+              'tools spell `models`. Named apart here because `models` already meant "price ' +
+              'against these" on this tool. Use both together to ask what your Opus turns ' +
+              'would have cost on Sonnet.',
           ),
       },
     },
     async (args) => {
       await ctx.ensureFresh();
-      const report = ctx.service.counterfactualCost(toQuery(args), args.targetModels);
+      // `models` keeps the meaning it had before 0.8.0; `targetModels` is the
+      // unambiguous spelling and wins when both are given.
+      const targets = args.targetModels ?? args.models;
+      const report = ctx.service.counterfactualCost(
+        {
+          ...toQuery({ ...args, models: undefined }),
+          ...(args.filterModels ? { models: args.filterModels } : {}),
+        },
+        targets,
+      );
       return textResult(formatCounterfactual(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,

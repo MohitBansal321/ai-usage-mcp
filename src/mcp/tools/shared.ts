@@ -39,12 +39,31 @@ export const periodShape = {
       'Restrict to any of these model ids, exactly as the client recorded them. ' +
         'Use model_usage to see the ids present.',
     ),
+  /**
+   * The pre-0.8.0 spelling, still honoured.
+   *
+   * Dropping it would not have failed loudly: an unknown argument is stripped
+   * before the handler sees it, so a caller still passing `projectPath` would
+   * have had its filter silently vanish and received the WHOLE database
+   * presented as one project's usage. That is the one failure this project
+   * cannot have, so the old spelling keeps working.
+   */
+  projectPath: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Deprecated spelling of projectPaths, for one project. Still honoured.'),
 };
 
+/**
+ * Accepts a list, or the single string callers used before 0.8.0. The bare
+ * string is the older shape and errors loudly rather than silently if dropped,
+ * but there is no reason to break it when accepting both costs one union.
+ */
 export const clientEnum = z
-  .array(z.enum(['claude-code', 'opencode']))
+  .union([z.enum(['claude-code', 'opencode']), z.array(z.enum(['claude-code', 'opencode']))])
   .optional()
-  .describe('Restrict to any of these clients.');
+  .describe('Restrict to any of these clients. A single client id is also accepted.');
 
 /** Ordering and paging, shared by every list-shaped tool. */
 export const pageShape = {
@@ -105,15 +124,19 @@ export interface ToolContext {
   ensureFresh(): Promise<void>;
 }
 
+type ClientArg = 'claude-code' | 'opencode';
+
 export type PeriodArgs = {
   days?: number;
   today?: boolean;
   since?: string;
   until?: string;
   includeSubagents?: boolean;
-  client?: ('claude-code' | 'opencode')[];
+  client?: ClientArg | ClientArg[];
   models?: string[];
   projectPaths?: string[];
+  /** Pre-0.8.0 spelling of `projectPaths`. */
+  projectPath?: string;
 };
 
 export function toQuery(args: PeriodArgs): UsageQuery {
@@ -123,9 +146,13 @@ export function toQuery(args: PeriodArgs): UsageQuery {
   if (args.since !== undefined) query.since = args.since;
   if (args.until !== undefined) query.until = args.until;
   if (args.includeSubagents !== undefined) query.includeSubagents = args.includeSubagents;
-  if (args.client !== undefined) query.clients = args.client;
+  if (args.client !== undefined)
+    query.clients = Array.isArray(args.client) ? args.client : [args.client];
   if (args.models !== undefined) query.models = args.models;
+  // The old singular spelling still filters. Both given is not a conflict worth
+  // an error: the plural is the current one, so it wins.
   if (args.projectPaths !== undefined) query.projectPaths = args.projectPaths;
+  else if (args.projectPath !== undefined) query.projectPaths = [args.projectPath];
   return query;
 }
 

@@ -238,8 +238,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Every pre-0.8.0 MCP argument spelling still works.** The singular `projectPath`, a bare
+  string `client`, and `counterfactual_cost`'s `models` are all still honoured, because
+  dropping them would not have failed loudly: an argument a tool does not declare is stripped
+  before the handler sees it, so a caller still passing `projectPath` would have had its filter
+  silently vanish and received the whole database presented as one project's usage. The
+  shipped `project-cost` prompt was one such caller. `counterfactual_cost` was worse -- `models`
+  meant "price against these" before and "include only these turns" after, so the same call
+  kept succeeding while answering a different question. Both are covered by
+  `tests/mcp/back-compat.test.ts`.
+
 - **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
-  on the CLI (`--models` still works), `targetModels` in MCP. One says which turns to include
+  on the CLI (`--models` still works), `targetModels` in MCP (`models` still works there too,
+  keeping its pre-0.8.0 meaning of "price against these"; model scope-filtering on that one
+  tool is `filterModels`). One says which turns to include
   and the other which rates to price them at; with `--model` now accepting a list, a single
   `models` meaning both depending on the tool would have been exactly the ambiguity this
   release set out to remove. The two are usable together:
