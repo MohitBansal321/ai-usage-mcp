@@ -37,6 +37,19 @@ describe('Claude Code plugin manifest', () => {
     expect(plugin.version).toBe(pkg.version);
   });
 
+  /**
+   * `server.json` is the MCP registry manifest, and the release workflow refuses
+   * to publish when its two version fields disagree with package.json. That
+   * check is the right one to have -- but it fires at release time, on a pushed
+   * tag, which is the most expensive moment to discover a one-line mistake.
+   * Asserting it here means a stale version fails `npm run check` instead.
+   */
+  it('keeps server.json in step with package.json, as the release workflow demands', () => {
+    const server = readJson<{ version: string; packages: { version: string }[] }>('server.json');
+    expect(server.version).toBe(pkg.version);
+    expect(server.packages[0]?.version).toBe(pkg.version);
+  });
+
   it('uses a kebab-case name, since the name namespaces every command', () => {
     expect(plugin.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });

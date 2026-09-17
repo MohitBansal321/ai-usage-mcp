@@ -20,9 +20,19 @@ npm test               # vitest run
 npm run test:coverage  # vitest run --coverage (thresholds are a regression floor)
 ```
 
-**`npm run build` must run before `npm test`.** `tests/mcp/server.test.ts` and
-`tests/mcp/parity.test.ts` spawn `dist/mcp/server.js` and `dist/cli/index.js` as child
-processes and fail fast if `dist/` is missing or stale.
+**`npm run build` must run before `npm test`.** `tests/mcp/server.test.ts`,
+`tests/mcp/parity.test.ts` and `tests/packaging/packaging.test.ts` spawn `dist/mcp/server.js`
+and `dist/cli/index.js` as child processes and fail fast if `dist/` is missing or stale.
+
+**"Exactly what CI runs" is load-bearing, and was once false.** CI's fourth job packs a
+tarball, checks nothing shippable leaks into it, installs it globally and speaks MCP to the
+result. None of that ran locally, so the hardcoded tool list in
+[.github/scripts/mcp-smoke.mjs](.github/scripts/mcp-smoke.mjs) — the _third_ place the tool
+surface is written down, after the `registerX` calls and `tests/mcp/server.test.ts` — drifted
+without `check` noticing, and five green local runs shipped five red pull requests.
+`tests/packaging/packaging.test.ts` now runs that job's assertions, including the real smoke
+script against `dist/`, so the drift fails on the machine that caused it. If you add a step to
+that CI job, add it there too.
 
 Running a subset:
 

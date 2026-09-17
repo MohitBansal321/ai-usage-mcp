@@ -123,6 +123,7 @@ describe('MCP server over stdio', () => {
       'project_usage',
       'recent_sessions',
       'session_usage',
+      'usage_breakdown',
       'usage_summary',
     ]);
   });
@@ -134,7 +135,7 @@ describe('MCP server over stdio', () => {
     // added later cannot ship without annotations: without them a client
     // prompts for confirmation on every call, which for a reporting server
     // that only reads local files is pure friction.
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(9);
 
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint, `${tool.name} readOnlyHint`).toBe(true);

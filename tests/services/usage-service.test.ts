@@ -193,10 +193,10 @@ describe('UsageService', () => {
   });
 
   it('filters every report by project, and reports nothing for an unknown one', () => {
-    const known = service.summary({ projectPath: '/work/project-one' });
+    const known = service.summary({ projectPaths: ['/work/project-one'] });
     expect(known.overall.records).toBe(6);
 
-    const missing = service.projectUsage({ projectPath: '/work/does-not-exist' });
+    const missing = service.projectUsage({ projectPaths: ['/work/does-not-exist'] });
     expect(missing.projects).toEqual([]);
     expect(missing.overall.records).toBe(0);
   });
@@ -268,11 +268,122 @@ describe('UsageService', () => {
     }
   });
 
+  it('shows days with no activity, not just the days that had some', () => {
+    const report = service.dailyUsage({ days: 10 });
+    // Ten buckets for a ten-day window, whether or not each had usage. Returning
+    // only active days makes the gaps invisible, so an ordinary day renders
+    // beside one a week earlier and looks like a spike next to it.
+    expect(report.days).toHaveLength(10);
+    expect(report.days.some((d) => d.zeroFilled)).toBe(true);
+    // A constructed zero is marked; an observed bucket is not.
+    for (const day of report.days) {
+      if (day.zeroFilled) expect(day.records).toBe(0);
+      else expect(day.records).toBeGreaterThan(0);
+    }
+    // Zero-filling must not change any total.
+    expect(report.overall.totalTokens).toBe(service.summary({ days: 10 }).overall.totalTokens);
+  });
+
+  it('buckets by hour and by hour-of-day as well as by day', () => {
+    expect(service.dailyUsage({ days: 1 }, 'day').grain).toBe('day');
+
+    const hourly = service.dailyUsage({ days: 1 }, 'hour');
+    expect(hourly.days.every((d) => /^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(d.key))).toBe(true);
+
+    // Every day collapsed onto one 24-slot clock: always 24 rows, always in
+    // clock order, whether or not each hour was used.
+    const clock = service.dailyUsage({ days: 30 }, 'hour-of-day');
+    expect(clock.days).toHaveLength(24);
+    expect(clock.days.map((d) => d.key)).toEqual(
+      Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0')),
+    );
+    // The grain changes the buckets, never the totals.
+    expect(clock.days.reduce((sum, d) => sum + d.totalTokens, 0)).toBe(clock.overall.totalTokens);
+  });
+
+  it('compares a window against the equal-length one before it', () => {
+    const report = service.summary({ days: 1 }, { compare: true });
+    expect(report.comparison).toBeDefined();
+    expect(report.comparison?.previous.until).toBe(report.period.since);
+    // Reported and estimated are deltaed apart, and there is no combined figure.
+    expect(report.comparison?.delta.reportedCost).toBeDefined();
+    expect(report.comparison?.delta.estimatedCost).toBeDefined();
+    expect(report.comparison?.caveats.join(' ')).toContain('never summed');
+  });
+
+  it('refuses to invent a previous window for an unbounded period', () => {
+    // "All time" has no window before it, and constructing one would be
+    // answering a question nobody asked.
+    expect(service.summary({}, { compare: true }).comparison).toBeUndefined();
+  });
+
+  it('leaves the comparison out unless it was asked for', () => {
+    expect(service.summary({ days: 1 }).comparison).toBeUndefined();
+  });
+
+  it('says a scope value matches nothing, instead of reporting a quiet period', () => {
+    // The failure this prevents: `--model typo` answering "No usage records for
+    // this period" at exit 0, which is indistinguishable from a real quiet week.
+    const report = service.summary({ models: ['claude-opus-5', 'no-such-model'] });
+    expect(report.unmatchedScope?.models).toEqual(['no-such-model']);
+    // The models that DO exist still filter normally.
+    expect(report.overall.records).toBeGreaterThan(0);
+
+    const projects = service.projectUsage({ projectPaths: ['/nope'] });
+    expect(projects.unmatchedScope?.projectPaths).toEqual(['/nope']);
+    expect(projects.projects).toEqual([]);
+  });
+
+  it('stays quiet when every scope value matches something', () => {
+    expect(service.summary({ models: ['claude-opus-5'] }).unmatchedScope).toBeUndefined();
+    expect(service.summary({}).unmatchedScope).toBeUndefined();
+  });
+
+  it('checks scope against the whole database, not the period', () => {
+    // A project that exists but was quiet this period is NOT an unmatched scope:
+    // conflating the two would cry wolf on every narrow window.
+    const report = service.projectUsage({
+      projectPaths: ['/work/project-one'],
+      since: '2000-01-01T00:00:00.000Z',
+      until: '2000-01-02T00:00:00.000Z',
+    });
+    expect(report.unmatchedScope).toBeUndefined();
+    expect(report.projects).toEqual([]);
+  });
+
+  it('pages and sorts the same rows the unpaged report returns', () => {
+    const all = service.projectUsage({}).projects.map((p) => p.key);
+    const first = service.projectUsage({}, { limit: 1 });
+    expect(first.projects.map((p) => p.key)).toEqual(all.slice(0, 1));
+    expect(first.page.total).toBe(all.length);
+    expect(first.page.hasMore).toBe(all.length > 1);
+  });
+
+  it('flags OpenCode records whose model the pricing table has never heard of', () => {
+    // `big-pickle` is exactly the case from the issue: OpenCode reports its own
+    // cost, so these land in the `reported` bucket and no estimate is attempted.
+    // Without the unpriced count, nothing in the output says the estimate is
+    // missing rather than zero.
+    const opencode = service.clientUsage().clients.find((c) => c.key === 'opencode');
+    expect(opencode?.cost.unpricedRecords).toBe(opencode?.records);
+    expect(opencode?.cost.unpricedModels).toContain('big-pickle');
+
+    // Claude Code's models are priced, so it reports a real 0 rather than undefined.
+    const claude = service.clientUsage().clients.find((c) => c.key === 'claude-code');
+    expect(claude?.cost.unpricedRecords).toBe(0);
+  });
+
   it('reports status including store discovery and pricing provenance', async () => {
     const status = await service.status();
     expect(status.totalRecords).toBe(6);
     expect(status.collectors).toHaveLength(2);
     expect(status.collectors.every((c) => c.available)).toBe(true);
-    expect(status.pricing.version).toContain('anthropic');
+    // The built-in table is composed from one file per provider, each keeping its
+    // own capture date, so provenance -- not the version string -- is where a
+    // given provider's freshness is visible.
+    expect(status.pricing.version).toBe('builtin-2026-09-16');
+    expect(status.pricing.mode).toBe('builtin');
+    expect(status.pricing.provenance).toContain('Anthropic');
+    expect(status.pricing.provenance).toContain('OpenAI');
   });
 });

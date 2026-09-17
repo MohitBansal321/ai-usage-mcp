@@ -21,6 +21,35 @@ export interface CounterfactualScenario {
   unpricedGroups: number;
 }
 
+/**
+ * What these tokens would have cost with no prompt caching at all.
+ *
+ * Unlike a model counterfactual, the token counts here really are invariant, and
+ * that distinction is the whole reason this one is worth reporting. Cache-read
+ * tokens ARE the context re-sent on every turn; without a cache they would have
+ * been sent as ordinary input, one for one. The cache-write premium simply would
+ * not have been paid, so those tokens price at the plain input rate too.
+ *
+ * The remaining assumption, and it is stated in the caveats rather than buried:
+ * a cacheless run of the same work would have made the same requests with the
+ * same context. That holds far better than "the same task on a weaker model
+ * takes the same number of turns", which is why the model scenarios refuse to
+ * subtract and this one is allowed to.
+ */
+export interface NoCacheScenario {
+  /** The model these tokens actually ran on. */
+  model: string;
+  /** Estimated cost as recorded, with cache rates applied. */
+  withCache: number;
+  /** Estimated cost with every cache token billed at the full input rate. */
+  withoutCache: number;
+  /** withoutCache - withCache. Positive means caching paid off. */
+  saved: number;
+  /** `saved` as a fraction of `withoutCache`; absent when that is 0. */
+  savedFraction?: number;
+  records: number;
+}
+
 export interface CounterfactualReport {
   period: { since?: string; until?: string; label: string };
   includeSubagents: boolean;
@@ -30,6 +59,11 @@ export interface CounterfactualReport {
   groups: RepriceGroup[];
   /** Cheapest first. */
   scenarios: CounterfactualScenario[];
+  /**
+   * Per actual model: these same tokens with no caching at all. Empty when
+   * nothing in the period used the cache.
+   */
+  noCache: NoCacheScenario[];
   pricingVersion: string;
   /** Things that would make a reader over-trust the comparison. Never empty. */
   caveats: string[];
@@ -115,6 +149,8 @@ export class CounterfactualService {
 
     scenarios.sort((a, b) => a.estimatedCost - b.estimatedCost || a.model.localeCompare(b.model));
 
+    const noCache = this.noCacheScenarios(groups);
+
     return {
       period: {
         ...(filter.since ? { since: filter.since } : {}),
@@ -125,12 +161,83 @@ export class CounterfactualService {
       overall,
       groups,
       scenarios,
+      noCache,
       pricingVersion: this.costService.pricingVersion,
-      caveats: this.caveats(groups, unknown),
+      caveats: this.caveats(groups, unknown, noCache),
     };
   }
 
-  private caveats(groups: RepriceGroup[], unknownModels: string[]): string[] {
+  /**
+   * The same tokens with every cache token billed as plain input.
+   *
+   * Grouped by the model that actually ran, because a blended "you saved $X"
+   * across models would hide that the answer differs by an order of magnitude
+   * between them.
+   */
+  private noCacheScenarios(groups: RepriceGroup[]): NoCacheScenario[] {
+    const byModel = new Map<string, NoCacheScenario>();
+
+    for (const group of groups) {
+      if (group.cacheReadTokens === 0 && group.cacheWriteTokens === 0) continue;
+
+      const billableOutput = billableOutputTokens(
+        group.client,
+        group.outputTokens,
+        group.reasoningTokens,
+      );
+      const speed = group.speed ? { speed: group.speed } : {};
+
+      const withCache = this.costService.estimate({
+        model: group.model,
+        inputTokens: group.inputTokens,
+        outputTokens: billableOutput,
+        cacheReadTokens: group.cacheReadTokens,
+        cacheWriteTokens: group.cacheWriteTokens,
+        cacheWrite5mTokens: group.cacheWrite5mTokens,
+        cacheWrite1hTokens: group.cacheWrite1hTokens,
+        ...speed,
+      });
+      // Every cache token folded into input, and no cache tokens left to price:
+      // without a cache those bytes are ordinary input, at the ordinary rate.
+      const withoutCache = this.costService.estimate({
+        model: group.model,
+        inputTokens: group.inputTokens + group.cacheReadTokens + group.cacheWriteTokens,
+        outputTokens: billableOutput,
+        ...speed,
+      });
+      if (withCache.estimatedCost === undefined || withoutCache.estimatedCost === undefined) {
+        continue;
+      }
+
+      const existing = byModel.get(group.model) ?? {
+        model: group.model,
+        withCache: 0,
+        withoutCache: 0,
+        saved: 0,
+        records: 0,
+      };
+      existing.withCache += withCache.estimatedCost;
+      existing.withoutCache += withoutCache.estimatedCost;
+      existing.records += group.records;
+      byModel.set(group.model, existing);
+    }
+
+    return [...byModel.values()]
+      .map((scenario) => {
+        scenario.saved = scenario.withoutCache - scenario.withCache;
+        if (scenario.withoutCache > 0) {
+          scenario.savedFraction = scenario.saved / scenario.withoutCache;
+        }
+        return scenario;
+      })
+      .sort((a, b) => b.saved - a.saved || a.model.localeCompare(b.model));
+  }
+
+  private caveats(
+    groups: RepriceGroup[],
+    unknownModels: string[],
+    noCache: NoCacheScenario[] = [],
+  ): string[] {
     const caveats: string[] = [
       'A counterfactual, not a saving: this is what these exact tokens would have cost at ' +
         'another model’s list rates. It is not what the work would have cost. The same task ' +
@@ -156,6 +263,17 @@ export class CounterfactualService {
         `${records} record(s) have no recorded speed -- either the source never reported one, ` +
           'or they were collected before speed was stored. They are priced at standard rates; ' +
           '`ai-usage sync --full` re-reads the sources and fills in what they do report.',
+      );
+    }
+
+    if (noCache.length) {
+      caveats.push(
+        'The no-cache figures rest on a narrower assumption than the model scenarios, which ' +
+          'is why they are allowed to state a saving at all: cache-read tokens ARE the ' +
+          'context re-sent each turn, so without a cache they would have been sent as ' +
+          'ordinary input one for one, and the cache-write premium would simply not have ' +
+          'been paid. The assumption that remains is that a cacheless run would have made ' +
+          'the same requests carrying the same context.',
       );
     }
 

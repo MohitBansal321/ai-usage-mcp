@@ -12,7 +12,13 @@ Commands:
   sessions              Recent sessions                        (same as recent_sessions)
   session <id>          One session in detail                  (same as session_usage)
   daily                 Per-day breakdown                      (same as daily_usage)
+  breakdown             Two or more dimensions at once         (same as usage_breakdown)
   counterfactual        These tokens on another model          (same as counterfactual_cost)
+  budget                Spend against a target, with run rate and projection
+  export                One row per stored turn, as CSV or JSON Lines
+  import <file>         Merge JSON Lines from another machine (idempotent)
+  prune                 Remove records older than a date (dry run without --yes)
+  vacuum                Compact the database file after a prune
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
   help                  Show this text
@@ -22,17 +28,53 @@ Period options (default: all time):
   --days N              Last N days, from local midnight
   --since <ISO>         Explicit start (inclusive)
   --until <ISO>         Explicit end (exclusive)
+  --compare previous    stats only: also report the equal-length window before this one,
+                        with the delta. Needs a bounded period; all time has no previous.
+  --grain <g>           daily only: hour | day | hour-of-day (default day).
+                        hour-of-day collapses every day onto one 24-slot local clock.
+  --by a,b              breakdown only: up to 3 of client, model, provider, project,
+                        session, day, hour, hour-of-day. Crosses them in one query.
 
-Scope options:
+Scope options (repeatable, or comma-separated; each matches ANY value given):
   --client <name>       claude-code | opencode
-  --model <id>          Restrict to one model
-  --project <path>      Restrict to one project (its working directory)
-  --limit N             Row limit (sessions, models, projects)
-  --models a,b          Models to price against (counterfactual; repeatable)
+  --model <id>          Restrict to these models      (--model a,b or --model a --model b)
+  --project <path>      Restrict to these projects (their working directories)
+  --target-models a,b   counterfactual only: models to price the selected tokens AGAINST.
+                        Not a filter -- \`--model\` chooses which turns, this chooses the
+                        rates. (\`--models\` is an accepted alias.)
+
+List options (sessions, models, projects, clients):
+  --limit N             Rows to return
+  --offset N            Rows to skip, for paging. Output tells you the next offset.
+  --sort <key>          tokens | reported-cost | estimated-cost | records | sessions | recent
+                        Default: recent for sessions, tokens elsewhere. There is no plain
+                        \`cost\`: reported and estimated cost are never summed, so ordering by
+                        one sorts every row priced on the other basis as $0.
   --no-subagents        Exclude subagent/sidechain turns (included by default)
   --all-stores          Read every detected data store, not only the one the client itself uses
   --full                Ignore saved sync cursors and re-read everything
   --json                Emit JSON instead of text
+
+Scripting options:
+  --field <path>        Print ONE value from the JSON result and nothing else, so a shell
+                        can use it without jq. e.g. --field overall.cost.estimated
+  --fail-over <n>       Exit 1 when --field's value exceeds n. Requires --field: there is
+                        no default, because reported and estimated cost are never summed
+                        and a default would ignore every record priced the other way.
+  --format <f>          export only: csv (default) | jsonl. --csv is shorthand for csv.
+
+Lifecycle options:
+  --before <ISO>        prune only: remove records BEFORE this instant (exclusive), so
+                        --before 2026-01-01 removes 2025 and keeps New Year's Day.
+  --yes                 prune only: actually delete. Without it, prune is a dry run.
+
+Budget options (budget command):
+  --amount N            The target, in USD. Required.
+  --basis <b>           reported | estimated. Required -- the two are never summed, so a
+                        budget with no stated basis is a budget against nothing.
+  --period <p>          month (default) | week. Calendar periods only: a projection needs
+                        a period end to aim at, which a rolling window has not got.
+                        \`budget\` exits 1 when spend already exceeds the target.
 
 Examples:
   ai-usage sync
@@ -40,8 +82,27 @@ Examples:
   ai-usage stats --days 7
   ai-usage models --days 30 --client claude-code
   ai-usage projects --days 30
+  ai-usage stats --days 7 --compare previous
+  ai-usage daily --days 7 --grain hour
+  ai-usage daily --days 30 --grain hour-of-day
+  ai-usage breakdown --by project,day --days 30
+  ai-usage breakdown --by model,day --days 7 --sort estimated-cost
   ai-usage sessions --limit 5
-  ai-usage counterfactual --today --models claude-sonnet-5,claude-haiku-4-5
+  ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
+  ai-usage projects --sort estimated-cost --limit 10
+  ai-usage sessions --limit 100 --offset 100            # page two
+  ai-usage models --model claude-opus-5,claude-sonnet-5
+  ai-usage counterfactual --today --target-models claude-sonnet-5,claude-haiku-4-5
+  ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5
+  ai-usage budget --amount 500 --basis estimated
+  ai-usage budget --amount 20 --basis reported --period week
+  ai-usage export --days 30 > usage.csv
+  ai-usage export --format jsonl > laptop.jsonl   # then, on the desktop:
+  ai-usage import laptop.jsonl
+  ai-usage prune --before 2026-01-01              # dry run
+  ai-usage prune --before 2026-01-01 --yes && ai-usage vacuum
+  ai-usage stats --today --field overall.cost.estimated
+  ai-usage stats --today --field overall.cost.estimated --fail-over 25   # exit 1 if over
   ai-usage verify
 
 Notes:

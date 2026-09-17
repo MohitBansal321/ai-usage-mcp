@@ -7,6 +7,319 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`ai-usage prune --before <date>` and `ai-usage vacuum`**, so the database does not grow
+  forever. Pruning is a command rather than a policy on purpose: a retention setting that
+  silently deleted last quarter on some future run is a worse tool than one that never
+  deletes, because the data is gone and nothing asked. Anyone who wants a policy can put this
+  in a cron.
+
+  **Dry run by default.** The only irreversible operation in this package reports what it
+  would remove and changes nothing until told twice with `--yes`. `--before` is exclusive like
+  every other bound here, so `--before 2026-01-01` removes 2025 and keeps New Year's Day -- an
+  off-by-one in the one irreversible command is not worth a tidier boundary. Scope filters
+  apply, so a prune cannot be broader than the report that justified it.
+
+  `vacuum` measures the database's whole footprint -- the file plus its `-wal` and `-shm`
+  companions. This package always opens in WAL mode, where freshly written data lives in the
+  `-wal` until a checkpoint folds it back: a 1.8MB database shows a 4KB `.db`, so measuring
+  only that reported reclaiming nothing while most of the bytes sat next door. It now
+  checkpoints and truncates the WAL, and the figure matches what `du` says.
+  ([#59](https://github.com/MohitBansal321/ai-usage-mcp/issues/59))
+
+- **`ai-usage import <file.jsonl>`**, merging an export from another machine, so "I work on a
+  laptop and a desktop -- what is my total spend?" is answerable. As the issue anticipated,
+  this fell out of the existing design: record ids are derived deterministically from source
+  identifiers, so the same turn imported twice, or collected on both machines, upserts to one
+  row rather than double counting. The output says how many rows were updated in place rather
+  than added, so that is visible rather than assumed.
+
+  A row that does not fully parse is rejected with its line number, and the command exits
+  non-zero. Importing a half-valid row would write a turn with invented zeroes, and a merged
+  database that quietly under-counts is worse than a failed import.
+  ([#59](https://github.com/MohitBansal321/ai-usage-mcp/issues/59))
+
+### Added
+
+- **Cache hit rate and reads-per-write on `stats` and `clients`**, plus a break-even derived
+  from the pricing table's own multipliers. Cache tokens are where the money is -- cache-read
+  is 94.7% of all tokens on the development machine, and for Claude Code it outweighs plain
+  input by roughly 33,000x -- and every report printed the raw counts and stopped there, so a
+  user could see that cache dominates without being able to tell whether it was paying for
+  itself.
+
+  Break-even is computed, not hardcoded: a 5-minute write costs 1.25x input (0.25x extra) and
+  each read saves 0.9x, so 0.25 / 0.9 = 0.28 reads per write, and 1.11 for the 1-hour tier.
+  Change the multipliers, or use a provider whose cache discount differs, and the threshold
+  moves with them.
+
+  A hit rate is **absent rather than 0%** when there was no cache traffic at all -- those are
+  different statements, and reporting the second as the first would be inventing a
+  measurement. A genuine 0% (writes that were never read) is reported, because it is the worst
+  case for the write premium and exactly what a user would want to see.
+  ([#65](https://github.com/MohitBansal321/ai-usage-mcp/issues/65))
+
+- **A no-cache scenario in `counterfactual` / `counterfactual_cost`**: what the same tokens
+  would have cost with every cache token billed at the plain input rate, per model. On the
+  development machine, caching saved an estimated 83.6% on Opus over 30 days.
+
+  This is the one scenario in the tool permitted to state a **saving**, and deliberately so. A
+  model counterfactual cannot, because the same task on a different model takes a different
+  number of turns with a different context on each. Here the token counts genuinely are
+  invariant: cache-read tokens ARE the context re-sent each turn, so without a cache they
+  would have been sent as ordinary input one for one, and the cache-write premium would simply
+  not have been paid. The assumption that remains -- that a cacheless run would have made the
+  same requests -- prints with the numbers rather than living in a doc. A negative saving is
+  reported as such rather than clamped to zero: burning the write premium on sessions too
+  short to reuse it is precisely what this exists to show.
+  ([#65](https://github.com/MohitBansal321/ai-usage-mcp/issues/65))
+
+### Added
+
+- **`ai-usage budget --amount N --basis reported|estimated [--period month|week]`**: spend
+  against a target, with the run rate and where the period lands. Nothing in the tool surface
+  accepted a budget number, so extrapolating month-end spend meant reading the active days out
+  of `daily` and picking a denominator by hand.
+
+  **Two projections, never one.** Calendar-day pace assumes the rest of the period looks like
+  the period so far, weekends included; active-day pace assumes every remaining day is a
+  working one. On the development machine those come to $919.65 and $1,264.65 for the same
+  month. Picking one would be making that modelling choice silently on the user's behalf; the
+  gap between them is the size of the assumption, and it is now the visible thing.
+
+  **`--basis` is required and has no default**, which is the issue's own prior question
+  answered the same way `--fail-over` answers it: the caller names the figure. Reported and
+  estimated cost are never summed, so a budget with no stated basis is a budget against
+  nothing in particular -- and the right answer differs for a subscriber, whose marginal cost
+  per request is $0 and for whom the estimate is a shadow price. The output says so every time,
+  and says the opposite thing for the reported basis, where Claude Code's usage is absent
+  entirely. A `$0` spend caused by nothing being measured on that basis is called out rather
+  than read as comfortably under budget.
+
+  **Exit 1 on a fact, not on a forecast**: the command fails when spend _already_ exceeds the
+  target, never on a projection -- failing a nightly job on a forecast would page somebody
+  about arithmetic rather than about spend. Thresholding a projection stays available on
+  purpose, by composing with `--field`.
+
+  Calendar periods only, because a projection needs a period end to aim at and a rolling
+  window has not got one. Elapsed time counts in partial days: a projection made at noon on the
+  6th that pretends five whole days have passed overstates the rate by a tenth.
+  ([#55](https://github.com/MohitBansal321/ai-usage-mcp/issues/55))
+
+### Added
+
+- **`ai-usage export`**: one row per stored turn, as CSV (default) or JSON Lines, honouring
+  every period and scope filter. "Local-first, your data is yours" was the promise, and every
+  output was a nested aggregate that no spreadsheet or CSV loader consumes; the only route to
+  the underlying rows was `sqlite3 usage.db '.mode csv' 'SELECT * FROM usage_records'`, which
+  bypasses the product entirely and depends on a schema the docs explicitly call internal and
+  unversioned.
+
+  The column set is a stable, documented contract rather than `SELECT *`, so the table can gain
+  a column without breaking every downstream sheet. `cost` and `estimated_cost` are separate
+  columns carrying `cost_basis` alongside -- one `cost` column would force a choice between
+  blending two incomparable figures and dropping one. A value the source did not report is an
+  empty cell, never `0` and never `null`: a figure nobody produced must not arrive in a
+  spreadsheet as a number that gets summed with the real ones. Rows stream to stdout, and a
+  truncated export says so on stderr so stdout stays pipeable.
+  ([#56](https://github.com/MohitBansal321/ai-usage-mcp/issues/56))
+
+- **`--field <path>` and `--fail-over <amount>`**, making the CLI usable from a scheduled job.
+  `--field` prints one value and nothing else, so a shell needs no `jq`; `--fail-over` turns
+  that value into an exit code -- 1 when strictly greater, 0 otherwise, 2 for any usage error.
+  stdout still carries the value, so a script can branch and capture in one run.
+
+  Two deliberate refusals. `--fail-over` **requires** `--field`: there is no default, because
+  reported and estimated cost are separate figures that are never summed, so "fail if cost
+  exceeded $25" has no single answer and a default would silently ignore every record priced
+  the other way. And an unknown field is **exit 2, never exit 0** -- a threshold check against a
+  silently-missing field passes forever, which is the worst failure an alert can have, because
+  it looks like everything is fine. The error names the fields that do exist at that level.
+  ([#60](https://github.com/MohitBansal321/ai-usage-mcp/issues/60))
+
+### Added
+
+- **`ai-usage breakdown --by <axes>` and the `usage_breakdown` MCP tool**: totals cut by two or
+  three dimensions at once -- `project x day`, `model x day`, `client x model` -- as one tidy
+  row set. Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`,
+  `hour-of-day`.
+
+  Every metric was single-axis, so "which of my projects is getting more expensive" could not
+  be asked: `projects` reports a project's total over 60 days with no indication whether that
+  is accelerating or one old burst, and `daily --project X` gives a single series for a path
+  you must already know. Answering it meant enumerating projects, issuing one call each, and
+  joining client-side -- an N+1 that is not feasible as a tool call from an agent loop at all.
+
+  The time axes use the same expressions `daily_usage` does, so the two cannot disagree about
+  what a day is. Combinations with no activity are absent rather than returned as zero rows: a
+  project x day grid is mostly empty and filling it would bury the rows that matter. A `--` in
+  a cost column means no record in that row is priced on that basis -- deliberately not `$0`,
+  which is a different claim. `--sort`, `--limit` and `--offset` behave as on any other list,
+  with every axis joining the tie-break so paging cannot drop or repeat a cell.
+  ([#54](https://github.com/MohitBansal321/ai-usage-mcp/issues/54))
+
+### Added
+
+- **`daily` shows every bucket, including the empty ones.** It printed only the days that _had_
+  data -- ten rows for a thirty-day window -- with nothing to say the other twenty existed.
+  That made a trend actively misleading rather than merely incomplete: the gaps were
+  invisible, so an ordinary day rendered immediately beside one three weeks earlier and looked
+  like a spike next to it.
+
+  A zero row is not a fabricated number; it says out loud what the absence of a row already
+  meant. Each carries `zeroFilled: true` in JSON and MCP output, so a constructed zero stays
+  distinguishable from an observed one. Filling is bounded at 5,000 buckets and says so when
+  the bound bites, rather than quietly returning a partial series.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`stats --compare previous`**, reporting the equal-length window immediately before and the
+  delta, with the matching `compare` MCP argument. Every report described one window in
+  absolutes, so "am I trending up?" meant re-running with a second hand-computed date pair and
+  diffing mentally.
+
+  Three rules it keeps. The two cost bases are deltaed **separately and never summed**, for the
+  same reason they are reported separately. There is **no percentage change from zero** --
+  `$0 -> $5` is a new thing happening, not a rise of 100%, so the ratio is omitted rather than
+  invented. And the previous window is **aligned to the same local midnights the period uses**,
+  so `--days 7` compares against the seven whole days before rather than "the 156 hours
+  before"; the latter is what subtracting an open window's elapsed length gives, and it moves
+  every time the clock is read. Resolving it in `resolvePeriod` rather than deriving it later
+  is what makes it a pure function of the request -- and is what let the CLI/MCP parity test
+  cover it at all, since the two run in separate processes.
+
+  "All time" has no window before it, so `--compare` is refused there rather than answered.
+  ([#53](https://github.com/MohitBansal321/ai-usage-mcp/issues/53))
+
+- **`daily --grain hour | day | hour-of-day`**, with the matching MCP argument. `hour-of-day`
+  collapses every day in the period onto one 24-slot local clock, which is the grain that
+  answers "when during the day do I burn tokens" -- on the development machine, entirely
+  between 10:00 and 18:00, peaking at noon, with nothing in the evening. Timestamps were
+  already stored to the millisecond and day buckets already computed in local time, so both
+  the data and the timezone handling were in place.
+  ([#58](https://github.com/MohitBansal321/ai-usage-mcp/issues/58))
+
+### Added
+
+- **Rank by cost.** `sessions`, `models`, `projects` and `clients` take `--sort`
+  (`tokens` | `reported-cost` | `estimated-cost` | `records` | `sessions` | `recent`), with the
+  matching MCP argument. The data was always there -- only the ordering was missing, and its
+  absence was worse than neutral: `sessions` was strictly recency-ordered, so the `--limit` a
+  caller would naturally reach for actively _hid_ the answer. On the development machine the
+  costliest session is $373.05 and sits 300-odd rows down a recency-ordered list whose first
+  two entries are $7.62 and $3.44.
+
+  There is deliberately **no plain `--sort cost`**. Reported and estimated cost are separate
+  figures that are never summed, so ordering by one sorts every row priced on the other basis
+  as though it were $0. The flag refuses the ambiguous form and names the two to choose from,
+  and whichever is chosen the output reports how many rows that ordering could not speak for
+  (`rowsWithoutSortValue`).
+  ([#52](https://github.com/MohitBansal321/ai-usage-mcp/issues/52))
+
+- **Multi-valued scope filters.** `--client`, `--model` and `--project` are repeatable and
+  comma-separated, each matching any of the values given; different scopes still combine with
+  AND. `--model a,b` previously parsed as one literal id, matched nothing, and reported an
+  empty period at exit 0 -- a typo rendered as a fact about the data.
+
+  An **empty list now matches nothing rather than nothing-at-all-being-filtered**, which is
+  the same rule `--model ""` already followed.
+
+  A scope value present nowhere in the database is called out explicitly, because a typo and a
+  quiet week were otherwise indistinguishable. The check runs against the whole database, not
+  the period, so a project that merely had no activity this week is not reported as unknown.
+  ([#57](https://github.com/MohitBansal321/ai-usage-mcp/issues/57))
+
+- **Paging, with a completeness signal.** The same four commands take `--offset`, and every
+  list-shaped result now carries `total`, `offset`, `limit`, `hasMore`, `nextOffset` and
+  `sort`. A caller passing `--limit` previously had no way to know what it had not seen, which
+  made "the top 5" indistinguishable from "all 5 there are". Every ordering carries a
+  deterministic tie-break, so paging cannot drop or repeat a row when two rows compare equal.
+  ([#61](https://github.com/MohitBansal321/ai-usage-mcp/issues/61))
+
+### Changed
+
+- **Every pre-0.8.0 MCP argument spelling still works.** The singular `projectPath`, a bare
+  string `client`, and `counterfactual_cost`'s `models` are all still honoured, because
+  dropping them would not have failed loudly: an argument a tool does not declare is stripped
+  before the handler sees it, so a caller still passing `projectPath` would have had its filter
+  silently vanish and received the whole database presented as one project's usage. The
+  shipped `project-cost` prompt was one such caller. `counterfactual_cost` was worse -- `models`
+  meant "price against these" before and "include only these turns" after, so the same call
+  kept succeeding while answering a different question. Both are covered by
+  `tests/mcp/back-compat.test.ts`.
+
+- **`counterfactual`'s target models are named apart from the scope filter.** `--target-models`
+  on the CLI (`--models` still works), `targetModels` in MCP (`models` still works there too,
+  keeping its pre-0.8.0 meaning of "price against these"; model scope-filtering on that one
+  tool is `filterModels`). One says which turns to include
+  and the other which rates to price them at; with `--model` now accepting a list, a single
+  `models` meaning both depending on the tool would have been exactly the ambiguity this
+  release set out to remove. The two are usable together:
+  `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5`.
+
+- `UsageFilter`'s scope fields are now lists: `clients`, `models`, `projectPaths`. The
+  singular `client`/`model`/`projectPath` are gone rather than kept as aliases -- two ways to
+  express one filter, only one of which the query consults, is how a filter silently stops
+  filtering.
+
+### Added
+
+- **Prices for models this package does not ship.** The pricing override
+  (`$AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`) is now **overlaid** onto the
+  built-in table rather than replacing it, keyed by model id. Adding one missing provider
+  used to cost you every Anthropic price you had -- the mechanism that existed for adding a
+  model made the tool report less. `"replace": true` still does the old thing for anyone who
+  wants it, and now requires a complete `cacheMultipliers`, since there is no base left to
+  inherit one from. ([#63](https://github.com/MohitBansal321/ai-usage-mcp/issues/63))
+
+- **Per-model cache multipliers** (`models.<id>.cache`). Not a theoretical knob: OpenAI
+  publishes a single cache-write price with no 1-hour tier, so pricing its writes at
+  Anthropic's 2x would overcharge them by 60%, and DeepSeek's cache-hit rate is 0.02x its
+  input rate rather than 0.1x. Without this a second provider could be added to the table
+  only by being priced wrongly. ([#63](https://github.com/MohitBansal321/ai-usage-mcp/issues/63))
+
+- **An OpenAI pricing table** (`openai-2026-09-16`: gpt-6-astra, gpt-5.6-sol / terra / luna /
+  cyber), so the package ships an estimate path that is not Anthropic-only. Built-in tables
+  are now one file per provider, each keeping its own capture date, composed into the single
+  table the engine consults; two tables pricing the same model id is an error rather than a
+  silent pick. These are the Standard-tier, short-context rates -- OpenAI's long-context,
+  Batch, Flex and Fast-mode rates are not modelled, because nothing in a stored record says
+  which applied, so a long-context turn is understated rather than guessed at. Providers whose
+  published pricing the table cannot express exactly (DeepSeek bills different rates at peak
+  and off-peak hours) are deliberately not shipped.
+  ([#62](https://github.com/MohitBansal321/ai-usage-mcp/issues/62))
+
+- **The pricing override format is documented**, with its units. `input` and `output` are USD
+  per 1,000,000 tokens; the three `cache*` values are multipliers of that model's input rate,
+  not prices. Required versus optional fields, what `fast` is and when it applies, and the
+  wholesale-not-field-by-field merge rule are all written down, and a malformed file now names
+  the offending field: `models["x"].output must be a number >= 0 (USD per 1,000,000 tokens)`.
+  ([#64](https://github.com/MohitBansal321/ai-usage-mcp/issues/64))
+
+### Fixed
+
+- **A reported cost of `$0` no longer looks the same as a price nobody has.** OpenCode reports
+  its own cost, so a model absent from the pricing table filed an ordinary
+  `{reported: 0, reportedRecords: 1936, unavailableRecords: 0}` -- which asserts, in this
+  tool's own vocabulary, that nothing is missing, while the _estimate_ was missing and had
+  never been attempted. A genuinely free model and an unpriced paid one rendered identically.
+
+  Every aggregate now carries `cost.unpricedRecords` and `cost.unpricedModels`, and the
+  reports say so in words, naming the models the way `counterfactual_cost` already did. On the
+  development machine that is 6,813 of 6,841 OpenCode records across 19 models, behind a
+  reported figure of $0.48.
+
+  Both fields are **absent rather than `0`** when a caller supplied no list of priced models:
+  "not asked" is not the same as "none", which is the same rule the rest of this codebase
+  applies to every value a source does not report.
+  ([#66](https://github.com/MohitBansal321/ai-usage-mcp/issues/66))
+
+## [0.8.0] - 2026-09-17
+
+### Fixed
+
+- **Packaging test runs identically on Windows.** `npm pack --json` replaces `tar tzf`, and `shell: true` lets `npm.cmd` resolve correctly on Windows runners. ([#75](https://github.com/MohitBansal321/ai-usage-mcp/pull/75))
+
 ## [0.7.0] - 2026-09-10
 
 The first release that answers a question rather than reporting a total: whether a cheaper model would have cost less for the work you already did. It also carries the schema change that made that answerable -- see 0.6.0 for the `usage.speed` note, which shipped there and is what this builds on.
@@ -450,7 +763,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...v0.5.1

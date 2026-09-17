@@ -10,6 +10,9 @@ import {
   type ToolContext,
 } from './shared.js';
 
+/** Every shared period/scope field except `models`, which this tool redefines. */
+const { models: _scopeModels, ...withoutModels } = periodShape;
+
 export function registerCounterfactualCost(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     'counterfactual_cost',
@@ -21,26 +24,63 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
         'than Opus for this". It re-prices the exact token counts that were recorded, ' +
         'grouped by client, model and speed so the fast-mode premium and the two different ' +
         'reasoning-token conventions are handled correctly. ' +
-        'IMPORTANT: the result is a counterfactual, not a saving — the same task on a ' +
+        'Also reports what the same tokens would have cost with NO prompt caching at all, ' +
+        'per model -- which is the figure that says whether caching is paying for itself. ' +
+        'IMPORTANT: the model scenarios are a counterfactual, not a saving — the same task on a ' +
         'different model generally takes a different number of turns with a different context ' +
         'on each, and nothing on disk can say what that would have been. Report it as such, ' +
         'keep every scenario labelled an estimate, and never subtract a scenario from the ' +
         'reported cost to claim a number.',
       inputSchema: {
-        ...periodShape,
+        // `models` is REDEFINED below, so the scope filter periodShape supplies
+        // under that name must not also be here -- on this one tool `models` has
+        // meant "price against these" since before 0.8.0, and quietly turning it
+        // into a filter would change what an existing caller's number means
+        // without failing. Scope filtering by model lives at `filterModels`.
+        ...withoutModels,
         client: clientEnum,
-        models: z
-          .array(z.string())
+        // Named apart from the `models` SCOPE filter on purpose. One says which
+        // turns to include, the other says which rates to price them at, and a
+        // single `models` meaning both depending on the tool is exactly the
+        // ambiguity this argument set exists to remove. Both are usable together:
+        // `models: ['claude-opus-5'], targetModels: ['claude-sonnet-5']` asks what
+        // the Opus turns would have cost on Sonnet.
+        targetModels: z
+          .array(z.string().min(1))
           .optional()
           .describe(
-            'Models to price against. Omit to compare every model the pricing table knows. ' +
-              'A model with no price is omitted and called out rather than guessed at.',
+            'Models to price the selected tokens AGAINST. Not a filter on which turns are ' +
+              'included -- that is `filterModels`. Omit to compare every model the pricing ' +
+              'table knows. A model with no price is omitted and called out rather than ' +
+              'guessed at.',
+          ),
+        models: z
+          .array(z.string().min(1))
+          .optional()
+          .describe('Deprecated spelling of targetModels. Still honoured.'),
+        filterModels: z
+          .array(z.string().min(1))
+          .optional()
+          .describe(
+            'Restrict which turns are included, by model id -- the same scope filter other ' +
+              'tools spell `models`. Named apart here because `models` already meant "price ' +
+              'against these" on this tool. Use both together to ask what your Opus turns ' +
+              'would have cost on Sonnet.',
           ),
       },
     },
     async (args) => {
       await ctx.ensureFresh();
-      const report = ctx.service.counterfactualCost(toQuery(args), args.models);
+      // `models` keeps the meaning it had before 0.8.0; `targetModels` is the
+      // unambiguous spelling and wins when both are given.
+      const targets = args.targetModels ?? args.models;
+      const report = ctx.service.counterfactualCost(
+        {
+          ...toQuery({ ...args, models: undefined }),
+          ...(args.filterModels ? { models: args.filterModels } : {}),
+        },
+        targets,
+      );
       return textResult(formatCounterfactual(report, ctx.service.costService), {
         period: report.period,
         includeSubagents: report.includeSubagents,
@@ -64,6 +104,17 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
           records: s.records,
           isActual: s.isActual,
           unpricedGroups: s.unpricedGroups,
+        })),
+        // The one scenario in this tool that is allowed to state a saving: the
+        // token counts are invariant, because cache-read tokens ARE the context
+        // that would otherwise have been sent as ordinary input.
+        noCache: report.noCache.map((s) => ({
+          model: s.model,
+          estimatedCostWithCache: s.withCache,
+          estimatedCostWithoutCache: s.withoutCache,
+          estimatedSaving: s.saved,
+          savedFraction: s.savedFraction,
+          records: s.records,
         })),
         caveats: report.caveats,
       });

@@ -1,20 +1,28 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { ArgError, parseArgs, type ParsedArgs } from './args.js';
+import { FieldError, exceedsThreshold, readField, renderField } from './field.js';
 import { HELP_TEXT } from './commands/help.js';
 import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
+import type { PageRequest } from '../db/repositories/usage-repository.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
+  formatBreakdown,
+  formatBudget,
   formatClients,
   formatCounterfactual,
   formatDaily,
+  formatImport,
   formatModels,
   formatProjects,
+  formatPrune,
   formatSessionDetail,
   formatSessions,
   formatStatus,
   formatSummary,
   formatSyncReport,
+  formatVacuum,
   formatVerify,
 } from '../services/formatter.js';
 
@@ -24,15 +32,49 @@ function queryFrom(args: ParsedArgs): UsageQuery {
   if (args.days !== undefined) query.days = args.days;
   if (args.since !== undefined) query.since = args.since;
   if (args.until !== undefined) query.until = args.until;
-  if (args.client !== undefined) query.client = args.client;
-  if (args.model !== undefined) query.model = args.model;
-  if (args.project !== undefined) query.projectPath = args.project;
+  if (args.clients !== undefined) query.clients = args.clients;
+  if (args.models !== undefined) query.models = args.models;
+  if (args.projects !== undefined) query.projectPaths = args.projects;
   return query;
 }
 
-function emit(args: ParsedArgs, text: string, data: unknown): void {
-  process.stdout.write(args.json ? `${JSON.stringify(data, null, 2)}\n` : `${text}\n`);
+/** The limit/offset/sort a list-shaped command was asked for. */
+function pageFrom(args: ParsedArgs): PageRequest {
+  const page: PageRequest = {};
+  if (args.limit !== undefined) page.limit = args.limit;
+  if (args.offset !== undefined) page.offset = args.offset;
+  if (args.sort !== undefined) page.sort = args.sort;
+  return page;
 }
+
+/**
+ * Renders a command's result, and reports whether a threshold was breached.
+ *
+ * `--field` prints ONE value and nothing else, so a shell can consume it without
+ * `jq`. `--fail-over` turns the same value into an exit code, which is the other
+ * half of being usable from a scheduled job: a report nobody reads cannot page
+ * anyone.
+ *
+ * @returns true when `--fail-over` was given and the threshold was exceeded.
+ */
+function emit(args: ParsedArgs, text: string, data: unknown): boolean {
+  if (args.field !== undefined) {
+    const value = readField(data, args.field);
+    process.stdout.write(`${renderField(value, args.field)}\n`);
+    if (args.failOver === undefined) return false;
+    if (!exceedsThreshold(value, args.failOver, args.field)) return false;
+    process.stderr.write(
+      `ai-usage: ${args.field} is ${String(value)}, over the --fail-over threshold ` +
+        `of ${args.failOver}.\n`,
+    );
+    return true;
+  }
+  process.stdout.write(args.json ? `${JSON.stringify(data, null, 2)}\n` : `${text}\n`);
+  return false;
+}
+
+/** Exit 1 on a breached threshold, 0 otherwise -- the value a script branches on. */
+const THRESHOLD_EXIT = 1;
 
 async function run(argv: string[]): Promise<number> {
   let args: ParsedArgs;
@@ -66,12 +108,13 @@ async function run(argv: string[]): Promise<number> {
           service.status(),
           checkForUpdate({ current: VERSION }),
         ]);
-        emit(args, formatStatus(status, update), {
+        return emit(args, formatStatus(status, update), {
           version: VERSION,
           ...status,
           ...(update ? { updateAvailable: update } : {}),
-        });
-        return 0;
+        })
+          ? THRESHOLD_EXIT
+          : 0;
       }
 
       case 'sync': {
@@ -80,7 +123,7 @@ async function run(argv: string[]): Promise<number> {
           ...(args.until ? { until: new Date(args.until) } : {}),
           ...(args.allStores ? { allStores: true } : {}),
           ...(args.full ? { full: true } : {}),
-          ...(args.client ? { clients: [args.client] } : {}),
+          ...(args.clients ? { clients: args.clients } : {}),
         });
         emit(args, formatSyncReport(report), report);
         return report.results.some((r) => !r.available && r.reason?.startsWith('Collection failed'))
@@ -89,33 +132,28 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'stats': {
-        const report = service.summary(queryFrom(args));
-        emit(args, formatSummary(report, service.costService), report);
-        return 0;
+        const report = service.summary(queryFrom(args), { compare: args.compare });
+        return emit(args, formatSummary(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'models': {
-        const report = service.modelUsage(queryFrom(args), args.limit);
-        emit(args, formatModels(report, service.costService), report);
-        return 0;
+        const report = service.modelUsage(queryFrom(args), pageFrom(args));
+        return emit(args, formatModels(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'clients': {
-        const report = service.clientUsage(queryFrom(args));
-        emit(args, formatClients(report, service.costService), report);
-        return 0;
+        const report = service.clientUsage(queryFrom(args), pageFrom(args));
+        return emit(args, formatClients(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'projects': {
-        const report = service.projectUsage(queryFrom(args), args.limit);
-        emit(args, formatProjects(report, service.costService), report);
-        return 0;
+        const report = service.projectUsage(queryFrom(args), pageFrom(args));
+        return emit(args, formatProjects(report, service.costService), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'sessions': {
-        const sessions = service.recentSessions(queryFrom(args), args.limit ?? 20);
-        emit(args, formatSessions(sessions, service.costService), sessions);
-        return 0;
+        const page = service.recentSessions(queryFrom(args), pageFrom(args));
+        return emit(args, formatSessions(page, service.costService), page) ? THRESHOLD_EXIT : 0;
       }
 
       case 'session': {
@@ -137,20 +175,136 @@ async function run(argv: string[]): Promise<number> {
           );
           return 1;
         }
-        emit(args, formatSessionDetail(result, service.costService), result);
+        return emit(args, formatSessionDetail(result, service.costService), result)
+          ? THRESHOLD_EXIT
+          : 0;
+      }
+
+      case 'prune': {
+        if (!args.before) {
+          process.stderr.write(
+            'Usage: ai-usage prune --before <ISO date> [--yes]\n' +
+              'Without --yes this is a dry run: it reports what would be removed and\n' +
+              'deletes nothing. --before is exclusive, so --before 2026-01-01 removes\n' +
+              "2025 and keeps New Year's Day.\n",
+          );
+          return 2;
+        }
+        const result = service.prune(args.before, {
+          apply: args.yes,
+          query: queryFrom(args),
+        });
+        return emit(args, formatPrune(result), result) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'vacuum': {
+        const result = service.vacuum();
+        return emit(args, formatVacuum(result), result) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'import': {
+        const path = args.positionals[0];
+        if (!path) {
+          process.stderr.write(
+            'Usage: ai-usage import <file.jsonl>\n' +
+              'Reads JSON Lines as written by `ai-usage export --format jsonl`, from this\n' +
+              'machine or another one. Merging is idempotent: record ids are derived from\n' +
+              'source identifiers, so the same turn cannot be counted twice.\n',
+          );
+          return 2;
+        }
+        let contents: string;
+        try {
+          contents = readFileSync(path, 'utf8');
+        } catch (err) {
+          process.stderr.write(`Cannot read ${path}: ${(err as Error).message}\n`);
+          return 2;
+        }
+        const result = service.importRecords(contents.split(/\r?\n/));
+        const breached = emit(args, formatImport(result), result);
+        if (breached) return THRESHOLD_EXIT;
+        // A partially rejected import is a failure worth a non-zero exit: a
+        // merge that silently dropped rows would under-count for ever after.
+        return result.rejected.length > 0 ? 1 : 0;
+      }
+
+      case 'budget': {
+        if (args.amount === undefined) {
+          process.stderr.write(
+            'Usage: ai-usage budget --amount <n> --basis reported|estimated [--period month|week]\n',
+          );
+          return 2;
+        }
+        if (args.basis === undefined) {
+          // No default, for the same reason --fail-over has none: reported and
+          // estimated cost are separate figures that are never summed, so a
+          // budget with no stated basis is a budget against nothing in
+          // particular -- and the right answer differs for a subscriber.
+          process.stderr.write(
+            'budget requires --basis reported|estimated.\n' +
+              '  reported  = what a client actually charged. Claude Code reports no cost, so\n' +
+              '              its usage is NOT counted on this basis.\n' +
+              '  estimated = API-equivalent list price. On a Pro/Max subscription your marginal\n' +
+              '              cost per request is $0, so this is a shadow price, not a bill.\n' +
+              'There is no default: the two are never summed, so one must be chosen.\n',
+          );
+          return 2;
+        }
+        const report = service.budget({
+          amount: args.amount,
+          basis: args.basis,
+          period: args.budgetPeriod ?? 'month',
+          query: queryFrom(args),
+        });
+        const breached = emit(args, formatBudget(report), report);
+        // Exit 1 on a fact (spend already over), never on a forecast: a
+        // projection is a claim about the future, and failing a nightly job on
+        // one would page somebody about arithmetic rather than about spend.
+        // `--fail-over` remains available for thresholding a projection on purpose.
+        if (breached) return THRESHOLD_EXIT;
+        return report.overBudget ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'export': {
+        // Streamed, not buffered: a record-level export of a busy database is
+        // hundreds of thousands of rows, and building one string would hold the
+        // whole export in memory only to hand it to a pipe a line at a time.
+        const { filter } = service.exportFilter(queryFrom(args));
+        const result = service.exportRecords(filter, (line) => process.stdout.write(`${line}\n`), {
+          ...(args.format ? { format: args.format } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        });
+        if (result.rows < result.total) {
+          process.stderr.write(
+            `ai-usage: exported ${result.rows} of ${result.total} matching record(s) ` +
+              `(--limit ${args.limit}). Drop --limit to export them all.\n`,
+          );
+        }
         return 0;
+      }
+
+      case 'breakdown': {
+        if (!args.by?.length) {
+          process.stderr.write(
+            'Usage: ai-usage breakdown --by <axis>[,<axis>]\n' +
+              'Example: ai-usage breakdown --by project,day --days 30\n',
+          );
+          return 2;
+        }
+        const report = service.breakdown(args.by, queryFrom(args), pageFrom(args));
+        return emit(args, formatBreakdown(report), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'daily': {
-        const report = service.dailyUsage(queryFrom(args));
-        emit(args, formatDaily(report), report);
-        return 0;
+        const report = service.dailyUsage(queryFrom(args), args.grain);
+        return emit(args, formatDaily(report), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'counterfactual': {
-        const report = service.counterfactualCost(queryFrom(args), args.models);
-        emit(args, formatCounterfactual(report, service.costService), report);
-        return 0;
+        const report = service.counterfactualCost(queryFrom(args), args.counterfactualModels);
+        return emit(args, formatCounterfactual(report, service.costService), report)
+          ? THRESHOLD_EXIT
+          : 0;
       }
 
       case 'verify': {
@@ -172,6 +326,15 @@ async function run(argv: string[]): Promise<number> {
         return 2;
       }
     }
+  } catch (err) {
+    // A bad --field is a usage error, like any other bad flag: one clean line
+    // and exit 2, not a stack trace. Getting this wrong matters more here than
+    // elsewhere, because the caller is a script reading the exit code.
+    if (err instanceof FieldError) {
+      process.stderr.write(`${err.message}\n`);
+      return 2;
+    }
+    throw err;
   } finally {
     service.close();
   }

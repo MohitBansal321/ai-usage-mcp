@@ -126,7 +126,7 @@ describe('CostService', () => {
     writeFileSync(file, JSON.stringify({ version: 'broken' }), 'utf8');
     process.env.AI_USAGE_PRICING_FILE = file;
     try {
-      expect(() => loadPricing()).toThrow(/missing required fields/);
+      expect(() => loadPricing()).toThrow(/models is required/);
     } finally {
       delete process.env.AI_USAGE_PRICING_FILE;
     }
