@@ -125,3 +125,105 @@ describe('threshold exit codes', () => {
     expect(r.stderr).not.toContain('exported 1 of 1');
   });
 });
+
+/**
+ * `budget` exits non-zero on a FACT (spend already over), never on a forecast.
+ * Failing a nightly job on a projection would page somebody about arithmetic
+ * rather than about spend.
+ */
+describe('budget exit codes', () => {
+  let env2: Record<string, string>;
+
+  beforeAll(() => {
+    const dir = tempDir('budget-cli-');
+    const projects = buildClaudeProjects(dir, [
+      {
+        slug: '-work-one',
+        sessions: [
+          {
+            sessionId: 'cc-b',
+            lines: [
+              assistantLine({
+                sessionId: 'cc-b',
+                requestId: 'rb',
+                messageId: 'mb',
+                input: 1_000_000,
+                output: 1_000_000,
+                timestamp: new Date().toISOString(),
+                stopReason: 'end_turn',
+              }),
+            ],
+          },
+        ],
+      },
+    ]);
+    env2 = {
+      ...process.env,
+      AI_USAGE_DB: join(dir, 'usage.db'),
+      AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
+      AI_USAGE_CLAUDE_PROJECTS: projects,
+      AI_USAGE_NO_UPDATE_CHECK: '1',
+    };
+    execFileSync(process.execPath, [CLI, 'sync'], { env: env2, encoding: 'utf8' });
+  });
+
+  const budget = (...args: string[]) =>
+    spawnSync(process.execPath, [CLI, 'budget', ...args], { env: env2, encoding: 'utf8' });
+
+  // The fixture is $30 of estimated cost this month.
+  it('exits 1 when spend already exceeds the target', () => {
+    const r = budget('--amount', '25', '--basis', 'estimated');
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('OVER BY');
+  });
+
+  it('exits 0 when spend is under, even if a projection is over', () => {
+    const r = budget('--amount', '100', '--basis', 'estimated');
+    expect(r.status).toBe(0);
+    // The forecast is still reported -- it just does not fail the command.
+    expect(r.stdout).toContain('Run rate and projection');
+  });
+
+  it('refuses to guess a basis, and explains what each one means', () => {
+    const r = budget('--amount', '100');
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('requires --basis');
+    expect(r.stderr).toContain('There is no default');
+  });
+
+  it('requires an amount', () => {
+    expect(budget('--basis', 'estimated').status).toBe(2);
+    expect(budget('--amount', '0', '--basis', 'estimated').status).toBe(2);
+  });
+
+  it('refuses a rolling window, which has no period end to project towards', () => {
+    expect(budget('--amount', '100', '--basis', 'estimated', '--period', 'days').status).toBe(2);
+  });
+
+  it('shows both denominators, never one blended projection', () => {
+    const r = budget('--amount', '100', '--basis', 'estimated');
+    expect(r.stdout).toContain('Per calendar day');
+    expect(r.stdout).toContain('Per active day');
+  });
+
+  it('composes with --field, so a projection can be thresholded on purpose', () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        CLI,
+        'budget',
+        '--amount',
+        '100',
+        '--basis',
+        'estimated',
+        '--field',
+        'projections.perActiveDay.projected',
+        '--fail-over',
+        '50',
+      ],
+      { env: env2, encoding: 'utf8' },
+    );
+    expect(r.status).toBe(1);
+    expect(Number(r.stdout.trim())).toBeGreaterThan(50);
+  });
+});

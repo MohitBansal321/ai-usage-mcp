@@ -9,6 +9,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ai-usage budget --amount N --basis reported|estimated [--period month|week]`**: spend
+  against a target, with the run rate and where the period lands. Nothing in the tool surface
+  accepted a budget number, so extrapolating month-end spend meant reading the active days out
+  of `daily` and picking a denominator by hand.
+
+  **Two projections, never one.** Calendar-day pace assumes the rest of the period looks like
+  the period so far, weekends included; active-day pace assumes every remaining day is a
+  working one. On the development machine those come to $919.65 and $1,264.65 for the same
+  month. Picking one would be making that modelling choice silently on the user's behalf; the
+  gap between them is the size of the assumption, and it is now the visible thing.
+
+  **`--basis` is required and has no default**, which is the issue's own prior question
+  answered the same way `--fail-over` answers it: the caller names the figure. Reported and
+  estimated cost are never summed, so a budget with no stated basis is a budget against
+  nothing in particular -- and the right answer differs for a subscriber, whose marginal cost
+  per request is $0 and for whom the estimate is a shadow price. The output says so every time,
+  and says the opposite thing for the reported basis, where Claude Code's usage is absent
+  entirely. A `$0` spend caused by nothing being measured on that basis is called out rather
+  than read as comfortably under budget.
+
+  **Exit 1 on a fact, not on a forecast**: the command fails when spend _already_ exceeds the
+  target, never on a projection -- failing a nightly job on a forecast would page somebody
+  about arithmetic rather than about spend. Thresholding a projection stays available on
+  purpose, by composing with `--field`.
+
+  Calendar periods only, because a projection needs a period end to aim at and a rolling
+  window has not got one. Elapsed time counts in partial days: a projection made at noon on the
+  6th that pretends five whole days have passed overstates the rate by a tenth.
+  ([#55](https://github.com/MohitBansal321/ai-usage-mcp/issues/55))
+
+### Added
+
 - **`ai-usage export`**: one row per stored turn, as CSV (default) or JSON Lines, honouring
   every period and scope filter. "Local-first, your data is yours" was the promise, and every
   output was a nested aggregate that no spreadsheet or CSV loader consumes; the only route to

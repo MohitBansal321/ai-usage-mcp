@@ -14,6 +14,7 @@ Commands:
   daily                 Per-day breakdown                      (same as daily_usage)
   breakdown             Two or more dimensions at once         (same as usage_breakdown)
   counterfactual        These tokens on another model          (same as counterfactual_cost)
+  budget                Spend against a target, with run rate and projection
   export                One row per stored turn, as CSV or JSON Lines
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
@@ -59,6 +60,14 @@ Scripting options:
                         and a default would ignore every record priced the other way.
   --format <f>          export only: csv (default) | jsonl. --csv is shorthand for csv.
 
+Budget options (budget command):
+  --amount N            The target, in USD. Required.
+  --basis <b>           reported | estimated. Required -- the two are never summed, so a
+                        budget with no stated basis is a budget against nothing.
+  --period <p>          month (default) | week. Calendar periods only: a projection needs
+                        a period end to aim at, which a rolling window has not got.
+                        \`budget\` exits 1 when spend already exceeds the target.
+
 Examples:
   ai-usage sync
   ai-usage stats --today
@@ -77,6 +86,8 @@ Examples:
   ai-usage models --model claude-opus-5,claude-sonnet-5
   ai-usage counterfactual --today --target-models claude-sonnet-5,claude-haiku-4-5
   ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5
+  ai-usage budget --amount 500 --basis estimated
+  ai-usage budget --amount 20 --basis reported --period week
   ai-usage export --days 30 > usage.csv
   ai-usage stats --today --field overall.cost.estimated
   ai-usage stats --today --field overall.cost.estimated --fail-over 25   # exit 1 if over

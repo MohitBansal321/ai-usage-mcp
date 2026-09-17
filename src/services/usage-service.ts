@@ -25,6 +25,12 @@ import {
 } from './aggregation-service.js';
 import { CostService } from './cost-service.js';
 import { ExportService, type ExportOptions, type ExportResult } from './export-service.js';
+import {
+  BudgetService,
+  type BudgetBasis,
+  type BudgetPeriod,
+  type BudgetReport,
+} from './budget-service.js';
 import { CounterfactualService, type CounterfactualReport } from './counterfactual-service.js';
 import { resolvePeriod, type PeriodInput } from './period.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
@@ -88,6 +94,7 @@ export class UsageService {
   private readonly verifyService: VerifyService;
   private readonly counterfactualService: CounterfactualService;
   private readonly exportService: ExportService;
+  private readonly budgetService: BudgetService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -103,6 +110,7 @@ export class UsageService {
     this.verifyService = new VerifyService(this.usageRepo);
     this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
     this.exportService = new ExportService(this.usageRepo);
+    this.budgetService = new BudgetService(this.usageRepo);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -241,6 +249,32 @@ export class UsageService {
   counterfactualCost(query: UsageQuery = {}, models?: string[]): CounterfactualReport {
     const { filter, label } = this.filterFor(query);
     return this.counterfactualService.counterfactual(filter, label, models);
+  }
+
+  /**
+   * Spend against a target for the current calendar month or week, with the
+   * run rate and where it lands at period end.
+   */
+  budget(options: {
+    amount: number;
+    basis: BudgetBasis;
+    period: BudgetPeriod;
+    query?: UsageQuery;
+    now?: Date;
+  }): BudgetReport {
+    // Scope filters apply; the PERIOD does not -- a budget is measured over its
+    // own calendar window, and letting --days silently narrow it would report a
+    // fraction of the month's spend against the whole month's budget.
+    const { filter } = this.filterFor({ ...options.query, days: undefined, today: false });
+    delete filter.since;
+    delete filter.until;
+    return this.budgetService.budget({
+      amount: options.amount,
+      basis: options.basis,
+      period: options.period,
+      filter,
+      ...(options.now ? { now: options.now } : {}),
+    });
   }
 
   /**

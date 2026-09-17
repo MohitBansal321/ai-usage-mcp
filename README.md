@@ -491,6 +491,55 @@ keeps stdout pipeable.
 usage_records'`, which bypasses the product and depends on a schema the docs explicitly call
 internal and unversioned.)
 
+### Budget, run rate and forecast
+
+```bash
+ai-usage budget --amount 500 --basis estimated            # this calendar month
+ai-usage budget --amount 20  --basis reported --period week
+```
+
+```text
+Budget -- September 2026 (local), estimated cost basis
+
+  Budget:             $500.00
+  Spent so far:       $505.86   101.2% of budget
+  OVER BY:              $5.86
+  Elapsed:       16.5 of 30 days   55.0% of period
+
+Run rate and projection to period end:
+  Per calendar day       $30.65/day  ->      $919.65   OVER by $419.65
+                     (over 16.5 elapsed calendar days)
+  Per active day         $42.15/day  ->     $1264.65   OVER by $764.65
+                     (over 12 day(s) with any recorded activity)
+```
+
+**Two projections, never one.** Extrapolating month-end spend by hand meant picking a
+denominator — calendar days or active days — and on a machine used on weekdays only those
+differ by more than 2×. Showing one would be making that modelling choice silently on your
+behalf; the gap between them _is_ the size of the assumption.
+
+**`--basis` is required, with no default.** Reported and estimated cost are never summed, so a
+budget with no stated basis is a budget against nothing in particular:
+
+- `reported` — what a client actually charged. **Claude Code reports no cost at all**, so its
+  usage is not counted on this basis.
+- `estimated` — API-equivalent list price. On a Claude Pro/Max subscription your marginal cost
+  per request is **$0**, so this is a shadow price for comparing workloads, not a bill. The
+  figure to watch on a subscription is usage against your plan limits, which this tool cannot
+  see. The output says so every time.
+
+**Calendar periods only** (`month`, `week`). A projection needs a period end to aim at, which a
+rolling window has not got.
+
+**Exit 1 on a fact, not on a forecast.** `budget` exits 1 when spend _already_ exceeds the
+target. It does not fail on a projection — that would page somebody about arithmetic rather
+than about spend. To threshold a projection deliberately, compose with `--field`:
+
+```bash
+ai-usage budget --amount 500 --basis estimated \
+  --field projections.perActiveDay.projected --fail-over 500
+```
+
 ### Using it in a script or an alert
 
 ```bash

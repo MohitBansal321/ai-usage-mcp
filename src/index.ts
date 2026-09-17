@@ -8,6 +8,15 @@ export {
 } from './services/counterfactual-service.js';
 export { SyncService, type SyncReport } from './services/sync-service.js';
 export {
+  BudgetService,
+  BUDGET_BASES,
+  BUDGET_PERIODS,
+  budgetWindow,
+  type BudgetBasis,
+  type BudgetPeriod,
+  type BudgetReport,
+} from './services/budget-service.js';
+export {
   ExportService,
   EXPORT_COLUMNS,
   EXPORT_FORMATS,

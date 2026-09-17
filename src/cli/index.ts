@@ -8,6 +8,7 @@ import type { PageRequest } from '../db/repositories/usage-repository.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
   formatBreakdown,
+  formatBudget,
   formatClients,
   formatCounterfactual,
   formatDaily,
@@ -173,6 +174,43 @@ async function run(argv: string[]): Promise<number> {
         return emit(args, formatSessionDetail(result, service.costService), result)
           ? THRESHOLD_EXIT
           : 0;
+      }
+
+      case 'budget': {
+        if (args.amount === undefined) {
+          process.stderr.write(
+            'Usage: ai-usage budget --amount <n> --basis reported|estimated [--period month|week]\n',
+          );
+          return 2;
+        }
+        if (args.basis === undefined) {
+          // No default, for the same reason --fail-over has none: reported and
+          // estimated cost are separate figures that are never summed, so a
+          // budget with no stated basis is a budget against nothing in
+          // particular -- and the right answer differs for a subscriber.
+          process.stderr.write(
+            'budget requires --basis reported|estimated.\n' +
+              '  reported  = what a client actually charged. Claude Code reports no cost, so\n' +
+              '              its usage is NOT counted on this basis.\n' +
+              '  estimated = API-equivalent list price. On a Pro/Max subscription your marginal\n' +
+              '              cost per request is $0, so this is a shadow price, not a bill.\n' +
+              'There is no default: the two are never summed, so one must be chosen.\n',
+          );
+          return 2;
+        }
+        const report = service.budget({
+          amount: args.amount,
+          basis: args.basis,
+          period: args.budgetPeriod ?? 'month',
+          query: queryFrom(args),
+        });
+        const breached = emit(args, formatBudget(report), report);
+        // Exit 1 on a fact (spend already over), never on a forecast: a
+        // projection is a claim about the future, and failing a nightly job on
+        // one would page somebody about arithmetic rather than about spend.
+        // `--fail-over` remains available for thresholding a projection on purpose.
+        if (breached) return THRESHOLD_EXIT;
+        return report.overBudget ? THRESHOLD_EXIT : 0;
       }
 
       case 'export': {
