@@ -9,6 +9,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ai-usage export`**: one row per stored turn, as CSV (default) or JSON Lines, honouring
+  every period and scope filter. "Local-first, your data is yours" was the promise, and every
+  output was a nested aggregate that no spreadsheet or CSV loader consumes; the only route to
+  the underlying rows was `sqlite3 usage.db '.mode csv' 'SELECT * FROM usage_records'`, which
+  bypasses the product entirely and depends on a schema the docs explicitly call internal and
+  unversioned.
+
+  The column set is a stable, documented contract rather than `SELECT *`, so the table can gain
+  a column without breaking every downstream sheet. `cost` and `estimated_cost` are separate
+  columns carrying `cost_basis` alongside -- one `cost` column would force a choice between
+  blending two incomparable figures and dropping one. A value the source did not report is an
+  empty cell, never `0` and never `null`: a figure nobody produced must not arrive in a
+  spreadsheet as a number that gets summed with the real ones. Rows stream to stdout, and a
+  truncated export says so on stderr so stdout stays pipeable.
+  ([#56](https://github.com/MohitBansal321/ai-usage-mcp/issues/56))
+
+- **`--field <path>` and `--fail-over <amount>`**, making the CLI usable from a scheduled job.
+  `--field` prints one value and nothing else, so a shell needs no `jq`; `--fail-over` turns
+  that value into an exit code -- 1 when strictly greater, 0 otherwise, 2 for any usage error.
+  stdout still carries the value, so a script can branch and capture in one run.
+
+  Two deliberate refusals. `--fail-over` **requires** `--field`: there is no default, because
+  reported and estimated cost are separate figures that are never summed, so "fail if cost
+  exceeded $25" has no single answer and a default would silently ignore every record priced
+  the other way. And an unknown field is **exit 2, never exit 0** -- a threshold check against a
+  silently-missing field passes forever, which is the worst failure an alert can have, because
+  it looks like everything is fine. The error names the fields that do exist at that level.
+  ([#60](https://github.com/MohitBansal321/ai-usage-mcp/issues/60))
+
+### Added
+
 - **`ai-usage breakdown --by <axes>` and the `usage_breakdown` MCP tool**: totals cut by two or
   three dimensions at once -- `project x day`, `model x day`, `client x model` -- as one tidy
   row set. Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`,

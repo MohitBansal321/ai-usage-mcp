@@ -14,6 +14,7 @@ Commands:
   daily                 Per-day breakdown                      (same as daily_usage)
   breakdown             Two or more dimensions at once         (same as usage_breakdown)
   counterfactual        These tokens on another model          (same as counterfactual_cost)
+  export                One row per stored turn, as CSV or JSON Lines
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
   help                  Show this text
@@ -50,6 +51,14 @@ List options (sessions, models, projects, clients):
   --full                Ignore saved sync cursors and re-read everything
   --json                Emit JSON instead of text
 
+Scripting options:
+  --field <path>        Print ONE value from the JSON result and nothing else, so a shell
+                        can use it without jq. e.g. --field overall.cost.estimated
+  --fail-over <n>       Exit 1 when --field's value exceeds n. Requires --field: there is
+                        no default, because reported and estimated cost are never summed
+                        and a default would ignore every record priced the other way.
+  --format <f>          export only: csv (default) | jsonl. --csv is shorthand for csv.
+
 Examples:
   ai-usage sync
   ai-usage stats --today
@@ -68,6 +77,9 @@ Examples:
   ai-usage models --model claude-opus-5,claude-sonnet-5
   ai-usage counterfactual --today --target-models claude-sonnet-5,claude-haiku-4-5
   ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5
+  ai-usage export --days 30 > usage.csv
+  ai-usage stats --today --field overall.cost.estimated
+  ai-usage stats --today --field overall.cost.estimated --fail-over 25   # exit 1 if over
   ai-usage verify
 
 Notes:

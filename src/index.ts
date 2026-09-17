@@ -7,6 +7,13 @@ export {
   type CounterfactualScenario,
 } from './services/counterfactual-service.js';
 export { SyncService, type SyncReport } from './services/sync-service.js';
+export {
+  ExportService,
+  EXPORT_COLUMNS,
+  EXPORT_FORMATS,
+  type ExportFormat,
+  type ExportResult,
+} from './services/export-service.js';
 export { VerifyService, type VerifyReport } from './services/verify-service.js';
 export { OpenCodeCollector } from './collectors/opencode/collector.js';
 export { ClaudeCodeCollector } from './collectors/claude-code/collector.js';

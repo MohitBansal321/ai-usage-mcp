@@ -24,6 +24,7 @@ import {
   type SummaryReport,
 } from './aggregation-service.js';
 import { CostService } from './cost-service.js';
+import { ExportService, type ExportOptions, type ExportResult } from './export-service.js';
 import { CounterfactualService, type CounterfactualReport } from './counterfactual-service.js';
 import { resolvePeriod, type PeriodInput } from './period.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
@@ -86,6 +87,7 @@ export class UsageService {
   private readonly syncService: SyncService;
   private readonly verifyService: VerifyService;
   private readonly counterfactualService: CounterfactualService;
+  private readonly exportService: ExportService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -100,6 +102,7 @@ export class UsageService {
     this.syncService = new SyncService(this.usageRepo, this.syncRepo, this.collectors);
     this.verifyService = new VerifyService(this.usageRepo);
     this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
+    this.exportService = new ExportService(this.usageRepo);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -238,6 +241,31 @@ export class UsageService {
   counterfactualCost(query: UsageQuery = {}, models?: string[]): CounterfactualReport {
     const { filter, label } = this.filterFor(query);
     return this.counterfactualService.counterfactual(filter, label, models);
+  }
+
+  /**
+   * The repository filter a query resolves to, for a caller that needs the
+   * filter itself rather than a report -- currently only the record-level export.
+   */
+  exportFilter(query: UsageQuery = {}): { filter: UsageFilter; label: string } {
+    const { filter, label } = this.filterFor(query);
+    return { filter, label };
+  }
+
+  /**
+   * One row per stored turn, streamed to `write`.
+   *
+   * The supported route to the underlying records. Previously the only way to
+   * reach them was `sqlite3 usage.db '.mode csv' 'SELECT * FROM usage_records'`,
+   * which bypasses the product entirely and depends on a schema the docs call
+   * internal and unversioned.
+   */
+  exportRecords(
+    filter: UsageFilter,
+    write: (line: string) => void,
+    options: ExportOptions = {},
+  ): ExportResult {
+    return this.exportService.export(filter, write, options);
   }
 
   /** True when there is no data at all, so frontends can say so instead of printing zeros. */

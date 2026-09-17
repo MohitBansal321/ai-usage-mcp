@@ -460,6 +460,66 @@ at, on `counterfactual` only) are different things, and usable together:
 `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
 Opus turns would have cost on Sonnet.
 
+### Getting the data out
+
+```bash
+ai-usage export --days 30 > usage.csv        # one row per stored turn
+ai-usage export --format jsonl               # JSON Lines
+ai-usage export --project /work/api --model claude-opus-5
+```
+
+Every scope and period filter applies. The column set is a **stable, documented contract** —
+deliberately not `SELECT *`, so the table can grow a column without breaking every downstream
+spreadsheet, and no column can silently change meaning:
+
+```text
+id, timestamp, client, provider, model, session_id, project_path, turn_kind, speed,
+input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
+cache_write_1h_tokens, reasoning_tokens, total_tokens, cost_basis, cost, estimated_cost, currency
+```
+
+`cost` and `estimated_cost` are **separate columns** carrying `cost_basis` alongside, for the
+same reason every report keeps them apart. A value the source did not report is an **empty
+cell**, never `0` and never `null` — a figure nobody produced must not arrive in a spreadsheet
+as a number that gets summed with the real ones.
+
+Rows stream to stdout rather than being built in memory, so exporting a large database costs
+one row at a time. A `--limit`ed export says on **stderr** how many rows it left behind, which
+keeps stdout pipeable.
+
+(Previously the only route to the records was `sqlite3 usage.db '.mode csv' 'SELECT * FROM
+usage_records'`, which bypasses the product and depends on a schema the docs explicitly call
+internal and unversioned.)
+
+### Using it in a script or an alert
+
+```bash
+ai-usage stats --today --field overall.cost.estimated
+# 18.067632500000002
+
+ai-usage stats --today --field overall.cost.estimated --fail-over 25 || notify "over budget"
+```
+
+`--field` prints **one value and nothing else** — no header, no label, no JSON — so a shell can
+read it without `jq`. `--fail-over` turns that same value into an **exit code**: `1` when it is
+strictly greater than the threshold, `0` otherwise. stdout still carries the value, so a script
+can branch _and_ capture it in one run.
+
+| Exit | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| `0`  | Fine — including a value exactly at the threshold                               |
+| `1`  | Threshold exceeded                                                              |
+| `2`  | Bad usage: unknown field, `--fail-over` with no `--field`, any other flag error |
+
+Two deliberate refusals:
+
+- **`--fail-over` requires `--field`.** There is no default, because reported and estimated
+  cost are separate figures that are never summed — "fail if cost exceeds $25" has no single
+  answer, and a default would silently ignore every record priced the other way.
+- **An unknown field is exit 2, never exit 0.** A threshold check against a silently-missing
+  field would pass forever, which is the worst failure an alert can have: it looks like
+  everything is fine. The error names the fields that _do_ exist at that level.
+
 ### Crossing two dimensions
 
 `projects` gives a total with no trend; `daily --project X` gives one series. Answering

@@ -1,3 +1,4 @@
+import { EXPORT_FORMATS, type ExportFormat } from '../services/export-service.js';
 import {
   GROUP_AXES,
   MAX_GROUP_AXES,
@@ -24,6 +25,9 @@ export interface ParsedArgs {
   sort?: SortKey;
   grain?: TimeGrain;
   by?: GroupAxis[];
+  field?: string;
+  failOver?: number;
+  format?: ExportFormat;
   compare: boolean;
   /** Target models for `counterfactual`. Repeatable, or comma-separated. */
   counterfactualModels?: string[];
@@ -93,6 +97,12 @@ function toSortKey(raw: string): SortKey {
     );
   }
   throw new ArgError(`--sort expects one of ${SORT_KEYS.join(', ')}, got "${raw}".`);
+}
+
+function toNumber(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) throw new ArgError(`${flag} expects a number, got "${raw}".`);
+  return n;
 }
 
 function toNonNegativeInt(flag: string, raw: string): number {
@@ -220,6 +230,24 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.by = [...(args.by ?? []), ...(axes as GroupAxis[])];
         break;
       }
+      case '--field':
+        args.field = requireNonEmpty('--field', rest.shift());
+        break;
+      case '--fail-over':
+        args.failOver = toNumber('--fail-over', requireValue('--fail-over', rest.shift()));
+        break;
+      case '--format': {
+        const value = requireValue('--format', rest.shift());
+        if (!EXPORT_FORMATS.includes(value as ExportFormat))
+          throw new ArgError(
+            `--format expects one of ${EXPORT_FORMATS.join(', ')}, got "${value}".`,
+          );
+        args.format = value as ExportFormat;
+        break;
+      }
+      case '--csv':
+        args.format = 'csv';
+        break;
       case '--grain': {
         const value = requireValue('--grain', rest.shift());
         if (!TIME_GRAINS.includes(value as TimeGrain))
@@ -262,6 +290,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
         args.positionals.push(token);
     }
   }
+
+  // A threshold with nothing to threshold cannot be checked, and silently not
+  // checking is the worst failure an alert can have: it looks like everything is
+  // fine forever. There is deliberately no default field -- reported and
+  // estimated cost are never summed, so "fail if cost exceeds $25" has no single
+  // answer and guessing one would ignore every record priced the other way.
+  if (args.failOver !== undefined && args.field === undefined)
+    throw new ArgError(
+      '--fail-over requires --field, naming the value to threshold. ' +
+        'There is no default: reported and estimated cost are separate figures that are never ' +
+        'summed, so a default would silently ignore every record priced the other way. ' +
+        'Example: ai-usage stats --today --field overall.cost.estimated --fail-over 25',
+    );
 
   // Checked here rather than per-flag, because the ordering is only knowable
   // once both bounds have been seen, whichever order they were typed in.
