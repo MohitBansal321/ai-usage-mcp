@@ -25,6 +25,7 @@ import {
 } from './aggregation-service.js';
 import { CostService } from './cost-service.js';
 import { ExportService, type ExportOptions, type ExportResult } from './export-service.js';
+import { LifecycleService } from './lifecycle-service.js';
 import {
   BudgetService,
   type BudgetBasis,
@@ -95,6 +96,7 @@ export class UsageService {
   private readonly counterfactualService: CounterfactualService;
   private readonly exportService: ExportService;
   private readonly budgetService: BudgetService;
+  private readonly lifecycleService: LifecycleService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -111,6 +113,7 @@ export class UsageService {
     this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
     this.exportService = new ExportService(this.usageRepo);
     this.budgetService = new BudgetService(this.usageRepo);
+    this.lifecycleService = new LifecycleService(this.usageRepo, db, dbPath);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -300,6 +303,34 @@ export class UsageService {
     options: ExportOptions = {},
   ): ExportResult {
     return this.exportService.export(filter, write, options);
+  }
+
+  /**
+   * Removes records older than a cutoff. Dry run unless `apply` is true: the
+   * only irreversible operation in this package reports what it would remove and
+   * changes nothing until told twice.
+   */
+  prune(
+    cutoff: string,
+    options: { apply?: boolean; query?: UsageQuery } = {},
+  ): ReturnType<LifecycleService['prune']> {
+    const { filter } = this.filterFor(options.query ?? {});
+    // The period from the query is irrelevant to a prune, which has its own
+    // cutoff; leaving `since`/`until` in place would silently narrow what a
+    // caller believed they were deleting.
+    delete filter.since;
+    delete filter.until;
+    return this.lifecycleService.prune(cutoff, { ...options, filter });
+  }
+
+  /** Compacts the database file after a prune. */
+  vacuum(): ReturnType<LifecycleService['vacuum']> {
+    return this.lifecycleService.vacuum();
+  }
+
+  /** Merges JSON Lines from `ai-usage export --format jsonl`, idempotently. */
+  importRecords(lines: Iterable<string>): ReturnType<LifecycleService['import']> {
+    return this.lifecycleService.import(lines);
   }
 
   /** True when there is no data at all, so frontends can say so instead of printing zeros. */

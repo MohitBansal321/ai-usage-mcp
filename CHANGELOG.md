@@ -9,6 +9,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ai-usage prune --before <date>` and `ai-usage vacuum`**, so the database does not grow
+  forever. Pruning is a command rather than a policy on purpose: a retention setting that
+  silently deleted last quarter on some future run is a worse tool than one that never
+  deletes, because the data is gone and nothing asked. Anyone who wants a policy can put this
+  in a cron.
+
+  **Dry run by default.** The only irreversible operation in this package reports what it
+  would remove and changes nothing until told twice with `--yes`. `--before` is exclusive like
+  every other bound here, so `--before 2026-01-01` removes 2025 and keeps New Year's Day -- an
+  off-by-one in the one irreversible command is not worth a tidier boundary. Scope filters
+  apply, so a prune cannot be broader than the report that justified it.
+
+  `vacuum` measures the database's whole footprint -- the file plus its `-wal` and `-shm`
+  companions. This package always opens in WAL mode, where freshly written data lives in the
+  `-wal` until a checkpoint folds it back: a 1.8MB database shows a 4KB `.db`, so measuring
+  only that reported reclaiming nothing while most of the bytes sat next door. It now
+  checkpoints and truncates the WAL, and the figure matches what `du` says.
+  ([#59](https://github.com/MohitBansal321/ai-usage-mcp/issues/59))
+
+- **`ai-usage import <file.jsonl>`**, merging an export from another machine, so "I work on a
+  laptop and a desktop -- what is my total spend?" is answerable. As the issue anticipated,
+  this fell out of the existing design: record ids are derived deterministically from source
+  identifiers, so the same turn imported twice, or collected on both machines, upserts to one
+  row rather than double counting. The output says how many rows were updated in place rather
+  than added, so that is visible rather than assumed.
+
+  A row that does not fully parse is rejected with its line number, and the command exits
+  non-zero. Importing a half-valid row would write a turn with invented zeroes, and a merged
+  database that quietly under-counts is worse than a failed import.
+  ([#59](https://github.com/MohitBansal321/ai-usage-mcp/issues/59))
+
+### Added
+
 - **Cache hit rate and reads-per-write on `stats` and `clients`**, plus a break-even derived
   from the pricing table's own multipliers. Cache tokens are where the money is -- cache-read
   is 94.7% of all tokens on the development machine, and for Claude Code it outweighs plain

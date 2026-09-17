@@ -14,6 +14,7 @@ import type {
 import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
 import type { BudgetReport, Projection } from './budget-service.js';
+import type { ImportResult, PruneResult, VacuumResult } from './lifecycle-service.js';
 import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
 import type { TokenTotals } from '../models/usage-record.js';
 import type { TimeGrain } from '../db/repositories/usage-repository.js';
@@ -627,6 +628,77 @@ export function formatBudget(report: BudgetReport): string {
 
   out.push('');
   for (const caveat of report.caveats) out.push(`Note: ${caveat}`);
+  return out.join('\n');
+}
+
+export function formatPrune(result: PruneResult): string {
+  const out: string[] = [];
+  if (!result.applied) {
+    out.push(`DRY RUN -- nothing has been deleted.`);
+    out.push('');
+    out.push(
+      `${int(result.matched)} record(s) are older than ${result.cutoff} and WOULD be removed.`,
+    );
+    out.push(`${int(result.remaining)} record(s) are in the database now.`);
+    out.push('');
+    out.push('Re-run with --yes to actually delete them. This cannot be undone: the records');
+    out.push("come from your coding agents' own files, and `ai-usage sync --full` restores only");
+    out.push('what those files still contain -- a client that has rotated its own logs has not');
+    out.push('kept them either.');
+    return out.join('\n');
+  }
+  out.push(`Removed ${int(result.removed)} record(s) older than ${result.cutoff}.`);
+  out.push(`${int(result.remaining)} record(s) remain.`);
+  out.push('');
+  out.push(
+    'Deleting rows frees pages inside the database but does not shrink the file. Run ' +
+      '`ai-usage vacuum` to reclaim the disk.',
+  );
+  return out.join('\n');
+}
+
+export function formatVacuum(result: VacuumResult): string {
+  if (result.bytesBefore === undefined || result.bytesAfter === undefined) {
+    return 'Database compacted. (No file to measure -- this database is in memory.)';
+  }
+  const mb = (bytes: number) => `${(bytes / 1_048_576).toFixed(2)} MB`;
+  const reclaimed = result.reclaimedBytes ?? 0;
+  return [
+    `Database compacted.`,
+    `  Before:    ${mb(result.bytesBefore)}`,
+    `  After:     ${mb(result.bytesAfter)}`,
+    reclaimed > 0
+      ? `  Reclaimed: ${mb(reclaimed)}`
+      : `  Reclaimed: nothing -- there was no free space to give back.`,
+  ].join('\n');
+}
+
+export function formatImport(result: ImportResult): string {
+  const out: string[] = [
+    `Read ${int(result.read)} row(s); ${int(result.accepted)} accepted, ` +
+      `${int(result.rejected.length)} rejected.`,
+    `Records: ${int(result.recordsBefore)} -> ${int(result.recordsAfter)} ` +
+      `(+${int(result.recordsAfter - result.recordsBefore)} new).`,
+  ];
+  if (result.accepted > result.recordsAfter - result.recordsBefore) {
+    out.push('');
+    out.push(
+      `${int(result.accepted - (result.recordsAfter - result.recordsBefore))} imported row(s) ` +
+        `were already present and updated in place rather than added. Record ids are derived ` +
+        `deterministically from source identifiers, so importing the same data twice -- or ` +
+        `merging two machines that both saw a turn -- cannot double count it.`,
+    );
+  }
+  if (result.rejected.length > 0) {
+    out.push('');
+    out.push('Rejected rows (nothing from these was imported):');
+    for (const rejection of result.rejected.slice(0, 20)) {
+      out.push(`  line ${int(rejection.line)}: ${rejection.reason}`);
+    }
+    if (result.rejected.length > 20) {
+      out.push(`  ... and ${int(result.rejected.length - 20)} more.`);
+    }
+  }
   return out.join('\n');
 }
 
