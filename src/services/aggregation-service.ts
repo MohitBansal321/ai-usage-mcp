@@ -8,6 +8,9 @@ import type {
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
 import type { ClientId } from '../models/usage-record.js';
+import type { TimeGrain } from '../db/repositories/usage-repository.js';
+import { zeroFill, type TimeBucket } from './time-buckets.js';
+import { compareTotals, comparisonCaveats, type Comparison } from './comparison.js';
 
 /**
  * What a list-shaped report says about the rows it did NOT return.
@@ -47,6 +50,8 @@ export interface SummaryReport {
   turnKinds: { main: number; subagent: number };
   /** Scope values the caller asked for that match no record at all. */
   unmatchedScope?: UnmatchedScope;
+  /** Present when the caller asked to compare against another window. */
+  comparison?: Comparison;
 }
 
 /**
@@ -93,8 +98,18 @@ export interface ProjectReport {
 export interface DailyReport {
   period: { since?: string; until?: string; label: string };
   includeSubagents: boolean;
-  /** Newest day first. Keyed by local calendar date, `YYYY-MM-DD`. */
-  days: GroupedRow[];
+  /**
+   * Newest bucket first. Key shape depends on `grain`: `YYYY-MM-DD` for a day,
+   * `YYYY-MM-DDTHH:00` for an hour, `HH` for hour-of-day.
+   *
+   * Buckets with no activity are INCLUDED, carrying `zeroFilled: true`. Omitting
+   * them made a trend unreadable: the gaps were invisible, so an ordinary day
+   * rendered beside one three weeks earlier and looked like a spike next to it.
+   */
+  days: TimeBucket[];
+  grain: TimeGrain;
+  /** Set when the range was too large to zero-fill, saying so rather than hiding it. */
+  zeroFillNote?: string;
   overall: AggregateRow;
   unmatchedScope?: UnmatchedScope;
 }
@@ -154,7 +169,12 @@ export class AggregationService {
     return unmatchedScope ? { ...report, unmatchedScope } : report;
   }
 
-  summary(filter: UsageFilter, label: string): SummaryReport {
+  summary(
+    filter: UsageFilter,
+    label: string,
+    previous?: { since: string; until: string; label: string },
+  ): SummaryReport {
+    const comparison = previous ? this.comparison(filter, previous) : undefined;
     return this.withScope(
       {
         period: this.periodOf(filter, label),
@@ -162,6 +182,7 @@ export class AggregationService {
         overall: this.repo.totals(filter),
         byClient: this.repo.byClient(filter).rows,
         turnKinds: this.repo.turnKindCounts(filter),
+        ...(comparison ? { comparison } : {}),
       },
       filter,
     );
@@ -217,16 +238,58 @@ export class AggregationService {
     return this.repo.byDay(filter);
   }
 
-  daily(filter: UsageFilter, label: string): DailyReport {
+  daily(filter: UsageFilter, label: string, grain: TimeGrain = 'day'): DailyReport {
+    const observed = this.repo.byTime(filter, grain);
+    // With no explicit period, fill only across the span that actually has data:
+    // filling from the epoch would invent thousands of rows describing time
+    // before any of it existed.
+    const bounds =
+      filter.since || filter.until
+        ? {
+            ...(filter.since ? { since: filter.since } : {}),
+            ...(filter.until ? { until: filter.until } : {}),
+          }
+        : {};
+    const filled = zeroFill(observed, grain, bounds);
+
     return this.withScope(
       {
         period: this.periodOf(filter, label),
         includeSubagents: filter.includeSubagents !== false,
-        days: this.repo.byDay(filter),
+        days: filled.rows,
+        grain,
+        ...(filled.note ? { zeroFillNote: filled.note } : {}),
         overall: this.repo.totals(filter),
       },
       filter,
     );
+  }
+
+  /**
+   * Totals for the window of equal length immediately before this one.
+   *
+   * Requires a bounded current window. "All time" has no previous window, and
+   * inventing one would be answering a question nobody asked.
+   */
+  comparison(
+    filter: UsageFilter,
+    previous?: { since: string; until: string; label: string },
+  ): Comparison | undefined {
+    const since = filter.since;
+    if (!since || !previous) return undefined;
+
+    const previousFilter: UsageFilter = { ...filter, since: previous.since, until: previous.until };
+    const previousTotals = this.repo.totals(previousFilter);
+
+    return {
+      previous,
+      previousTotals,
+      delta: compareTotals(this.repo.totals(filter), previousTotals),
+      caveats: comparisonCaveats(
+        { since, ...(filter.until ? { until: filter.until } : {}) },
+        previousTotals,
+      ),
+    };
   }
 
   /** Resolves an exact or partial session id, then assembles its detail view. */

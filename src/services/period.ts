@@ -13,6 +13,20 @@ export interface Period {
   until?: string;
   /** Human-readable description, e.g. "last 7 days (local time)". */
   label: string;
+  /**
+   * The comparable window immediately before this one, when one exists.
+   *
+   * Resolved HERE rather than derived later from `since`/`until`, for two
+   * reasons. It is aligned to the same local midnights the period itself uses,
+   * so `--days 7` compares against the seven whole days before -- not against
+   * "the 156 hours before", which is what subtracting an open window's elapsed
+   * length gives. And it is a pure function of the request, so two processes
+   * answering the same question describe the same window rather than differing
+   * by however many milliseconds apart they read the clock.
+   *
+   * Absent for "all time", which has no window before it.
+   */
+  previous?: { since: string; until: string; label: string };
 }
 
 /**
@@ -56,6 +70,18 @@ export function resolvePeriod(input: PeriodInput = {}): Period {
       throw new RangeError(
         `since (${period.since}) is not before until (${period.until}): the range is empty.`,
       );
+    // An explicit range has an exact length, so the window before it is exact
+    // too. An open-ended one does not: its length depends on when the clock is
+    // read, so there is no stable window to compare against and none is offered.
+    if (period.since && period.until) {
+      const start = Date.parse(period.since);
+      const length = Date.parse(period.until) - start;
+      period.previous = {
+        since: new Date(start - length).toISOString(),
+        until: period.since,
+        label: 'the equally long window before that',
+      };
+    }
     return period;
   }
 
@@ -63,13 +89,25 @@ export function resolvePeriod(input: PeriodInput = {}): Period {
     return {
       since: localMidnight(0).toISOString(),
       label: 'today (local time)',
+      previous: {
+        since: localMidnight(1).toISOString(),
+        until: localMidnight(0).toISOString(),
+        label: 'yesterday (local time)',
+      },
     };
   }
 
   if (typeof input.days === 'number' && input.days > 0) {
+    const days = input.days;
     return {
-      since: localMidnight(input.days - 1).toISOString(),
-      label: input.days === 1 ? 'today (local time)' : `last ${input.days} days (local time)`,
+      since: localMidnight(days - 1).toISOString(),
+      label: days === 1 ? 'today (local time)' : `last ${days} days (local time)`,
+      previous: {
+        // The N whole days before this window, on the same local midnights.
+        since: localMidnight(2 * days - 1).toISOString(),
+        until: localMidnight(days - 1).toISOString(),
+        label: days === 1 ? 'yesterday (local time)' : `the ${days} days before that`,
+      },
     };
   }
 

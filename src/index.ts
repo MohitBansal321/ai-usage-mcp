@@ -19,9 +19,18 @@ export {
   type Page,
   type PageRequest,
   type SortKey,
+  type TimeGrain,
+  TIME_GRAINS,
   type UsageFilter,
 } from './db/repositories/usage-repository.js';
 export type { PageInfo, UnmatchedScope } from './services/aggregation-service.js';
+export { zeroFill, type TimeBucket } from './services/time-buckets.js';
+export {
+  compareTotals,
+  previousWindow,
+  type Comparison,
+  type Delta,
+} from './services/comparison.js';
 export { SyncRepository } from './db/repositories/sync-repository.js';
 export { loadPricing, anthropicPricing } from './pricing/index.js';
 export { resolvePeriod, type PeriodInput } from './services/period.js';

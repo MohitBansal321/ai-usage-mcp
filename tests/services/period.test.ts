@@ -56,3 +56,50 @@ describe('invalid explicit bounds', () => {
     expect(resolvePeriod({ since: '2026-09-01T12:30:00Z' }).since).toBe('2026-09-01T12:30:00.000Z');
   });
 });
+
+/**
+ * The previous window is resolved HERE rather than derived later from
+ * since/until, so it aligns to the same local midnights the period uses and is
+ * a pure function of the request. Deriving it from an open window's elapsed
+ * length gives "the 156 hours before" for `--days 7`, and a different answer
+ * every time the clock is read.
+ */
+describe('resolvePeriod: the comparable previous window', () => {
+  it('compares today against yesterday, on local midnights', () => {
+    const period = resolvePeriod({ today: true });
+    expect(period.previous?.until).toBe(period.since);
+    expect(period.previous?.label).toContain('yesterday');
+    expect(Date.parse(period.since!) - Date.parse(period.previous!.since)).toBe(86_400_000);
+  });
+
+  it('compares N days against the N whole days before', () => {
+    const period = resolvePeriod({ days: 7 });
+    expect(period.previous?.until).toBe(period.since);
+    expect(period.previous?.label).toContain('7 days');
+    // Seven local days, abutting exactly: no gap, no overlap.
+    expect(Date.parse(period.since!) - Date.parse(period.previous!.since)).toBe(7 * 86_400_000);
+  });
+
+  it('is stable across calls, so two processes describe the same window', () => {
+    expect(resolvePeriod({ days: 7 }).previous).toEqual(resolvePeriod({ days: 7 }).previous);
+  });
+
+  it('uses the exact length of an explicit range', () => {
+    const period = resolvePeriod({
+      since: '2026-09-08T00:00:00.000Z',
+      until: '2026-09-15T00:00:00.000Z',
+    });
+    expect(period.previous).toEqual({
+      since: '2026-09-01T00:00:00.000Z',
+      until: '2026-09-08T00:00:00.000Z',
+      label: 'the equally long window before that',
+    });
+  });
+
+  it('offers no previous window for all time, and none for an open-ended range', () => {
+    // All time has nothing before it; an open range has no stable length, so
+    // any window offered would move between two runs of the same command.
+    expect(resolvePeriod({}).previous).toBeUndefined();
+    expect(resolvePeriod({ since: '2026-09-08T00:00:00.000Z' }).previous).toBeUndefined();
+  });
+});

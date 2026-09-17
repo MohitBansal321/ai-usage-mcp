@@ -11,6 +11,8 @@ import type {
   UnmatchedScope,
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
+import type { Comparison, Delta } from './comparison.js';
+import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
 import type { StatusReport } from './usage-service.js';
 import { updateCommand, type UpdateInfo } from './update-check.js';
@@ -224,6 +226,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   out.push(...tokenLines(report.overall));
   out.push('');
   out.push(...costLines(report.overall.cost, costService));
+  if (report.comparison) out.push(...comparisonLines(report.comparison));
 
   out.push('');
   out.push('By client:');
@@ -261,31 +264,106 @@ export function formatModels(report: ModelReport, costService: CostService): str
   return out.join('\n');
 }
 
-/** Compact one line per day. Reported and estimated costs stay separate, as everywhere else. */
+/**
+ * A signed figure, so a delta reads as a direction rather than a quantity.
+ * `+0` and `-0` both render as `0`: nothing changed is not a direction.
+ */
+export function signed(n: number, render: (v: number) => string = int): string {
+  if (n === 0) return render(0);
+  return n > 0 ? `+${render(n)}` : `-${render(Math.abs(n))}`;
+}
+
+/**
+ * `undefined` renders as "n/a", never as 100% or Infinity: there is no
+ * percentage change from zero. Going from $0 to $5 is a new thing happening,
+ * not a rise of any particular size.
+ */
+export function percent(ratio: number | undefined): string {
+  if (ratio === undefined) return 'n/a, previous was zero';
+  return `${signed(ratio * 100, (v) => v.toFixed(1))}%`;
+}
+
+function comparisonLines(comparison: Comparison): string[] {
+  const d = comparison.delta;
+  const row = (label: string, change: Delta, render: (v: number) => string = int): string =>
+    `  ${`${label}:`.padEnd(18)}${signed(change.absolute, render).padStart(16)}   ${percent(change.ratio)}`;
+
+  const out: string[] = [
+    '',
+    `Compared with ${comparison.previous.label}`,
+    `  (${comparison.previous.since} -> ${comparison.previous.until})`,
+    '',
+    row('Records', d.records),
+    row('Sessions', d.sessions),
+    row('Total tokens', d.totalTokens),
+    row('Cache read', d.cacheReadTokens),
+  ];
+  // The two cost bases are deltaed separately and never summed, exactly as they
+  // are reported. A single "spend is up $40" across both would be the same lie
+  // in motion.
+  if (comparison.previousTotals.cost.reportedRecords > 0 || d.reportedCost.absolute !== 0) {
+    out.push(row('Cost (reported)', d.reportedCost, usd));
+  }
+  if (comparison.previousTotals.cost.estimatedRecords > 0 || d.estimatedCost.absolute !== 0) {
+    out.push(row('Cost (estimated)', d.estimatedCost, usd));
+  }
+  for (const caveat of comparison.caveats) out.push(`  Note: ${caveat}`);
+  return out;
+}
+
+const GRAIN_NOUN: Record<TimeGrain, { one: string; many: string; title: string }> = {
+  hour: { one: 'hour', many: 'hours', title: 'Usage by hour' },
+  day: { one: 'day', many: 'days', title: 'Usage by day' },
+  'hour-of-day': { one: 'hour', many: 'hours of the day', title: 'Usage by hour of day' },
+};
+
+/** Compact one line per bucket. Reported and estimated costs stay separate, as everywhere else. */
 export function formatDaily(report: DailyReport): string {
+  const noun = GRAIN_NOUN[report.grain];
   const out: string[] = [];
-  out.push(`Daily usage -- ${report.period.label}`);
+  out.push(`${noun.title} -- ${report.period.label}`);
   out.push(subagentNote(report));
   out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
-  if (report.days.length === 0) {
+  if (report.overall.records === 0) {
     out.push('No usage records for this period.');
     return out.join('\n');
   }
-  for (const day of report.days) {
+
+  const active = report.days.filter((d) => d.records > 0);
+  for (const bucket of report.days) {
     const cost: string[] = [];
-    if (day.cost.reportedRecords > 0) cost.push(`reported ${usd(day.cost.reported)}`);
-    if (day.cost.estimatedRecords > 0) cost.push(`estimated ${usd(day.cost.estimated)}`);
+    if (bucket.cost.reportedRecords > 0) cost.push(`reported ${usd(bucket.cost.reported)}`);
+    if (bucket.cost.estimatedRecords > 0) cost.push(`estimated ${usd(bucket.cost.estimated)}`);
+    const label = report.grain === 'hour-of-day' ? `${bucket.key}:00` : bucket.key;
     out.push(
-      `${day.key}  ${int(day.records).padStart(6)} turns  total ${tokens(day.totalTokens)}` +
-        (cost.length ? `  (${cost.join(', ')})` : ''),
+      `${label}  ${int(bucket.records).padStart(6)} turns  total ${tokens(bucket.totalTokens)}` +
+        (cost.length ? `  (${cost.join(', ')})` : '') +
+        // A constructed zero is marked, so a reader can tell "nothing happened"
+        // from "nothing was recorded" without going to the JSON.
+        (bucket.zeroFilled ? '   --' : ''),
     );
   }
   out.push('');
   out.push(
-    `Total across ${int(report.days.length)} day(s): ${tokens(report.overall.totalTokens)} tokens`,
+    `Total across ${int(active.length)} active of ${int(report.days.length)} ${noun.many} shown: ` +
+      `${tokens(report.overall.totalTokens)} tokens`,
   );
-  out.push('Days are local calendar days, matching the period filter.');
+  if (report.days.length > active.length) {
+    out.push(
+      report.grain === 'hour-of-day'
+        ? `Rows marked -- had no recorded activity on any day in this period.`
+        : `Rows marked -- had no recorded activity. They are shown so the gaps in the series ` +
+            `are visible; a trend read from active ${noun.many} alone puts them side by side and ` +
+            `turns an ordinary one into an apparent spike.`,
+    );
+  }
+  if (report.zeroFillNote) out.push(report.zeroFillNote);
+  out.push(
+    report.grain === 'hour-of-day'
+      ? 'Hours are local, aggregated across every day in the period.'
+      : `Buckets are local ${noun.many}, matching the period filter.`,
+  );
   return out.join('\n');
 }
 

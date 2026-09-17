@@ -1,4 +1,9 @@
-import { SORT_KEYS, type SortKey } from '../db/repositories/usage-repository.js';
+import {
+  SORT_KEYS,
+  TIME_GRAINS,
+  type SortKey,
+  type TimeGrain,
+} from '../db/repositories/usage-repository.js';
 
 export interface ParsedArgs {
   command: string;
@@ -14,6 +19,8 @@ export interface ParsedArgs {
   limit?: number;
   offset?: number;
   sort?: SortKey;
+  grain?: TimeGrain;
+  compare: boolean;
   /** Target models for `counterfactual`. Repeatable, or comma-separated. */
   counterfactualModels?: string[];
   includeSubagents: boolean;
@@ -125,6 +132,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     full: false,
     json: false,
     help: false,
+    compare: false,
   };
 
   const rest = [...argv];
@@ -192,6 +200,23 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--sort':
         args.sort = toSortKey(requireValue('--sort', rest.shift()));
         break;
+      case '--grain': {
+        const value = requireValue('--grain', rest.shift());
+        if (!TIME_GRAINS.includes(value as TimeGrain))
+          throw new ArgError(`--grain expects one of ${TIME_GRAINS.join(', ')}, got "${value}".`);
+        args.grain = value as TimeGrain;
+        break;
+      }
+      case '--compare': {
+        const value = requireValue('--compare', rest.shift());
+        // Only `previous` for now, but it takes a value rather than being a bare
+        // flag so `--compare 2026-08-01..2026-08-07` can be added without
+        // changing the shape of what already works.
+        if (value !== 'previous')
+          throw new ArgError(`--compare expects "previous", got "${value}".`);
+        args.compare = true;
+        break;
+      }
       case '--no-subagents':
         args.includeSubagents = false;
         break;

@@ -120,3 +120,29 @@ describe('counterfactual targets are named apart from the scope filter', () => {
     expect(args.counterfactualModels).toEqual(['claude-sonnet-5']);
   });
 });
+
+describe('--grain', () => {
+  it('accepts every documented grain', () => {
+    for (const grain of ['hour', 'day', 'hour-of-day'])
+      expect(parseArgs(['daily', '--grain', grain]).grain).toBe(grain);
+  });
+
+  it('rejects an unknown grain rather than falling back to day', () => {
+    expect(() => parseArgs(['daily', '--grain', 'week'])).toThrow(/--grain expects one of/);
+  });
+});
+
+describe('--compare', () => {
+  it('accepts `previous`', () => {
+    expect(parseArgs(['stats', '--days', '7', '--compare', 'previous']).compare).toBe(true);
+  });
+
+  it('is false unless asked for', () => {
+    expect(parseArgs(['stats']).compare).toBe(false);
+  });
+
+  it('takes a value, so a window can be named later without changing what works', () => {
+    expect(() => parseArgs(['stats', '--compare'])).toThrow(/requires a value/);
+    expect(() => parseArgs(['stats', '--compare', 'last-week'])).toThrow(/expects "previous"/);
+  });
+});
