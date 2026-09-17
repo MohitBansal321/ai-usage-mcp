@@ -9,6 +9,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Cache hit rate and reads-per-write on `stats` and `clients`**, plus a break-even derived
+  from the pricing table's own multipliers. Cache tokens are where the money is -- cache-read
+  is 94.7% of all tokens on the development machine, and for Claude Code it outweighs plain
+  input by roughly 33,000x -- and every report printed the raw counts and stopped there, so a
+  user could see that cache dominates without being able to tell whether it was paying for
+  itself.
+
+  Break-even is computed, not hardcoded: a 5-minute write costs 1.25x input (0.25x extra) and
+  each read saves 0.9x, so 0.25 / 0.9 = 0.28 reads per write, and 1.11 for the 1-hour tier.
+  Change the multipliers, or use a provider whose cache discount differs, and the threshold
+  moves with them.
+
+  A hit rate is **absent rather than 0%** when there was no cache traffic at all -- those are
+  different statements, and reporting the second as the first would be inventing a
+  measurement. A genuine 0% (writes that were never read) is reported, because it is the worst
+  case for the write premium and exactly what a user would want to see.
+  ([#65](https://github.com/MohitBansal321/ai-usage-mcp/issues/65))
+
+- **A no-cache scenario in `counterfactual` / `counterfactual_cost`**: what the same tokens
+  would have cost with every cache token billed at the plain input rate, per model. On the
+  development machine, caching saved an estimated 83.6% on Opus over 30 days.
+
+  This is the one scenario in the tool permitted to state a **saving**, and deliberately so. A
+  model counterfactual cannot, because the same task on a different model takes a different
+  number of turns with a different context on each. Here the token counts genuinely are
+  invariant: cache-read tokens ARE the context re-sent each turn, so without a cache they
+  would have been sent as ordinary input one for one, and the cache-write premium would simply
+  not have been paid. The assumption that remains -- that a cacheless run would have made the
+  same requests -- prints with the numbers rather than living in a doc. A negative saving is
+  reported as such rather than clamped to zero: burning the write premium on sessions too
+  short to reuse it is precisely what this exists to show.
+  ([#65](https://github.com/MohitBansal321/ai-usage-mcp/issues/65))
+
+### Added
+
 - **`ai-usage budget --amount N --basis reported|estimated [--period month|week]`**: spend
   against a target, with the run rate and where the period lands. Nothing in the tool surface
   accepted a budget number, so extrapolating month-end spend meant reading the active days out

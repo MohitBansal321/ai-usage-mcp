@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatClients } from '../../services/formatter.js';
+import { cacheMetrics } from '../../services/cache-metrics.js';
 import {
   pageShape,
   pageStructured,
@@ -41,6 +42,7 @@ export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
           cacheWriteTokens: c.cacheWriteTokens,
           reasoningTokens: c.reasoningTokens,
           totalTokens: c.totalTokens,
+          cache: cacheMetrics(c),
           cost: c.cost,
         })),
       });

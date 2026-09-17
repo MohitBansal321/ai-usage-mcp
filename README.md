@@ -491,6 +491,49 @@ keeps stdout pipeable.
 usage_records'`, which bypasses the product and depends on a schema the docs explicitly call
 internal and unversioned.)
 
+### Cache economics
+
+Cache tokens are where the money is — on the development machine cache-read is **94.7% of all
+tokens**, and for Claude Code it outweighs plain input by roughly 33,000×. Raw counts alone
+cannot say whether that cache is paying for itself, so `stats` and `clients` derive the figures
+that can:
+
+```text
+claude-code  --  8,486 records, 86 sessions
+  Cache hit rate:    97.12%
+  Reads per write:   33.7  (1 write : 33.7 reads)
+                     Break-even is 0.28 reads per 5-minute write and 1.11 per 1-hour write,
+                     so this cache is paying for itself.
+```
+
+Break-even is derived from the pricing table's own multipliers, not hardcoded: a 5-minute write
+costs `1.25×` input, so `0.25×` extra, and each read saves `0.9×` — hence `0.25 / 0.9 = 0.28`
+reads per write. Change the multipliers (or use a provider whose cache discount differs) and
+the threshold moves with them.
+
+A hit rate is **absent, not `0%`**, when there was no cache traffic at all — those are different
+statements. A genuine 0% (writes that were never read) _is_ reported, because it is the worst
+case for the write premium and exactly what you would want to see.
+
+`counterfactual` adds what the same tokens would have cost with **no caching at all**:
+
+```text
+Those same tokens with NO prompt caching at all:
+  claude-opus-5       $5252.61  vs     $861.31 actually estimated  ->  cache saved $4391.29 (83.6%)
+  claude-sonnet-5      $117.37  vs      $22.20 actually estimated  ->  cache saved $95.17 (81.1%)
+```
+
+This is the one scenario in the tool permitted to state a **saving**, and the reason is worth
+knowing. A model counterfactual cannot: the same task on a different model takes a different
+number of turns with a different context on each. Here the token counts genuinely are
+invariant — cache-read tokens _are_ the context re-sent each turn, so without a cache they
+would have been sent as ordinary input one for one, and the write premium would simply not
+have been paid. The remaining assumption (that a cacheless run would have made the same
+requests) prints with the numbers.
+
+A negative saving is reported as such rather than clamped: burning the write premium on
+sessions too short to reuse it is precisely what this is for.
+
 ### Budget, run rate and forecast
 
 ```bash
