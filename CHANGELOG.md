@@ -314,6 +314,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   applies to every value a source does not report.
   ([#66](https://github.com/MohitBansal321/ai-usage-mcp/issues/66))
 
+## [0.7.1] - 2026-09-17
+
+### Fixed
+
+- **Packaging test runs identically on Windows.** `npm pack --json` replaces `tar tzf`, and `shell: true` lets `npm.cmd` resolve correctly on Windows runners. ([#75](https://github.com/MohitBansal321/ai-usage-mcp/pull/75))
+
 ## [0.7.0] - 2026-09-10
 
 The first release that answers a question rather than reporting a total: whether a cheaper model would have cost less for the work you already did. It also carries the schema change that made that answerable -- see 0.6.0 for the `usage.speed` note, which shipped there and is what this builds on.
@@ -757,7 +763,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.5.0...v0.5.1
