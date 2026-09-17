@@ -149,6 +149,22 @@ export interface CostTotals {
   estimated: number;
   estimatedRecords: number;
   unavailableRecords: number;
+  /**
+   * Records whose model has no entry in the pricing table, so no estimate could
+   * be attempted for them.
+   *
+   * Distinct from `unavailableRecords`, which counts records we tried and failed
+   * to price. A client that reports its own cost (OpenCode) files a $0 under
+   * `reported` for a model nobody has priced, and that rendered identically to a
+   * genuinely free model: `reported: 0, unavailableRecords: 0` asserted that
+   * nothing was missing while the estimate was, in fact, missing.
+   *
+   * `undefined` means the question was not asked -- a caller that supplied no
+   * list of priced models gets no count, rather than a 0 claiming there are none.
+   */
+  unpricedRecords?: number;
+  /** The distinct models behind `unpricedRecords`, named the way `counterfactual` names them. */
+  unpricedModels?: string[];
   currency: 'USD';
 }
 

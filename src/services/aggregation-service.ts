@@ -140,6 +140,7 @@ export class AggregationService {
   session(
     sessionId: string,
     includeSubagents = true,
+    pricedModels?: string[],
   ): SessionDetail | { ambiguous: string[] } | undefined {
     const matches = this.repo.findSessionIds(sessionId);
     if (matches.length === 0) return undefined;
@@ -150,7 +151,8 @@ export class AggregationService {
         : undefined;
     if (!exact) return { ambiguous: matches };
 
-    const base: UsageFilter = { sessionId: exact, includeSubagents };
+    const priced = pricedModels ? { pricedModels } : {};
+    const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
     const rows = this.repo.sessions(base, 1);
     const session = rows[0];
     if (!session) return undefined;
@@ -158,10 +160,10 @@ export class AggregationService {
     return {
       session,
       models: this.repo.byModel(base),
-      main: this.repo.totals({ sessionId: exact, includeSubagents: false }),
+      main: this.repo.totals({ sessionId: exact, includeSubagents: false, ...priced }),
       subagent: subtract(
-        this.repo.totals({ sessionId: exact }),
-        this.repo.totals({ sessionId: exact, includeSubagents: false }),
+        this.repo.totals({ sessionId: exact, ...priced }),
+        this.repo.totals({ sessionId: exact, includeSubagents: false, ...priced }),
       ),
     };
   }
@@ -189,6 +191,12 @@ function subtract(all: AggregateRow, main: AggregateRow): AggregateRow {
       estimated: all.cost.estimated - main.cost.estimated,
       estimatedRecords: all.cost.estimatedRecords - main.cost.estimatedRecords,
       unavailableRecords: all.cost.unavailableRecords - main.cost.unavailableRecords,
+      // Counts subtract; the model NAMES cannot. A set difference of two counts
+      // says nothing about which models are left, and naming the wrong one is
+      // worse than naming none, so the names stay absent on a derived row.
+      ...(all.cost.unpricedRecords !== undefined && main.cost.unpricedRecords !== undefined
+        ? { unpricedRecords: all.cost.unpricedRecords - main.cost.unpricedRecords }
+        : {}),
       currency: 'USD',
     },
   };

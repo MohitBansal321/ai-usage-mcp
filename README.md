@@ -449,6 +449,23 @@ Cost is **never** a single blended number. Every figure carries a basis:
 | `estimated`   | Computed from a versioned pricing table. Claude Code records no cost. |
 | `unavailable` | We could not produce an honest number (e.g. no price for that model). |
 
+Alongside those, every report counts **records whose model has no pricing-table entry**, so
+a model that is genuinely free is distinguishable from one nobody has priced. A client that
+reports its own cost files a perfectly ordinary `$0` for an unpriced model, which otherwise
+reads exactly like free:
+
+```text
+opencode  --  6,841 records, 280 sessions
+  Cost (reported by client, exact): $0.48  [6,841 records]
+  No estimate attempted for 6,813 record(s) -- no price in table builtin-2026-09-16 for
+  that model: big-pickle, gpt-5.5, z-ai/glm-5.2 and 16 more. Any $0 above covers only what
+  was reported, not those records.
+```
+
+In `--json` and in MCP `structuredContent` these are `cost.unpricedRecords` and
+`cost.unpricedModels`. Both are **absent rather than `0`** when the caller supplied no list
+of priced models: "not asked" is not the same as "none".
+
 **The Claude Code figure is an "API-equivalent estimated cost"** — what those tokens would
 cost at Anthropic API list prices. If you are on a Claude Pro or Max subscription, your
 marginal cost per request is **$0**, and this number is not what you paid. It is useful for
@@ -465,20 +482,104 @@ The two cache-write TTLs are tracked separately because both occur heavily in pr
 the machine this was developed against, 18.0M of 27.2M cache-write tokens used the 1-hour
 TTL, so averaging the rates would have understated cost substantially.
 
-### Correcting prices yourself
+### Which models ship with prices
 
-The pricing table is versioned data (`src/pricing/tables/`), not constants buried in a
-service. Prices change; to override without waiting for a release, drop a JSON file at:
+Pricing is versioned data (`src/pricing/tables/`), one file per provider, each keeping its
+own capture date:
+
+| Table                  | Models                                                                 |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `anthropic-2026-06-24` | Fable 5, Mythos 5, Opus 5 / 4.8 / 4.7 / 4.6, Sonnet 5 / 4.6, Haiku 4.5 |
+| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                        |
+
+They are composed into one table, reported by `ai-usage status` as `builtin-<date>` with
+every provider's provenance behind it. Two tables may not price the same model id — that
+raises an error at build time rather than silently applying one vendor's rates to another's
+tokens.
+
+**Any model not listed above has no estimate**, and the reports say so explicitly rather
+than showing `$0`. Add it yourself with an override.
+
+The OpenAI numbers are the **Standard tier, short context** rates. OpenAI also publishes
+long-context, Batch, Flex and Fast-mode rates, and nothing in a stored record says which
+applied — so a long-context turn is _understated_ rather than guessed at. Providers whose
+published pricing this table cannot express exactly (DeepSeek, for instance, bills different
+rates at peak and off-peak hours) are deliberately not shipped; supply them yourself, with
+whichever rate is true for you.
+
+### Adding or correcting prices yourself
+
+Drop a JSON file at:
 
 ```text
 ~/.config/ai-usage-mcp/pricing.json      # or $AI_USAGE_PRICING_FILE
 ```
 
-It must contain `version`, `models`, and `cacheMultipliers.{read,write5m,write1h}`. A
-malformed override raises an error rather than silently falling back — quietly using
-different prices than you think are in effect would be worse than failing.
+It is **overlaid onto the built-in table**, keyed by model id — so adding one model keeps
+every built-in price. (Before 0.8.0 it replaced the table wholesale, which meant the only
+way to add a missing provider was to lose every price you already had.)
 
-`ai-usage status` always shows which table is in force.
+```jsonc
+{
+  // Required. Names YOUR table; this is the string reports will cite.
+  "version": "my-prices-2026-09-16",
+
+  // Optional. Shown by `ai-usage status`, with the built-in provenance appended.
+  "provenance": "DeepSeek off-peak list pricing, captured 2026-09-16",
+
+  // Optional. The default cache rates for models that do not carry their own.
+  // Omit to inherit the built-in defaults (read 0.1, write5m 1.25, write1h 2.0).
+  "cacheMultipliers": { "read": 0.1, "write5m": 1.25, "write1h": 2.0 },
+
+  // Required. Keyed by the model id EXACTLY as your client records it --
+  // `ai-usage models` lists the ids actually present in your database.
+  "models": {
+    "deepseek-v4-pro": {
+      "input": 0.66, // USD per 1,000,000 input tokens
+      "output": 1.98, // USD per 1,000,000 output tokens
+
+      // Optional: premium rates, applied when the source recorded `speed: "fast"`.
+      // Only Claude Code records a speed at all.
+      "fast": { "input": 1.32, "output": 3.96 },
+
+      // Optional: cache rates for THIS model, when the provider's differ from the
+      // table default. DeepSeek's cache-hit rate is 0.02x its input rate, not 0.1x.
+      "cache": { "read": 0.0333, "write5m": 1.0, "write1h": 1.0 },
+    },
+  },
+}
+```
+
+**Units.** `input` and `output` are USD **per 1,000,000 tokens** — the same unit every
+provider's pricing page publishes, so you can copy the number straight across. The three
+`cache*` values are **multipliers of that model's input rate**, not prices: `read: 0.1`
+means a cache read costs a tenth of an input token. If your provider publishes an absolute
+cached-input price, divide it by the input price to get the multiplier.
+
+**What is required.** `version` and `models`; within each model, `input` and `output`.
+Everything else is optional. `currency` and `unit` are ignored if present — USD per million
+tokens is the only supported combination, and accepting a value that does nothing would be
+worse than ignoring it.
+
+**Replacing rather than overlaying.** Set `"replace": true` to discard the built-in table
+entirely. That form additionally _requires_ `cacheMultipliers.{read,write5m,write1h}`,
+because there is no built-in default left to inherit.
+
+An override entry replaces that model's price **wholesale**, not field by field: if the
+built-in entry has `fast` rates and yours does not, the model has no fast rates. A
+half-inherited price is a figure nobody could reason about.
+
+A malformed override **raises an error naming the offending field** rather than silently
+falling back — quietly using different prices than you think are in effect would be worse
+than failing:
+
+```text
+Pricing override at /home/you/.config/ai-usage-mcp/pricing.json is invalid:
+models["deepseek-v4-pro"].output must be a number >= 0 (USD per 1,000,000 tokens).
+```
+
+`ai-usage status` always shows which table is in force, and whether it is built-in, an
+overlay, or a full replacement.
 
 ---
 
@@ -655,10 +756,13 @@ Windows on npm 10, which ignores `better-sqlite3`'s `gypfile: false` flag and co
 source even though a usable prebuilt binary is bundled; `npm install -g npm@11` fixed that,
 and remains the fix if you are pinned to an older Node and need the fallback to build.
 
-### A model shows cost as unavailable
+### A model shows cost as unavailable, or "no estimate attempted"
 
-That model is not in the pricing table. Add it via a pricing override file. The tool will not
-guess a price.
+That model is not in the pricing table. Add it via a [pricing override
+file](#adding-or-correcting-prices-yourself). The tool will not guess a price.
+
+`ai-usage models --json` lists the model ids exactly as your clients recorded them, which are
+the keys your override file needs.
 
 ### Totals changed after re-syncing
 

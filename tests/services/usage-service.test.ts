@@ -268,11 +268,31 @@ describe('UsageService', () => {
     }
   });
 
+  it('flags OpenCode records whose model the pricing table has never heard of', () => {
+    // `big-pickle` is exactly the case from the issue: OpenCode reports its own
+    // cost, so these land in the `reported` bucket and no estimate is attempted.
+    // Without the unpriced count, nothing in the output says the estimate is
+    // missing rather than zero.
+    const opencode = service.clientUsage().clients.find((c) => c.key === 'opencode');
+    expect(opencode?.cost.unpricedRecords).toBe(opencode?.records);
+    expect(opencode?.cost.unpricedModels).toContain('big-pickle');
+
+    // Claude Code's models are priced, so it reports a real 0 rather than undefined.
+    const claude = service.clientUsage().clients.find((c) => c.key === 'claude-code');
+    expect(claude?.cost.unpricedRecords).toBe(0);
+  });
+
   it('reports status including store discovery and pricing provenance', async () => {
     const status = await service.status();
     expect(status.totalRecords).toBe(6);
     expect(status.collectors).toHaveLength(2);
     expect(status.collectors.every((c) => c.available)).toBe(true);
-    expect(status.pricing.version).toContain('anthropic');
+    // The built-in table is composed from one file per provider, each keeping its
+    // own capture date, so provenance -- not the version string -- is where a
+    // given provider's freshness is visible.
+    expect(status.pricing.version).toBe('builtin-2026-09-16');
+    expect(status.pricing.mode).toBe('builtin');
+    expect(status.pricing.provenance).toContain('Anthropic');
+    expect(status.pricing.provenance).toContain('OpenAI');
   });
 });

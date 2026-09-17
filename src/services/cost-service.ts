@@ -1,5 +1,10 @@
 import type { ClientId, CostBasis } from '../models/usage-record.js';
-import { loadPricing, type LoadedPricing, type PricingTable } from '../pricing/index.js';
+import {
+  loadPricing,
+  type LoadedPricing,
+  type PricingMode,
+  type PricingTable,
+} from '../pricing/index.js';
 
 /**
  * Where each client puts reasoning tokens relative to `outputTokens`.
@@ -71,8 +76,12 @@ export interface Estimate {
 export class CostService {
   private readonly loaded: LoadedPricing;
 
-  constructor(loaded?: LoadedPricing) {
-    this.loaded = loaded ?? loadPricing();
+  /**
+   * `mode` is metadata about how the table was assembled, not an input to any
+   * number, so a caller handing over a table directly may omit it.
+   */
+  constructor(loaded?: Omit<LoadedPricing, 'mode'> & { mode?: PricingMode }) {
+    this.loaded = loaded ? { ...loaded, mode: loaded.mode ?? 'builtin' } : loadPricing();
   }
 
   get table(): PricingTable {
@@ -85,6 +94,16 @@ export class CostService {
 
   get overridePath(): string | undefined {
     return this.loaded.overridePath;
+  }
+
+  /** How the table in force was assembled: built-in, an overlay, or a full replacement. */
+  get pricingMode(): PricingMode {
+    return this.loaded.mode;
+  }
+
+  /** The built-in version an overlay sits on. Absent unless `pricingMode` is 'overlay'. */
+  get baseVersion(): string | undefined {
+    return this.loaded.baseVersion;
   }
 
   knowsModel(model: string): boolean {
@@ -114,7 +133,10 @@ export class CostService {
         : { input: price.input, output: price.output };
 
     const perMillion = (tokens: number, rate: number) => (tokens / 1_000_000) * rate;
-    const { read, write5m, write1h } = table.cacheMultipliers;
+    // A model may carry its own cache rates; the table default applies only to
+    // models that do not. Providers genuinely disagree here -- OpenAI has no
+    // 1-hour cache tier at all, so inheriting Anthropic's 2x would overcharge it.
+    const { read, write5m, write1h } = price.cache ?? table.cacheMultipliers;
 
     const cacheRead = input.cacheReadTokens ?? 0;
     const total5m = input.cacheWrite5mTokens ?? 0;

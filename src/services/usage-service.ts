@@ -50,7 +50,15 @@ export interface StatusReport {
   schemaVersion: number;
   totalRecords: number;
   collectors: CollectorStatus[];
-  pricing: { version: string; provenance: string; overridePath?: string };
+  pricing: {
+    version: string;
+    provenance: string;
+    overridePath?: string;
+    /** How the table was assembled: built-in, a user overlay, or a full replacement. */
+    mode: 'builtin' | 'overlay' | 'replace';
+    /** The built-in table an overlay sits on. Present only for `overlay`. */
+    baseVersion?: string;
+  };
   syncState: SyncState[];
 }
 
@@ -101,6 +109,10 @@ export class UsageService {
     const period = resolvePeriod(query);
     const filter: UsageFilter = {
       includeSubagents: query.includeSubagents !== false,
+      // Every read goes through here, so every aggregate can say how many of its
+      // records the pricing table has no entry for -- which is what separates a
+      // model that is genuinely free from one nobody has priced.
+      pricedModels: this.costService.pricedModels(),
     };
     if (period.since) filter.since = period.since;
     if (period.until) filter.until = period.until;
@@ -134,8 +146,10 @@ export class UsageService {
     const pricing: StatusReport['pricing'] = {
       version: this.costService.table.version,
       provenance: this.costService.table.provenance,
+      mode: this.costService.pricingMode,
     };
     if (this.costService.overridePath) pricing.overridePath = this.costService.overridePath;
+    if (this.costService.baseVersion) pricing.baseVersion = this.costService.baseVersion;
 
     return {
       databasePath: this.dbPath,
@@ -185,7 +199,7 @@ export class UsageService {
     sessionId: string,
     includeSubagents = true,
   ): SessionDetail | { ambiguous: string[] } | undefined {
-    return this.aggregation.session(sessionId, includeSubagents);
+    return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
   }
 
   dailyUsage(query: UsageQuery = {}): DailyReport {

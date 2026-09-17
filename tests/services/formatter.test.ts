@@ -271,7 +271,7 @@ describe('formatStatus', () => {
     sqliteDriver: 'node:sqlite' as const,
     totalRecords: 12,
     collectors: [],
-    pricing: { version: '2026-06-24', provenance: 'built-in' },
+    pricing: { version: '2026-06-24', provenance: 'built-in', mode: 'builtin' as const },
     syncState: [],
   };
 
