@@ -1,6 +1,9 @@
 import {
+  GROUP_AXES,
+  MAX_GROUP_AXES,
   SORT_KEYS,
   TIME_GRAINS,
+  type GroupAxis,
   type SortKey,
   type TimeGrain,
 } from '../db/repositories/usage-repository.js';
@@ -20,6 +23,7 @@ export interface ParsedArgs {
   offset?: number;
   sort?: SortKey;
   grain?: TimeGrain;
+  by?: GroupAxis[];
   compare: boolean;
   /** Target models for `counterfactual`. Repeatable, or comma-separated. */
   counterfactualModels?: string[];
@@ -200,6 +204,22 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--sort':
         args.sort = toSortKey(requireValue('--sort', rest.shift()));
         break;
+      case '--by': {
+        const axes = toList('--by', requireNonEmpty('--by', rest.shift()));
+        for (const axis of axes) {
+          if (!GROUP_AXES.includes(axis as GroupAxis))
+            throw new ArgError(`--by expects axes from ${GROUP_AXES.join(', ')}, got "${axis}".`);
+        }
+        if (new Set(axes).size !== axes.length)
+          throw new ArgError(`--by axes must be distinct, got "${axes.join(',')}".`);
+        if (axes.length > MAX_GROUP_AXES)
+          throw new ArgError(
+            `--by accepts at most ${MAX_GROUP_AXES} axes, got ${axes.length}. ` +
+              `Crossing more than that is a question for the underlying records.`,
+          );
+        args.by = [...(args.by ?? []), ...(axes as GroupAxis[])];
+        break;
+      }
       case '--grain': {
         const value = requireValue('--grain', rest.shift());
         if (!TIME_GRAINS.includes(value as TimeGrain))

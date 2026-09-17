@@ -6,6 +6,7 @@ import { UsageService, type UsageQuery } from '../services/usage-service.js';
 import type { PageRequest } from '../db/repositories/usage-repository.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
+  formatBreakdown,
   formatClients,
   formatCounterfactual,
   formatDaily,
@@ -148,6 +149,19 @@ async function run(argv: string[]): Promise<number> {
           return 1;
         }
         emit(args, formatSessionDetail(result, service.costService), result);
+        return 0;
+      }
+
+      case 'breakdown': {
+        if (!args.by?.length) {
+          process.stderr.write(
+            'Usage: ai-usage breakdown --by <axis>[,<axis>]\n' +
+              'Example: ai-usage breakdown --by project,day --days 30\n',
+          );
+          return 2;
+        }
+        const report = service.breakdown(args.by, queryFrom(args), pageFrom(args));
+        emit(args, formatBreakdown(report), report);
         return 0;
       }
 

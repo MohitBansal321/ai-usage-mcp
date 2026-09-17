@@ -146,3 +146,27 @@ describe('--compare', () => {
     expect(() => parseArgs(['stats', '--compare', 'last-week'])).toThrow(/expects "previous"/);
   });
 });
+
+describe('--by', () => {
+  it('accepts a comma list and a repeated flag alike', () => {
+    expect(parseArgs(['breakdown', '--by', 'project,day']).by).toEqual(['project', 'day']);
+    expect(parseArgs(['breakdown', '--by', 'project', '--by', 'day']).by).toEqual([
+      'project',
+      'day',
+    ]);
+  });
+
+  it('rejects an unknown axis', () => {
+    expect(() => parseArgs(['breakdown', '--by', 'colour'])).toThrow(/--by expects axes from/);
+  });
+
+  it('rejects a repeated axis, which would group by the same thing twice', () => {
+    expect(() => parseArgs(['breakdown', '--by', 'day,day'])).toThrow(/distinct/);
+  });
+
+  it('caps the number of axes rather than emitting an unreadable grid', () => {
+    expect(() => parseArgs(['breakdown', '--by', 'client,model,project,day'])).toThrow(
+      /at most 3 axes/,
+    );
+  });
+});

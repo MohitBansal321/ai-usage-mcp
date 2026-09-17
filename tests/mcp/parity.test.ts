@@ -234,6 +234,18 @@ describe('CLI and MCP parity', () => {
     }
   });
 
+  it('agrees on a cross-axis breakdown', async () => {
+    expect(cli(['breakdown', '--by', 'project,day'])).toBe(
+      await toolText('usage_breakdown', { axes: ['project', 'day'] }),
+    );
+    expect(cli(['breakdown', '--by', 'client,model', '--sort', 'estimated-cost'])).toBe(
+      await toolText('usage_breakdown', {
+        axes: ['client', 'model'],
+        sort: 'estimated-cost',
+      }),
+    );
+  });
+
   it('agrees on a period comparison', async () => {
     expect(cli(['stats', '--days', '1', '--compare', 'previous'])).toBe(
       await toolText('usage_summary', { days: 1, compare: 'previous' }),

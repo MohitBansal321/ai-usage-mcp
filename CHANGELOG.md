@@ -9,6 +9,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ai-usage breakdown --by <axes>` and the `usage_breakdown` MCP tool**: totals cut by two or
+  three dimensions at once -- `project x day`, `model x day`, `client x model` -- as one tidy
+  row set. Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`,
+  `hour-of-day`.
+
+  Every metric was single-axis, so "which of my projects is getting more expensive" could not
+  be asked: `projects` reports a project's total over 60 days with no indication whether that
+  is accelerating or one old burst, and `daily --project X` gives a single series for a path
+  you must already know. Answering it meant enumerating projects, issuing one call each, and
+  joining client-side -- an N+1 that is not feasible as a tool call from an agent loop at all.
+
+  The time axes use the same expressions `daily_usage` does, so the two cannot disagree about
+  what a day is. Combinations with no activity are absent rather than returned as zero rows: a
+  project x day grid is mostly empty and filling it would bury the rows that matter. A `--` in
+  a cost column means no record in that row is priced on that basis -- deliberately not `$0`,
+  which is a different claim. `--sort`, `--limit` and `--offset` behave as on any other list,
+  with every axis joining the tie-break so paging cannot drop or repeat a cell.
+  ([#54](https://github.com/MohitBansal321/ai-usage-mcp/issues/54))
+
+### Added
+
 - **`daily` shows every bucket, including the empty ones.** It printed only the days that _had_
   data -- ten rows for a thirty-day window -- with nothing to say the other twenty existed.
   That made a trend actively misleading rather than merely incomplete: the gaps were

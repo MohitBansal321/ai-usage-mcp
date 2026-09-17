@@ -12,6 +12,7 @@ Commands:
   sessions              Recent sessions                        (same as recent_sessions)
   session <id>          One session in detail                  (same as session_usage)
   daily                 Per-day breakdown                      (same as daily_usage)
+  breakdown             Two or more dimensions at once         (same as usage_breakdown)
   counterfactual        These tokens on another model          (same as counterfactual_cost)
   verify                Re-read the source data and diff it against the local database
   version               Print the installed version
@@ -26,6 +27,8 @@ Period options (default: all time):
                         with the delta. Needs a bounded period; all time has no previous.
   --grain <g>           daily only: hour | day | hour-of-day (default day).
                         hour-of-day collapses every day onto one 24-slot local clock.
+  --by a,b              breakdown only: up to 3 of client, model, provider, project,
+                        session, day, hour, hour-of-day. Crosses them in one query.
 
 Scope options (repeatable, or comma-separated; each matches ANY value given):
   --client <name>       claude-code | opencode
@@ -56,6 +59,8 @@ Examples:
   ai-usage stats --days 7 --compare previous
   ai-usage daily --days 7 --grain hour
   ai-usage daily --days 30 --grain hour-of-day
+  ai-usage breakdown --by project,day --days 30
+  ai-usage breakdown --by model,day --days 7 --sort estimated-cost
   ai-usage sessions --limit 5
   ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
   ai-usage projects --sort estimated-cost --limit 10

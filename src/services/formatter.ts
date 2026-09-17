@@ -1,6 +1,7 @@
 import type { AggregateRow, Page, SessionRow } from '../db/repositories/usage-repository.js';
 import type { CostTotals } from '../models/usage-record.js';
 import type {
+  BreakdownReport,
   ClientReport,
   DailyReport,
   ModelReport,
@@ -363,6 +364,64 @@ export function formatDaily(report: DailyReport): string {
     report.grain === 'hour-of-day'
       ? 'Hours are local, aggregated across every day in the period.'
       : `Buckets are local ${noun.many}, matching the period filter.`,
+  );
+  return out.join('\n');
+}
+
+/**
+ * A tidy row set, one row per combination of the requested axes.
+ *
+ * Rendered as a table rather than the nested blocks the single-axis reports use,
+ * because the whole point is to scan one dimension against another -- which
+ * nested blocks make impossible.
+ *
+ * Cost columns show `--`, never `$0.00`, where a row has no records on that
+ * basis. A rendered $0 would say "this cost nothing", which is a different claim
+ * from "nothing here is priced this way".
+ */
+export function formatBreakdown(report: BreakdownReport): string {
+  const out: string[] = [];
+  out.push(`Usage breakdown: ${report.axes.join(' x ')} -- ${report.period.label}`);
+  out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
+  out.push('');
+
+  if (report.rows.length === 0) {
+    out.push('No usage records for this period.');
+    return out.join('\n');
+  }
+
+  const headers = [...report.axes, 'turns', 'total tokens', 'reported', 'estimated'];
+  const body = report.rows.map((row) => [
+    ...report.axes.map((axis) => row.keys[axis] ?? '(unknown)'),
+    int(row.records),
+    int(row.totalTokens),
+    row.cost.reportedRecords > 0 ? usd(row.cost.reported) : '--',
+    row.cost.estimatedRecords > 0 ? usd(row.cost.estimated) : '--',
+  ]);
+
+  const widths = headers.map((header, i) =>
+    Math.max(header.length, ...body.map((r) => (r[i] ?? '').length)),
+  );
+  // Axis values read left-aligned; every number reads right-aligned, so columns
+  // of figures line up on their last digit.
+  const pad = (value: string, i: number) =>
+    i < report.axes.length
+      ? value.padEnd(widths[i] as number)
+      : value.padStart(widths[i] as number);
+
+  out.push(headers.map(pad).join('  '));
+  out.push(widths.map((w) => '-'.repeat(w)).join('  '));
+  for (const row of body) out.push(row.map(pad).join('  ').trimEnd());
+
+  out.push('');
+  out.push(...pageLines(report.page, 'rows'));
+  out.push(
+    'Combinations with no activity are absent rather than listed as zero: a project x day ' +
+      'grid is mostly empty, and filling it would bury the rows that matter.',
+  );
+  out.push(
+    'A `--` in a cost column means no record in that row is priced on that basis. It is not $0.',
   );
   return out.join('\n');
 }

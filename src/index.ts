@@ -21,6 +21,10 @@ export {
   type SortKey,
   type TimeGrain,
   TIME_GRAINS,
+  type GroupAxis,
+  type CrossTabRow,
+  GROUP_AXES,
+  MAX_GROUP_AXES,
   type UsageFilter,
 } from './db/repositories/usage-repository.js';
 export type { PageInfo, UnmatchedScope } from './services/aggregation-service.js';

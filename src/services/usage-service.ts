@@ -4,6 +4,7 @@ import { SyncRepository, type SyncState } from '../db/repositories/sync-reposito
 import {
   UsageRepository,
   type Page,
+  type GroupAxis,
   type PageRequest,
   type TimeGrain,
   type SessionRow,
@@ -14,6 +15,7 @@ import { OpenCodeCollector } from '../collectors/opencode/collector.js';
 import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record.js';
 import {
   AggregationService,
+  type BreakdownReport,
   type ClientReport,
   type DailyReport,
   type ModelReport,
@@ -219,6 +221,18 @@ export class UsageService {
   dailyUsage(query: UsageQuery = {}, grain: TimeGrain = 'day'): DailyReport {
     const { filter, label } = this.filterFor(query);
     return this.aggregation.daily(filter, label, grain);
+  }
+
+  /**
+   * Totals cut by two or more dimensions at once -- `project x day`, `model x day`.
+   *
+   * Answering "which of my projects is getting more expensive" previously meant
+   * enumerating projects, issuing one `daily --project` call each, and joining
+   * the results: an N+1 pattern that is not feasible as a tool call at all.
+   */
+  breakdown(axes: GroupAxis[], query: UsageQuery = {}, page: PageRequest = {}): BreakdownReport {
+    const { filter, label } = this.filterFor(query);
+    return this.aggregation.breakdown(axes, filter, label, page);
   }
 
   counterfactualCost(query: UsageQuery = {}, models?: string[]): CounterfactualReport {

@@ -168,6 +168,51 @@ const TIME_GRAIN_SQL: Record<TimeGrain, string> = {
   'hour-of-day': "strftime('%H', timestamp, 'localtime')",
 };
 
+/**
+ * A dimension a breakdown can be cut by.
+ *
+ * The time axes are the same expressions {@link TimeGrain} uses, so a
+ * `project x day` breakdown and `daily --project X` bucket identically -- two
+ * reports that disagreed about what a day is would be worse than one report.
+ */
+export type GroupAxis =
+  'client' | 'model' | 'provider' | 'project' | 'session' | 'day' | 'hour' | 'hour-of-day';
+
+export const GROUP_AXES: GroupAxis[] = [
+  'client',
+  'model',
+  'provider',
+  'project',
+  'session',
+  'day',
+  'hour',
+  'hour-of-day',
+];
+
+const AXIS_SQL: Record<GroupAxis, string> = {
+  client: 'client',
+  model: 'model',
+  provider: 'provider',
+  project: "COALESCE(project_path,'(unknown)')",
+  session: 'session_id',
+  day: "date(timestamp,'localtime')",
+  hour: "strftime('%Y-%m-%dT%H:00', timestamp, 'localtime')",
+  'hour-of-day': "strftime('%H', timestamp, 'localtime')",
+};
+
+/**
+ * Crossing three axes on a busy database is already tens of thousands of rows,
+ * and every one of them has to be rendered somewhere. More than that is a
+ * question better asked of the exported records.
+ */
+export const MAX_GROUP_AXES = 3;
+
+/** One cell of a cross-tab: the value on each axis, plus the usual aggregate. */
+export interface CrossTabRow extends AggregateRow {
+  /** Keyed by axis name, in the order the axes were requested. */
+  keys: Record<string, string>;
+}
+
 export interface PageRequest {
   limit?: number;
   offset?: number;
@@ -630,6 +675,75 @@ export class UsageRepository {
       )
       .all(params) as (RawAgg & { key: string })[];
     return rows.map((r) => ({ key: r.key, ...toAggregate(r) }));
+  }
+
+  /**
+   * Totals cut by two or more dimensions at once.
+   *
+   * `daily --project X` answers one project's trend, but answering "which of my
+   * projects is getting more expensive" meant enumerating projects, issuing one
+   * call each, and joining client-side -- an N+1 that is not feasible from an
+   * agent loop at all. One query, one tidy row set.
+   */
+  crossTab(axes: GroupAxis[], filter: UsageFilter = {}, page: PageRequest = {}): Page<CrossTabRow> {
+    if (axes.length === 0) throw new Error('crossTab requires at least one axis.');
+    if (axes.length > MAX_GROUP_AXES)
+      throw new Error(`crossTab accepts at most ${MAX_GROUP_AXES} axes, got ${axes.length}.`);
+    if (new Set(axes).size !== axes.length)
+      throw new Error(`crossTab axes must be distinct, got ${axes.join(', ')}.`);
+
+    const { sql, params } = buildWhere(filter);
+    const priced = bindPricedModels(filter, params);
+    const sort = page.sort ?? 'tokens';
+    const offset = Math.max(0, page.offset ?? 0);
+    const limit = page.limit !== undefined ? Math.max(1, page.limit) : undefined;
+
+    const selected = axes.map((axis, i) => `${AXIS_SQL[axis]} AS axis${i}`).join(', ');
+    const grouped = axes.map((axis) => AXIS_SQL[axis]).join(', ');
+    // Every axis joins the tie-break, so paging a cross-tab cannot drop or
+    // repeat a cell wherever two compare equal on the sort key.
+    const tieBreak = axes.map((_, i) => `axis${i} ASC`).join(', ');
+
+    params.offset = offset;
+    if (limit !== undefined) params.limit = limit;
+    const window = limit !== undefined ? 'LIMIT :limit OFFSET :offset' : 'LIMIT -1 OFFSET :offset';
+
+    const rows = this.db
+      .prepare(
+        `SELECT ${selected}, ${aggSelect(priced)} FROM usage_records ${sql}
+         GROUP BY ${grouped} ORDER BY ${SORT_SQL[sort]}, ${tieBreak} ${window}`,
+      )
+      .all(params) as (RawAgg & Record<string, string>)[];
+
+    const { total, without } = this.crossTabStats(grouped, filter, sort);
+    return toPage(
+      rows.map((r) => ({
+        keys: Object.fromEntries(axes.map((axis, i) => [axis, r[`axis${i}`] as string])),
+        ...toAggregate(r),
+      })),
+      { total, without, offset, limit, sort },
+    );
+  }
+
+  /** Cells matching the filter, and how many carry nothing on the sorted basis. */
+  private crossTabStats(
+    grouped: string,
+    filter: UsageFilter,
+    sort: SortKey,
+  ): { total: number; without: number } {
+    // A fresh binding, for the same reason groupStats uses one.
+    const { sql: where, params } = buildWhere(filter);
+    const havingless = COST_SORT_COLUMN[sort];
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN ${havingless ? `${havingless} = 0` : '0'} THEN 1 ELSE 0 END) AS without
+           FROM (SELECT SUM(CASE WHEN cost_basis='reported'  THEN 1 ELSE 0 END) AS reported_records,
+                        SUM(CASE WHEN cost_basis='estimated' THEN 1 ELSE 0 END) AS estimated_records
+                   FROM usage_records ${where} GROUP BY ${grouped})`,
+      )
+      .get(params) as { total: number; without: number | null };
+    return { total: row.total, without: row.without ?? 0 };
   }
 
   /** The first and last activity matching a filter, for deciding zero-fill bounds. */

@@ -8,7 +8,7 @@ import type {
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
 import type { ClientId } from '../models/usage-record.js';
-import type { TimeGrain } from '../db/repositories/usage-repository.js';
+import type { CrossTabRow, GroupAxis, TimeGrain } from '../db/repositories/usage-repository.js';
 import { zeroFill, type TimeBucket } from './time-buckets.js';
 import { compareTotals, comparisonCaveats, type Comparison } from './comparison.js';
 
@@ -110,6 +110,18 @@ export interface DailyReport {
   grain: TimeGrain;
   /** Set when the range was too large to zero-fill, saying so rather than hiding it. */
   zeroFillNote?: string;
+  overall: AggregateRow;
+  unmatchedScope?: UnmatchedScope;
+}
+
+export interface BreakdownReport {
+  period: { since?: string; until?: string; label: string };
+  includeSubagents: boolean;
+  /** The dimensions crossed, in the order requested. */
+  axes: GroupAxis[];
+  /** One row per combination present. Combinations with no activity are absent. */
+  rows: CrossTabRow[];
+  page: PageInfo;
   overall: AggregateRow;
   unmatchedScope?: UnmatchedScope;
 }
@@ -223,6 +235,26 @@ export class AggregationService {
         period: this.periodOf(filter, label),
         includeSubagents: filter.includeSubagents !== false,
         projects: result.rows,
+        page: pageInfo(result),
+        overall: this.repo.totals(filter),
+      },
+      filter,
+    );
+  }
+
+  breakdown(
+    axes: GroupAxis[],
+    filter: UsageFilter,
+    label: string,
+    page: PageRequest = {},
+  ): BreakdownReport {
+    const result = this.repo.crossTab(axes, filter, page);
+    return this.withScope(
+      {
+        period: this.periodOf(filter, label),
+        includeSubagents: filter.includeSubagents !== false,
+        axes,
+        rows: result.rows,
         page: pageInfo(result),
         overall: this.repo.totals(filter),
       },

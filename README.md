@@ -460,6 +460,37 @@ at, on `counterfactual` only) are different things, and usable together:
 `ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
 Opus turns would have cost on Sonnet.
 
+### Crossing two dimensions
+
+`projects` gives a total with no trend; `daily --project X` gives one series. Answering
+"which of my projects is getting more expensive" therefore meant enumerating projects, issuing
+one call per path, and joining the results — an N+1 that is not feasible as a single tool call
+at all. `breakdown` crosses the axes in one query:
+
+```bash
+ai-usage breakdown --by project,day --days 30
+ai-usage breakdown --by model,day --days 7 --sort estimated-cost
+ai-usage breakdown --by client,model,hour-of-day
+```
+
+```text
+project                                day         turns  total tokens  reported  estimated
+-------------------------------------  ----------  -----  ------------  --------  ---------
+/home/you/centralized_backend          2026-09-16    230    20,040,546        --     $22.23
+/home/you/centralized_backend          2026-09-15    161    19,803,069        --     $18.58
+/home/you/Videos/ai-usage              2026-09-17     82    24,592,585        --     $18.07
+```
+
+Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`, `hour-of-day` — up to
+three, each at most once. Time axes bucket in local time, identically to `daily`.
+
+Two things it deliberately does not do. Combinations with **no activity are absent** rather
+than returned as zero rows: a project × day grid is mostly empty and filling it would bury the
+rows that matter. And a `--` in a cost column means **no record in that row is priced on that
+basis** — it is not `$0`, which would be a different claim.
+
+`--sort`, `--limit` and `--offset` work here as on any other list.
+
 ### Reading a trend
 
 `daily` shows **every** bucket in the window, including the ones with no activity:
