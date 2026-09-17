@@ -111,7 +111,7 @@ export class VerifyService {
   }
 
   private oursFor(client: 'opencode' | 'claude-code', cutoff: Date): TokenSnapshot {
-    const t = this.repo.totals({ client, until: cutoff.toISOString() });
+    const t = this.repo.totals({ clients: [client], until: cutoff.toISOString() });
     const snapshot: TokenSnapshot = {
       inputTokens: t.inputTokens,
       outputTokens: t.outputTokens,

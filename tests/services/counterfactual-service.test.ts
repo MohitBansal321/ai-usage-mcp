@@ -111,7 +111,7 @@ describe('CounterfactualService', () => {
     repo.upsertMany([
       record({ id: 'cc', client: 'claude-code', outputTokens: M, reasoningTokens: M }),
     ]);
-    const cc = service.counterfactual({ client: 'claude-code' }, 'all time', ['claude-sonnet-5'])
+    const cc = service.counterfactual({ clients: ['claude-code'] }, 'all time', ['claude-sonnet-5'])
       .scenarios[0]!;
 
     // 2M billable output for OpenCode, 1M for Claude Code, at $10/M.

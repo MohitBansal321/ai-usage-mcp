@@ -54,6 +54,30 @@ describe('CLI and MCP parity', () => {
 
     const claudeProjects = buildClaudeProjects(dir, [
       {
+        // A SECOND project, so a project filter changes the answer. With one
+        // project, a filter that silently did nothing still matched.
+        slug: '-work-project-two',
+        sessions: [
+          {
+            sessionId: 'cc-2',
+            lines: [
+              assistantLine({
+                sessionId: 'cc-2',
+                requestId: 'r9',
+                messageId: 'm9',
+                input: 7,
+                output: 55,
+                cacheRead: 5000,
+                cwd: '/work/project-two',
+                model: 'claude-haiku-4-5',
+                timestamp: new Date(now - 20_000).toISOString(),
+                stopReason: 'end_turn',
+              }),
+            ],
+          },
+        ],
+      },
+      {
         slug: '-work-project-one',
         sessions: [
           {
@@ -166,9 +190,46 @@ describe('CLI and MCP parity', () => {
   });
 
   it('projects --project narrows both frontends the same way', async () => {
-    expect(cli(['projects', '--project', '/work/project-one'])).toBe(
-      await toolText('project_usage', { projectPath: '/work/project-one' }),
+    const text = cli(['projects', '--project', '/work/project-one']);
+    expect(text).toBe(await toolText('project_usage', { projectPaths: ['/work/project-one'] }));
+    // The filter must actually bite, or this asserts that two unfiltered reports
+    // are equal -- which they would be even if the filter were dropped entirely.
+    expect(text).not.toContain('/work/project-two');
+  });
+
+  it('agrees on a multi-valued scope filter', async () => {
+    const both = cli(['projects', '--project', '/work/project-one,/work/project-two']);
+    expect(both).toBe(
+      await toolText('project_usage', {
+        projectPaths: ['/work/project-one', '/work/project-two'],
+      }),
     );
+    expect(both).toContain('/work/project-one');
+    expect(both).toContain('/work/project-two');
+  });
+
+  it('agrees on a repeated scope flag, which is the same as a comma list', async () => {
+    expect(
+      cli(['projects', '--project', '/work/project-one', '--project', '/work/project-two']),
+    ).toBe(cli(['projects', '--project', '/work/project-one,/work/project-two']));
+  });
+
+  it('agrees on ordering and paging', async () => {
+    expect(cli(['projects', '--sort', 'estimated-cost'])).toBe(
+      await toolText('project_usage', { sort: 'estimated-cost' }),
+    );
+    expect(cli(['sessions', '--limit', '1', '--offset', '1'])).toBe(
+      await toolText('recent_sessions', { limit: 1, offset: 1 }),
+    );
+    expect(cli(['sessions', '--sort', 'estimated-cost', '--limit', '2'])).toBe(
+      await toolText('recent_sessions', { sort: 'estimated-cost', limit: 2 }),
+    );
+  });
+
+  it('agrees that an unmatched scope is a warning, not an empty period', async () => {
+    const text = cli(['stats', '--model', 'no-such-model']);
+    expect(text).toBe(await toolText('usage_summary', { models: ['no-such-model'] }));
+    expect(text).toContain('WARNING');
   });
 
   it('daily matches daily_usage', async () => {
@@ -186,9 +247,9 @@ describe('CLI and MCP parity', () => {
   it('counterfactual --models matches the tool given the same targets', async () => {
     // Two frontends, one list of target models, one ordering. If the scenario
     // sort or the caveat set drifted between them, this is where it shows.
-    expect(cli(['counterfactual', '--models', 'claude-sonnet-5,claude-haiku-4-5'])).toBe(
+    expect(cli(['counterfactual', '--target-models', 'claude-sonnet-5,claude-haiku-4-5'])).toBe(
       await toolText('counterfactual_cost', {
-        models: ['claude-sonnet-5', 'claude-haiku-4-5'],
+        targetModels: ['claude-sonnet-5', 'claude-haiku-4-5'],
       }),
     );
   });

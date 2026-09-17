@@ -1,12 +1,14 @@
-import type { AggregateRow, SessionRow } from '../db/repositories/usage-repository.js';
+import type { AggregateRow, Page, SessionRow } from '../db/repositories/usage-repository.js';
 import type { CostTotals } from '../models/usage-record.js';
 import type {
   ClientReport,
   DailyReport,
   ModelReport,
+  PageInfo,
   ProjectReport,
   SessionDetail,
   SummaryReport,
+  UnmatchedScope,
 } from './aggregation-service.js';
 import type { CostService } from './cost-service.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
@@ -60,11 +62,6 @@ export function duration(seconds: number): string {
 }
 
 /**
- * Renders cost as separate buckets, always labelled. Reported and estimated are
- * never added together -- that single blended number is the easiest way to lie
- * with this data.
- */
-/**
  * Names the models behind a count, capped.
  *
  * A machine that has drifted across a dozen OpenCode models lists all of them
@@ -81,6 +78,11 @@ function namedModels(models: string[] | undefined): string {
   return `: ${shown} and ${int(models.length - MAX_NAMED_MODELS)} more`;
 }
 
+/**
+ * Renders cost as separate buckets, always labelled. Reported and estimated are
+ * never added together -- that single blended number is the easiest way to lie
+ * with this data.
+ */
 export function costLines(cost: CostTotals, costService: CostService, indent = '  '): string[] {
   const lines: string[] = [];
   if (cost.reportedRecords > 0) {
@@ -129,6 +131,64 @@ export function tokenLines(row: AggregateRow, indent = '  '): string[] {
   ];
 }
 
+/**
+ * What this page is a page OF, and how to get the next one.
+ *
+ * A bare `--limit 5` says nothing about the other 275 rows, so "the top 5" was
+ * indistinguishable from "all 5 there are". This line makes the difference
+ * visible, and gives a caller the exact flag to walk the rest.
+ */
+export function pageLines(info: PageInfo, noun: string): string[] {
+  const lines: string[] = [];
+  const shown = info.limit === undefined ? info.total - info.offset : undefined;
+  const count = shown ?? Math.min(info.limit as number, Math.max(0, info.total - info.offset));
+
+  if (info.limit === undefined && info.offset === 0) {
+    lines.push(`Showing all ${int(info.total)} ${noun}, sorted by ${info.sort}.`);
+  } else {
+    lines.push(
+      `Showing ${int(count)} of ${int(info.total)} ${noun} ` +
+        `(offset ${int(info.offset)}), sorted by ${info.sort}.`,
+    );
+  }
+  if (info.hasMore && info.nextOffset !== undefined) {
+    lines.push(`More available: re-run with --offset ${int(info.nextOffset)} for the next page.`);
+  }
+  // The trap that makes a cost sort quietly wrong if unsaid.
+  if (info.rowsWithoutSortValue > 0 && info.sort.endsWith('-cost')) {
+    const basis = info.sort === 'reported-cost' ? 'reported' : 'estimated';
+    lines.push(
+      `NOTE: ${int(info.rowsWithoutSortValue)} of those ${noun} carry no ${basis} cost at all, ` +
+        `so they sort as $0. They are not cheap -- they are priced on the other basis, or not ` +
+        `priced at all. Reported and estimated cost are never summed, so no single ordering ` +
+        `can rank both.`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * Scope values that match nothing anywhere in the database.
+ *
+ * Without this, a typo answers "No usage records for this period" and exits 0,
+ * which is indistinguishable from a genuinely quiet period.
+ */
+export function unmatchedScopeLines(scope: UnmatchedScope | undefined): string[] {
+  if (!scope) return [];
+  const lines: string[] = [];
+  const say = (label: string, values: string[] | undefined, hint: string) => {
+    if (!values?.length) return;
+    lines.push(
+      `WARNING: no record anywhere in this database has ${label} ${values.map((v) => `"${v}"`).join(', ')}. ` +
+        `An empty result below is that, not a quiet period. ${hint}`,
+    );
+  };
+  say('model', scope.models, 'Run `ai-usage models` to see the ids actually present.');
+  say('project', scope.projectPaths, 'Run `ai-usage projects` to see the paths actually present.');
+  say('client', scope.clients, 'Known clients are claude-code and opencode.');
+  return lines;
+}
+
 function subagentNote(
   report: { includeSubagents: boolean },
   turnKinds?: { main: number; subagent: number },
@@ -146,6 +206,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   const out: string[] = [];
   out.push(`Usage summary -- ${report.period.label}`);
   out.push(subagentNote(report, report.turnKinds));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
 
   if (report.overall.records === 0) {
@@ -181,6 +242,7 @@ export function formatModels(report: ModelReport, costService: CostService): str
   const out: string[] = [];
   out.push(`Usage by model -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.models.length === 0) {
     out.push('No usage records for this period.');
@@ -195,6 +257,7 @@ export function formatModels(report: ModelReport, costService: CostService): str
   out.push(
     `Total across ${int(report.models.length)} model(s): ${tokens(report.overall.totalTokens)} tokens`,
   );
+  out.push(...pageLines(report.page, 'models'));
   return out.join('\n');
 }
 
@@ -203,6 +266,7 @@ export function formatDaily(report: DailyReport): string {
   const out: string[] = [];
   out.push(`Daily usage -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.days.length === 0) {
     out.push('No usage records for this period.');
@@ -229,6 +293,7 @@ export function formatProjects(report: ProjectReport, costService: CostService):
   const out: string[] = [];
   out.push(`Usage by project -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.projects.length === 0) {
     out.push('No usage records for this period.');
@@ -245,6 +310,7 @@ export function formatProjects(report: ProjectReport, costService: CostService):
   out.push(
     `Total across ${int(report.projects.length)} project(s): ${tokens(report.overall.totalTokens)} tokens`,
   );
+  out.push(...pageLines(report.page, 'projects'));
   out.push(
     'A project is the working directory the turn ran in. Turns whose project could not be ' +
       'resolved are grouped as (unknown) rather than dropped.',
@@ -256,6 +322,7 @@ export function formatClients(report: ClientReport, costService: CostService): s
   const out: string[] = [];
   out.push(`Usage by client -- ${report.period.label}`);
   out.push(subagentNote(report));
+  out.push(...unmatchedScopeLines(report.unmatchedScope));
   out.push('');
   if (report.clients.length === 0) {
     out.push('No usage records for this period.');
@@ -275,9 +342,14 @@ export function formatClients(report: ClientReport, costService: CostService): s
   return out.join('\n');
 }
 
-export function formatSessions(sessions: SessionRow[], costService: CostService): string {
-  if (sessions.length === 0) return 'No sessions recorded. Run `ai-usage sync` first.';
-  const out: string[] = [`Recent sessions (${sessions.length}):`, ''];
+export function formatSessions(page: Page<SessionRow>, costService: CostService): string {
+  const sessions = page.rows;
+  if (sessions.length === 0) {
+    return page.total === 0
+      ? 'No sessions recorded. Run `ai-usage sync` first.'
+      : `No sessions at offset ${int(page.offset)}; there are ${int(page.total)} in total.`;
+  }
+  const out: string[] = [`Sessions (${sessions.length}):`, ''];
   for (const s of sessions) {
     out.push(`${s.sessionId}  [${s.client}]`);
     out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
@@ -290,6 +362,7 @@ export function formatSessions(sessions: SessionRow[], costService: CostService)
     out.push(...costLines(s.cost, costService, '  '));
     out.push('');
   }
+  out.push(...pageLines(page, 'sessions'));
   return out.join('\n').trimEnd();
 }
 

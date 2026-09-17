@@ -23,12 +23,21 @@ Period options (default: all time):
   --since <ISO>         Explicit start (inclusive)
   --until <ISO>         Explicit end (exclusive)
 
-Scope options:
+Scope options (repeatable, or comma-separated; each matches ANY value given):
   --client <name>       claude-code | opencode
-  --model <id>          Restrict to one model
-  --project <path>      Restrict to one project (its working directory)
-  --limit N             Row limit (sessions, models, projects)
-  --models a,b          Models to price against (counterfactual; repeatable)
+  --model <id>          Restrict to these models      (--model a,b or --model a --model b)
+  --project <path>      Restrict to these projects (their working directories)
+  --target-models a,b   counterfactual only: models to price the selected tokens AGAINST.
+                        Not a filter -- \`--model\` chooses which turns, this chooses the
+                        rates. (\`--models\` is an accepted alias.)
+
+List options (sessions, models, projects, clients):
+  --limit N             Rows to return
+  --offset N            Rows to skip, for paging. Output tells you the next offset.
+  --sort <key>          tokens | reported-cost | estimated-cost | records | sessions | recent
+                        Default: recent for sessions, tokens elsewhere. There is no plain
+                        \`cost\`: reported and estimated cost are never summed, so ordering by
+                        one sorts every row priced on the other basis as $0.
   --no-subagents        Exclude subagent/sidechain turns (included by default)
   --all-stores          Read every detected data store, not only the one the client itself uses
   --full                Ignore saved sync cursors and re-read everything
@@ -41,7 +50,12 @@ Examples:
   ai-usage models --days 30 --client claude-code
   ai-usage projects --days 30
   ai-usage sessions --limit 5
-  ai-usage counterfactual --today --models claude-sonnet-5,claude-haiku-4-5
+  ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
+  ai-usage projects --sort estimated-cost --limit 10
+  ai-usage sessions --limit 100 --offset 100            # page two
+  ai-usage models --model claude-opus-5,claude-sonnet-5
+  ai-usage counterfactual --today --target-models claude-sonnet-5,claude-haiku-4-5
+  ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5
   ai-usage verify
 
 Notes:

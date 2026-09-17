@@ -3,6 +3,7 @@ import { ArgError, parseArgs, type ParsedArgs } from './args.js';
 import { HELP_TEXT } from './commands/help.js';
 import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
+import type { PageRequest } from '../db/repositories/usage-repository.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
   formatClients,
@@ -24,10 +25,19 @@ function queryFrom(args: ParsedArgs): UsageQuery {
   if (args.days !== undefined) query.days = args.days;
   if (args.since !== undefined) query.since = args.since;
   if (args.until !== undefined) query.until = args.until;
-  if (args.client !== undefined) query.client = args.client;
-  if (args.model !== undefined) query.model = args.model;
-  if (args.project !== undefined) query.projectPath = args.project;
+  if (args.clients !== undefined) query.clients = args.clients;
+  if (args.models !== undefined) query.models = args.models;
+  if (args.projects !== undefined) query.projectPaths = args.projects;
   return query;
+}
+
+/** The limit/offset/sort a list-shaped command was asked for. */
+function pageFrom(args: ParsedArgs): PageRequest {
+  const page: PageRequest = {};
+  if (args.limit !== undefined) page.limit = args.limit;
+  if (args.offset !== undefined) page.offset = args.offset;
+  if (args.sort !== undefined) page.sort = args.sort;
+  return page;
 }
 
 function emit(args: ParsedArgs, text: string, data: unknown): void {
@@ -80,7 +90,7 @@ async function run(argv: string[]): Promise<number> {
           ...(args.until ? { until: new Date(args.until) } : {}),
           ...(args.allStores ? { allStores: true } : {}),
           ...(args.full ? { full: true } : {}),
-          ...(args.client ? { clients: [args.client] } : {}),
+          ...(args.clients ? { clients: args.clients } : {}),
         });
         emit(args, formatSyncReport(report), report);
         return report.results.some((r) => !r.available && r.reason?.startsWith('Collection failed'))
@@ -95,26 +105,26 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'models': {
-        const report = service.modelUsage(queryFrom(args), args.limit);
+        const report = service.modelUsage(queryFrom(args), pageFrom(args));
         emit(args, formatModels(report, service.costService), report);
         return 0;
       }
 
       case 'clients': {
-        const report = service.clientUsage(queryFrom(args));
+        const report = service.clientUsage(queryFrom(args), pageFrom(args));
         emit(args, formatClients(report, service.costService), report);
         return 0;
       }
 
       case 'projects': {
-        const report = service.projectUsage(queryFrom(args), args.limit);
+        const report = service.projectUsage(queryFrom(args), pageFrom(args));
         emit(args, formatProjects(report, service.costService), report);
         return 0;
       }
 
       case 'sessions': {
-        const sessions = service.recentSessions(queryFrom(args), args.limit ?? 20);
-        emit(args, formatSessions(sessions, service.costService), sessions);
+        const page = service.recentSessions(queryFrom(args), pageFrom(args));
+        emit(args, formatSessions(page, service.costService), page);
         return 0;
       }
 
@@ -148,7 +158,7 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'counterfactual': {
-        const report = service.counterfactualCost(queryFrom(args), args.models);
+        const report = service.counterfactualCost(queryFrom(args), args.counterfactualModels);
         emit(args, formatCounterfactual(report, service.costService), report);
         return 0;
       }
