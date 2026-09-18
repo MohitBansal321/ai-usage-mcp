@@ -33,7 +33,7 @@ import {
   type BudgetReport,
 } from './budget-service.js';
 import { CounterfactualService, type CounterfactualReport } from './counterfactual-service.js';
-import { resolvePeriod, type PeriodInput } from './period.js';
+import { ComparePeriodError, resolvePeriod, type PeriodInput } from './period.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
 import { VerifyService, type VerifyReport } from './verify-service.js';
 
@@ -202,6 +202,20 @@ export class UsageService {
 
   summary(query: UsageQuery = {}, options: { compare?: boolean } = {}): SummaryReport {
     const { filter, label, previous } = this.filterFor(query);
+    // Silently dropping the comparison is the one outcome to avoid: the caller
+    // asked what changed, and a report that simply omits the answer reads as
+    // "nothing changed" rather than "I did not check". Only a period with a
+    // fixed length has a window before it -- see `resolvePeriod`.
+    if (options.compare && !previous) {
+      throw new ComparePeriodError(
+        // Named without flag dashes on purpose: this message reaches an MCP
+        // client too, where the arguments are `days`/`today`/`since`, and
+        // telling one to pass `--days` would be advice it cannot act on.
+        `Cannot compare "${label}" against the window before it: that needs a period of fixed ` +
+          'length -- days, today, or since and until together. An open-ended period (since ' +
+          'alone, until alone, or all time) has no equally long window before it.',
+      );
+    }
     return this.aggregation.summary(filter, label, options.compare ? previous : undefined);
   }
 

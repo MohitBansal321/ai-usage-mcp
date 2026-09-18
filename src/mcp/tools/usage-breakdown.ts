@@ -27,7 +27,7 @@ export function registerUsageBreakdown(server: McpServer, ctx: ToolContext): voi
         'so answering it otherwise means enumerating projects and issuing one call each. ' +
         'Combinations with no activity are absent rather than returned as zero rows. Cost stays ' +
         'labelled reported vs estimated per row and the two are never summed.',
-      inputSchema: {
+      inputSchema: z.strictObject({
         ...periodShape,
         client: clientEnum,
         ...pageShape,
@@ -40,7 +40,7 @@ export function registerUsageBreakdown(server: McpServer, ctx: ToolContext): voi
               `At most ${MAX_GROUP_AXES}, and each at most once. The time axes bucket in ` +
               `local time, identically to daily_usage.`,
           ),
-      },
+      }),
     },
     async (args) => {
       await ctx.ensureFresh();

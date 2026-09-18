@@ -31,7 +31,7 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
         'on each, and nothing on disk can say what that would have been. Report it as such, ' +
         'keep every scenario labelled an estimate, and never subtract a scenario from the ' +
         'reported cost to claim a number.',
-      inputSchema: {
+      inputSchema: z.strictObject({
         // `models` is REDEFINED below, so the scope filter periodShape supplies
         // under that name must not also be here -- on this one tool `models` has
         // meant "price against these" since before 0.8.0, and quietly turning it
@@ -67,7 +67,7 @@ export function registerCounterfactualCost(server: McpServer, ctx: ToolContext):
               'against these" on this tool. Use both together to ask what your Opus turns ' +
               'would have cost on Sonnet.',
           ),
-      },
+      }),
     },
     async (args) => {
       await ctx.ensureFresh();

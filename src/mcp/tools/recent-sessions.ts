@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatSessions } from '../../services/formatter.js';
 import {
@@ -20,7 +21,7 @@ export function registerRecentSessions(server: McpServer, ctx: ToolContext): voi
       description:
         'Most recently active sessions with project path, client, model(s), duration, ' +
         'token breakdown and cost. Use the returned session id with session_usage for detail.',
-      inputSchema: { ...periodShape, client: clientEnum, ...pageShape },
+      inputSchema: z.strictObject({ ...periodShape, client: clientEnum, ...pageShape }),
     },
     async (args) => {
       await ctx.ensureFresh();

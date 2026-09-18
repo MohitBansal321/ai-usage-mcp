@@ -192,7 +192,22 @@ export function applyPricingOverride(
  */
 export function loadPricing(): LoadedPricing {
   const overridePath = pricingOverridePath();
-  if (!existsSync(overridePath)) return { table: builtinPricing, mode: 'builtin' };
+  if (!existsSync(overridePath)) {
+    // Naming a file that is not there is a mistake worth stopping for. Falling
+    // back to built-in prices would answer with a *different* table than the one
+    // asked for, and every cost figure downstream would look ordinary while
+    // being computed from rates the user thought they had replaced -- a typo in
+    // the path is indistinguishable from the override working. The default
+    // config path is the one that is allowed to be absent, because not having it
+    // is the normal state rather than a request.
+    if (process.env.AI_USAGE_PRICING_FILE) {
+      throw new PricingOverrideError(
+        `Pricing override at ${overridePath} does not exist (named by AI_USAGE_PRICING_FILE). ` +
+          'Create it, correct the path, or unset the variable to use built-in pricing.',
+      );
+    }
+    return { table: builtinPricing, mode: 'builtin' };
+  }
 
   let parsed: unknown;
   try {

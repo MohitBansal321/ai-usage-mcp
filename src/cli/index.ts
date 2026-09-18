@@ -5,6 +5,7 @@ import { FieldError, exceedsThreshold, readField, renderField } from './field.js
 import { HELP_TEXT } from './commands/help.js';
 import { VERSION } from '../version.js';
 import { UsageService, type UsageQuery } from '../services/usage-service.js';
+import { ComparePeriodError } from '../services/period.js';
 import type { PageRequest } from '../db/repositories/usage-repository.js';
 import { checkForUpdate } from '../services/update-check.js';
 import {
@@ -330,7 +331,9 @@ async function run(argv: string[]): Promise<number> {
     // A bad --field is a usage error, like any other bad flag: one clean line
     // and exit 2, not a stack trace. Getting this wrong matters more here than
     // elsewhere, because the caller is a script reading the exit code.
-    if (err instanceof FieldError) {
+    // A bad --field and an impossible --compare are both the caller getting the
+    // flags wrong, so both exit the same way a rejected flag does.
+    if (err instanceof FieldError || err instanceof ComparePeriodError) {
       process.stderr.write(`${err.message}\n`);
       return 2;
     }

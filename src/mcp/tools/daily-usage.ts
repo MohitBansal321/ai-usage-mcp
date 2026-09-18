@@ -23,7 +23,7 @@ export function registerDailyUsage(server: McpServer, ctx: ToolContext): void {
         'bucket look like a spike beside one weeks earlier. All buckets are local time, so ' +
         'they agree with the period filter rather than drifting by a timezone offset. Cost is ' +
         'labelled reported vs estimated per bucket.',
-      inputSchema: {
+      inputSchema: z.strictObject({
         ...periodShape,
         client: clientEnum,
         grain: z
@@ -34,7 +34,7 @@ export function registerDailyUsage(server: McpServer, ctx: ToolContext): void {
               'every day onto one 24-slot local clock, which is what answers "when during the ' +
               'day do I burn tokens". All are local time, matching the period filter.',
           ),
-      },
+      }),
     },
     async (args) => {
       await ctx.ensureFresh();

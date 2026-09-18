@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { UsageService } from '../../src/services/usage-service.js';
+import { ComparePeriodError } from '../../src/services/period.js';
 import {
   assistantLine,
   buildClaudeProjects,
@@ -248,6 +249,34 @@ describe('UsageService', () => {
     expect(detail.main.totalTokens + detail.subagent.totalTokens).toBe(detail.session.totalTokens);
   });
 
+  /**
+   * Asking for a comparison and getting a report without one is the failure
+   * mode worth a test: a summary that simply omits the delta reads as "nothing
+   * changed" rather than "I never checked". Only a period of fixed length has an
+   * equally long window before it.
+   */
+  it('compares against the previous window for every period that has one', () => {
+    for (const query of [
+      { today: true },
+      { days: 7 },
+      { since: '2026-01-01', until: '2026-01-08' },
+    ])
+      expect(service.summary(query, { compare: true }).comparison).toBeDefined();
+  });
+
+  it('refuses an open-ended range too, not just all time', () => {
+    // These are the cases the docs claimed were comparable: an open `since` has
+    // no fixed length, so there is no equally long window to compare against.
+    for (const query of [{ since: '2026-01-01' }, { until: '2026-01-08' }])
+      expect(() => service.summary(query, { compare: true })).toThrow(ComparePeriodError);
+  });
+
+  it('names the period it could not compare, so the caller can see what to change', () => {
+    expect(() => service.summary({}, { compare: true })).toThrow(/all time/);
+    // Flag spellings stay out of it: this message reaches MCP clients too.
+    expect(() => service.summary({}, { compare: true })).not.toThrow(/--days/);
+  });
+
   it('returns undefined for a session it has never seen', () => {
     expect(service.sessionUsage('no-such-session')).toBeUndefined();
   });
@@ -313,8 +342,10 @@ describe('UsageService', () => {
 
   it('refuses to invent a previous window for an unbounded period', () => {
     // "All time" has no window before it, and constructing one would be
-    // answering a question nobody asked.
-    expect(service.summary({}, { compare: true }).comparison).toBeUndefined();
+    // answering a question nobody asked. It used to decline by returning a
+    // report with no comparison in it, which the caller could not distinguish
+    // from "nothing changed" -- so it now declines out loud.
+    expect(() => service.summary({}, { compare: true })).toThrow(ComparePeriodError);
   });
 
   it('leaves the comparison out unless it was asked for', () => {

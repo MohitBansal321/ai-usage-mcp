@@ -29,7 +29,9 @@ Period options (default: all time):
   --since <ISO>         Explicit start (inclusive)
   --until <ISO>         Explicit end (exclusive)
   --compare previous    stats only: also report the equal-length window before this one,
-                        with the delta. Needs a bounded period; all time has no previous.
+                        with the delta. Needs a period of fixed length: --days, --today,
+                        or --since AND --until. Open-ended (--since alone, --until alone,
+                        all time) has no window before it and is rejected, not ignored.
   --grain <g>           daily only: hour | day | hour-of-day (default day).
                         hour-of-day collapses every day onto one 24-slot local clock.
   --by a,b              breakdown only: up to 3 of client, model, provider, project,

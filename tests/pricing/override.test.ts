@@ -96,6 +96,38 @@ describe('pricing override: overlay', () => {
   });
 });
 
+/**
+ * A named file that is not there used to load the built-in table and say nothing.
+ *
+ * That is the worst shape a pricing bug can take: every cost figure downstream
+ * looks ordinary while being computed from rates the user believed they had
+ * replaced, and a typo in the path is indistinguishable from the override
+ * working. The default config path keeps falling back, because not having one is
+ * the normal state rather than a request.
+ */
+describe('pricing override: a named file that is missing', () => {
+  it('refuses to fall back when AI_USAGE_PRICING_FILE names a file that does not exist', () => {
+    process.env.AI_USAGE_PRICING_FILE = join(
+      mkdtempSync(join(tmpdir(), 'pricing-missing-')),
+      'no-such-pricing.json',
+    );
+    expect(() => loadPricing()).toThrow(/does not exist/);
+    expect(() => loadPricing()).toThrow(/AI_USAGE_PRICING_FILE/);
+  });
+
+  it('still falls back silently when no override was ever asked for', () => {
+    delete process.env.AI_USAGE_PRICING_FILE;
+    process.env.AI_USAGE_HOME = mkdtempSync(join(tmpdir(), 'pricing-no-config-'));
+    try {
+      const loaded = loadPricing();
+      expect(loaded.mode).toBe('builtin');
+      expect(loaded.table.version).toBe(builtinPricing.version);
+    } finally {
+      delete process.env.AI_USAGE_HOME;
+    }
+  });
+});
+
 describe('pricing override: replace', () => {
   it('discards the built-in table when asked explicitly', () => {
     writeOverride({

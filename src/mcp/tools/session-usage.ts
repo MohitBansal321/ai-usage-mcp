@@ -12,13 +12,13 @@ export function registerSessionUsage(server: McpServer, ctx: ToolContext): void 
         'Usage for one session: client, model(s), duration, token breakdown and cost. ' +
         'Accepts a full session id or an unambiguous fragment of one. Subagent turns are ' +
         'reported separately from main-thread turns.',
-      inputSchema: {
+      inputSchema: z.strictObject({
         sessionId: z.string().min(1).describe('Session id, or an unambiguous part of one.'),
         includeSubagents: z
           .boolean()
           .optional()
           .describe('Include subagent turns in the totals. Defaults to true.'),
-      },
+      }),
     },
     async (args) => {
       await ctx.ensureFresh();
