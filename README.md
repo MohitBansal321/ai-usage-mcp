@@ -379,6 +379,10 @@ Break my last 7 days down day by day.
 
 Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
+An argument a tool does not declare is **rejected by name**, not ignored. Before 0.9.0,
+`{ "period": "today" }` was silently stripped and answered with all-time totals; every tool now
+advertises `additionalProperties: false`.
+
 `counterfactual_cost` answers "would a cheaper model have cost less for this?" — it re-prices
 the exact token counts that were recorded, grouped by client, model **and** speed so the
 fast-mode premium and the two clients' different reasoning-token conventions are both handled.
@@ -752,7 +756,10 @@ Three rules it keeps:
   compares against the seven whole days before, not "the 156 hours before" — which is what
   subtracting an open window's elapsed length gives, and which changes every time you run it.
 
-"All time" has no window before it, so `--compare` is refused there rather than answered.
+`--compare` needs a period of fixed length: `--days`, `--today`, or `--since` **and**
+`--until` together. An open-ended period — all time, or `--since` or `--until` on its own — has
+no equally long window before it, so the comparison is refused (exit 2) rather than silently
+left out of an otherwise ordinary report.
 
 ### Ordering and paging a list
 
@@ -936,6 +943,11 @@ than failing:
 Pricing override at /home/you/.config/ai-usage-mcp/pricing.json is invalid:
 models["deepseek-v4-pro"].output must be a number >= 0 (USD per 1,000,000 tokens).
 ```
+
+For the same reason, an `AI_USAGE_PRICING_FILE` that points at a file which does not exist is
+an error, not a fallback to built-in prices — otherwise a typo in the path would look exactly
+like the override working. Only the default `~/.config/ai-usage-mcp/pricing.json` may be
+absent, because not having one is the normal case.
 
 `ai-usage status` always shows which table is in force, and whether it is built-in, an
 overlay, or a full replacement.

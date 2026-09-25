@@ -547,4 +547,5 @@ Newly discovered and decided during implementation:
       database the same way OpenCode's got split. `AI_USAGE_DB` / `AI_USAGE_HOME` override.
 - [x] **Pricing overrides** — prices go stale, so a user-supplied
       `~/.config/ai-usage-mcp/pricing.json` can replace the built-in table. A malformed
-      override is a hard error rather than a silent fallback.
+      override, or an `AI_USAGE_PRICING_FILE` naming a missing file, is a hard error rather
+      than a silent fallback.

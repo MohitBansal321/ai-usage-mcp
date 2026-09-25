@@ -102,7 +102,8 @@ Cost: `costBasis` is always one of `reported` | `estimated` | `unavailable`, and
 (reported) and `estimatedCost` (from a versioned pricing table) are never combined into one
 figure. Pricing tables live in [src/pricing/tables/](src/pricing/tables/) and a user can
 override them with a JSON file (`AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`); a
-malformed override throws rather than silently falling back.
+malformed override throws rather than silently falling back, and so does an
+`AI_USAGE_PRICING_FILE` naming a file that does not exist (only the default path may be absent).
 
 MCP specifics:
 
@@ -114,7 +115,10 @@ MCP specifics:
   ([src/mcp/tools/shared.ts](src/mcp/tools/shared.ts)), so `content[0]` stays byte-identical to
   what the CLI prints — which is what makes the parity assertion possible.
 - Tools live one-per-file under [src/mcp/tools/](src/mcp/tools/) as `registerX(server, ctx)`
-  functions sharing `periodShape` / `toQuery` from `shared.ts`; resources (`usage://today`,
+  functions sharing `periodShape` / `toQuery` from `shared.ts`. Every `inputSchema` must be a
+  `z.strictObject(...)`, never a raw shape: the SDK wraps a raw shape in a non-strict object
+  that strips unknown keys, so a mistyped argument is answered as if it were absent
+  (`tests/mcp/back-compat.test.ts` guards this); resources (`usage://today`,
   `usage://session/latest`, `usage://status`) and prompts are registered the same way.
 
 ## Conventions
