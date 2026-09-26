@@ -1,8 +1,8 @@
 import type { PricingTable } from '../types.js';
-import { anthropicPricing } from './anthropic-2026-06-24.js';
+import { anthropicPricing } from './anthropic-2026-09-26.js';
 import { openaiPricing } from './openai-2026-09-16.js';
 
-export { anthropicPricing } from './anthropic-2026-06-24.js';
+export { anthropicPricing } from './anthropic-2026-09-26.js';
 export { openaiPricing } from './openai-2026-09-16.js';
 
 /**
@@ -19,7 +19,7 @@ export const providerTables: PricingTable[] = [anthropicPricing, openaiPricing];
  * table is added or its numbers change, so `ai-usage status` reports one
  * meaningful "as of", with each provider's own capture date in the provenance.
  */
-export const BUILTIN_PRICING_VERSION = 'builtin-2026-09-16';
+export const BUILTIN_PRICING_VERSION = 'builtin-2026-09-26';
 
 /**
  * Unions the provider tables into the single table the pricing engine consults.

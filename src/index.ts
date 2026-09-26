@@ -1,5 +1,21 @@
-export { UsageService, type UsageQuery, type StatusReport } from './services/usage-service.js';
-export { CostService, billableOutputTokens, REASONING_PLACEMENT } from './services/cost-service.js';
+export {
+  UsageService,
+  type UsageQuery,
+  type StatusReport,
+  type PricingRefreshReport,
+} from './services/usage-service.js';
+export {
+  CostService,
+  billableOutputTokens,
+  ESTIMATED_CLIENTS,
+  REASONING_PLACEMENT,
+} from './services/cost-service.js';
+export {
+  refreshCommunityPricing,
+  type PricingRefreshOptions,
+  type PricingRefreshResult,
+} from './services/pricing-refresh.js';
+export { RepriceService, type RepriceResult } from './services/reprice-service.js';
 export { AggregationService } from './services/aggregation-service.js';
 export {
   CounterfactualService,
@@ -64,6 +80,13 @@ export {
   type Delta,
 } from './services/comparison.js';
 export { SyncRepository } from './db/repositories/sync-repository.js';
-export { loadPricing, anthropicPricing } from './pricing/index.js';
+export {
+  loadPricing,
+  anthropicPricing,
+  COMMUNITY_PRICING_URL,
+  convertLiteLLMPrices,
+  type CommunityPricing,
+  type CommunityPricingState,
+} from './pricing/index.js';
 export { ComparePeriodError, resolvePeriod, type PeriodInput } from './services/period.js';
 export * from './models/usage-record.js';

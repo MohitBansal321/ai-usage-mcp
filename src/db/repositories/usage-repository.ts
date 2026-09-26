@@ -448,6 +448,32 @@ function toAggregate(raw: RawAgg | undefined): AggregateRow {
   return row;
 }
 
+function toTurnRow(r: Record<string, unknown>): TurnRow {
+  const turn: TurnRow = {
+    id: r.id as string,
+    client: r.client as ClientId,
+    provider: r.provider as string,
+    model: r.model as string,
+    sessionId: r.session_id as string,
+    timestamp: r.timestamp as string,
+    turnKind: r.turn_kind as TurnKind,
+    inputTokens: (r.input_tokens as number) ?? 0,
+    outputTokens: (r.output_tokens as number) ?? 0,
+    cacheReadTokens: (r.cache_read_tokens as number) ?? 0,
+    cacheWriteTokens: (r.cache_write_tokens as number) ?? 0,
+    cacheWrite5mTokens: (r.cache_write_5m_tokens as number) ?? 0,
+    cacheWrite1hTokens: (r.cache_write_1h_tokens as number) ?? 0,
+    reasoningTokens: (r.reasoning_tokens as number) ?? 0,
+    totalTokens: (r.total_tokens as number) ?? 0,
+    costBasis: r.cost_basis as string,
+  };
+  if (r.project_path != null) turn.projectPath = r.project_path as string;
+  if (r.cost != null) turn.cost = r.cost as number;
+  if (r.estimated_cost != null) turn.estimatedCost = r.estimated_cost as number;
+  if (r.speed != null) turn.speed = r.speed as string;
+  return turn;
+}
+
 export class UsageRepository {
   private readonly upsertStmt: SqliteStatement;
 
@@ -778,31 +804,69 @@ export class UsageRepository {
          LIMIT :limit OFFSET :offset`,
       )
       .all(params) as Record<string, unknown>[];
-    return rows.map((r) => {
-      const turn: TurnRow = {
-        id: r.id as string,
-        client: r.client as ClientId,
-        provider: r.provider as string,
-        model: r.model as string,
-        sessionId: r.session_id as string,
-        timestamp: r.timestamp as string,
-        turnKind: r.turn_kind as TurnKind,
-        inputTokens: (r.input_tokens as number) ?? 0,
-        outputTokens: (r.output_tokens as number) ?? 0,
-        cacheReadTokens: (r.cache_read_tokens as number) ?? 0,
-        cacheWriteTokens: (r.cache_write_tokens as number) ?? 0,
-        cacheWrite5mTokens: (r.cache_write_5m_tokens as number) ?? 0,
-        cacheWrite1hTokens: (r.cache_write_1h_tokens as number) ?? 0,
-        reasoningTokens: (r.reasoning_tokens as number) ?? 0,
-        totalTokens: (r.total_tokens as number) ?? 0,
-        costBasis: r.cost_basis as string,
-      };
-      if (r.project_path != null) turn.projectPath = r.project_path as string;
-      if (r.cost != null) turn.cost = r.cost as number;
-      if (r.estimated_cost != null) turn.estimatedCost = r.estimated_cost as number;
-      if (r.speed != null) turn.speed = r.speed as string;
-      return turn;
-    });
+    return rows.map(toTurnRow);
+  }
+
+  /**
+   * Models that have stored rows with no cost, among these clients, that the
+   * pricing table can now price.
+   *
+   * A row is `unavailable` when its model was missing from the table at the time
+   * it was collected. Incremental sync never revisits it, so without this the
+   * row stays unpriced for good, however many releases later the table learns
+   * the model.
+   */
+  unpricedModelsNowPriced(clients: readonly ClientId[], pricedModels: string[]): string[] {
+    if (clients.length === 0 || pricedModels.length === 0) return [];
+    const params: Record<string, unknown> = {};
+    const where = [
+      "cost_basis = 'unavailable'",
+      anyOf('client', 'cl', clients, params),
+      anyOf('model', 'md', pricedModels, params),
+    ].join(' AND ');
+    const rows = this.db
+      .prepare(`SELECT DISTINCT model FROM usage_records WHERE ${where} ORDER BY model`)
+      .all(params) as { model: string }[];
+    return rows.map((r) => r.model);
+  }
+
+  /** Every unpriced stored row for one model, unpaged: read only in order to price it. */
+  unpricedTurns(clients: readonly ClientId[], model: string): TurnRow[] {
+    const params: Record<string, unknown> = { model };
+    const where = [
+      "cost_basis = 'unavailable'",
+      'model = :model',
+      anyOf('client', 'cl', clients, params),
+    ].join(' AND ');
+    const rows = this.db
+      .prepare(
+        `SELECT id, client, provider, model, session_id, project_path, timestamp, turn_kind,
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
+                cost, estimated_cost, cost_basis, speed
+         FROM usage_records WHERE ${where}`,
+      )
+      .all(params) as Record<string, unknown>[];
+    return rows.map(toTurnRow);
+  }
+
+  /**
+   * Records estimates for rows that had none, in one transaction.
+   *
+   * Guarded on `cost_basis = 'unavailable'`, so a row a concurrent sync has
+   * already priced is left as that sync wrote it.
+   */
+  setEstimates(estimates: { id: string; estimatedCost: number }[]): number {
+    if (estimates.length === 0) return 0;
+    const stmt = this.db.prepare(
+      `UPDATE usage_records SET cost_basis = 'estimated', estimated_cost = :cost
+       WHERE id = :id AND cost_basis = 'unavailable'`,
+    );
+    let changed = 0;
+    this.db.transaction(() => {
+      for (const e of estimates) changed += stmt.run({ id: e.id, cost: e.estimatedCost }).changes;
+    })();
+    return changed;
   }
 
   /** Total turns matching a filter, so a caller can page without guessing. */

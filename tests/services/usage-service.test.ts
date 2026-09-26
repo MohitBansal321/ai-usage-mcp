@@ -412,7 +412,7 @@ describe('UsageService', () => {
     // The built-in table is composed from one file per provider, each keeping its
     // own capture date, so provenance -- not the version string -- is where a
     // given provider's freshness is visible.
-    expect(status.pricing.version).toBe('builtin-2026-09-16');
+    expect(status.pricing.version).toBe('builtin-2026-09-26');
     expect(status.pricing.mode).toBe('builtin');
     expect(status.pricing.provenance).toContain('Anthropic');
     expect(status.pricing.provenance).toContain('OpenAI');

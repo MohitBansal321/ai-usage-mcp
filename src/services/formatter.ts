@@ -19,7 +19,8 @@ import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
 import type { TokenTotals } from '../models/usage-record.js';
 import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
-import type { StatusReport } from './usage-service.js';
+import type { PricingRefreshReport, StatusReport } from './usage-service.js';
+import type { CommunityPricingState } from '../pricing/index.js';
 import { updateCommand, type UpdateInfo } from './update-check.js';
 import { VERSION } from '../version.js';
 import type { SyncReport } from './sync-service.js';
@@ -722,6 +723,9 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
             (status.pricing.baseVersion ? ` (on top of ${status.pricing.baseVersion})` : ''),
     );
   }
+  if (status.pricing.community) {
+    out.push(`  Community:     ${describeCommunityPricing(status.pricing.community)}`);
+  }
   out.push('');
   out.push('Collectors:');
   for (const c of status.collectors) {
@@ -762,11 +766,53 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
   return out.join('\n');
 }
 
-export function formatSyncReport(report: SyncReport): string {
+/**
+ * One line on the community price list: what it priced, or why it priced
+ * nothing. "Nothing" has three causes a user would act on differently.
+ */
+function describeCommunityPricing(community: CommunityPricingState): string {
+  if (community.disabledBy) return `off (${community.disabledBy})`;
+  if (!community.fetchedAt) {
+    return "LiteLLM's price list not downloaded yet -- it is fetched on the next sync or server start";
+  }
+  const day = community.fetchedAt.slice(0, 10);
+  if (community.added.length === 0) {
+    return `LiteLLM's price list, fetched ${day}; the built-in tables already price every model in it`;
+  }
+  return (
+    `${community.added.length} model(s) the built-in tables lack, from LiteLLM's price list ` +
+    `fetched ${day}: ${community.added.join(', ')}`
+  );
+}
+
+function repricedLine(repriced: { models: string[]; records: number }): string {
+  return (
+    `Priced ${int(repriced.records)} stored record(s) that had no price when collected: ` +
+    `${repriced.models.join(', ')}.`
+  );
+}
+
+/**
+ * What a price refresh did, or nothing when it did nothing worth saying: a
+ * fresh cache or an opt-out is the ordinary state, not news.
+ */
+export function formatPricingRefresh(refresh: PricingRefreshReport): string[] {
+  if (refresh.status === 'failed') {
+    return [`Community prices: refresh failed (${refresh.reason}); prices in force are unchanged.`];
+  }
+  if (refresh.status !== 'updated') return [];
+  const out = [`Community prices: downloaded ${int(refresh.models)} Anthropic price(s).`];
+  if (refresh.repriced) out.push(repricedLine(refresh.repriced));
+  return out;
+}
+
+export function formatSyncReport(report: SyncReport, refresh?: PricingRefreshReport): string {
   const out: string[] = [
     `Sync finished in ${report.durationMs}ms -- ${int(report.totalRecords)} record(s) written.`,
-    '',
   ];
+  if (report.repriced) out.push(repricedLine(report.repriced));
+  if (refresh) out.push(...formatPricingRefresh(refresh));
+  out.push('');
   for (const r of report.results) {
     out.push(
       `${r.collector} [${r.client}] -- ${r.available ? 'ok' : 'skipped'} (${r.durationMs}ms)`,

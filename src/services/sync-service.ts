@@ -34,6 +34,8 @@ export interface SyncReport {
   totalRecords: number;
   startedAt: string;
   durationMs: number;
+  /** Stored rows that were unpriced and have now been priced. Absent when there were none. */
+  repriced?: { models: string[]; records: number };
 }
 
 export class SyncService {
