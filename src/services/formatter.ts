@@ -5,6 +5,7 @@ import type {
   CacheHealthReport,
   ClientReport,
   DailyReport,
+  HandoffPacket,
   ModelReport,
   PageInfo,
   ProjectReport,
@@ -937,6 +938,93 @@ export function formatCounterfactual(
     out.push(`Note: ${caveat}`);
   }
   return out.join('\n');
+}
+
+export function formatHandoffPacket(packet: HandoffPacket): string {
+  const out: string[] = [];
+  out.push(
+    `Handoff Packet -- Session ${packet.sessionId}${packet.phaseName ? ` (${packet.phaseName})` : ''}`,
+  );
+  out.push(`Generated: ${packet.generatedAt}`);
+  out.push('');
+
+  const m = packet.metadata;
+  out.push(`Session: ${m.totalTurns} turns (${m.mainTurns} main, ${m.subagentTurns} subagent)`);
+  out.push(`Models: ${m.modelsUsed.length ? m.modelsUsed.join(', ') : '(unknown)'}`);
+  out.push(`Time span: ${m.timeSpan.start} -> ${m.timeSpan.end}`);
+  out.push(`Total tokens: ${m.totalTokens.toLocaleString()}`);
+  out.push('');
+
+  const wc = packet.whatChanged;
+  out.push('=== WHAT CHANGED ===');
+  if (wc.filesModified.length) {
+    out.push('Files modified:');
+    for (const f of wc.filesModified) out.push(`  - ${f}`);
+  } else {
+    out.push('Files modified: (none detected)');
+  }
+  if (wc.keyDecisions.length) {
+    out.push('Key decisions:');
+    for (const d of wc.keyDecisions) out.push(`  - ${d}`);
+  } else {
+    out.push('Key decisions: (none recorded)');
+  }
+  if (wc.configChanges.length) {
+    out.push('Config changes:');
+    for (const c of wc.configChanges) out.push(`  - ${c}`);
+  } else {
+    out.push('Config changes: (none detected)');
+  }
+  out.push('');
+
+  const wf = packet.whatFailed;
+  out.push('=== WHAT FAILED ===');
+  if (wf.errors.length) {
+    out.push('Errors:');
+    for (const e of wf.errors) out.push(`  - ${e}`);
+  } else {
+    out.push('Errors: (none)');
+  }
+  if (wf.testFailures.length) {
+    out.push('Test failures:');
+    for (const t of wf.testFailures) out.push(`  - ${t}`);
+  } else {
+    out.push('Test failures: (none)');
+  }
+  if (wf.blockers.length) {
+    out.push('Blockers:');
+    for (const b of wf.blockers) out.push(`  - ${b}`);
+  } else {
+    out.push('Blockers: (none)');
+  }
+  out.push('');
+
+  const wn = packet.whatNext;
+  out.push("=== WHAT'S NEXT ===");
+  if (wn.nextSteps.length) {
+    out.push('Next steps:');
+    for (const s of wn.nextSteps) out.push(`  - ${s}`);
+  } else {
+    out.push('Next steps: (none inferred)');
+  }
+  if (wn.openQuestions.length) {
+    out.push('Open questions:');
+    for (const q of wn.openQuestions) out.push(`  - ${q}`);
+  } else {
+    out.push('Open questions: (none)');
+  }
+  if (wn.contextNeeded.length) {
+    out.push('Context needed for continuation:');
+    for (const c of wn.contextNeeded) out.push(`  - ${c}`);
+  } else {
+    out.push('Context needed: (none)');
+  }
+
+  out.push('');
+  out.push('Usage: Feed this packet to the next agent phase instead of raw history.');
+  out.push('The packet is ~1-2KB vs 50-200KB of raw context -- massive token savings.');
+
+  return out.join('\n').trimEnd();
 }
 
 export function formatCacheHealth(report: CacheHealthReport): string {

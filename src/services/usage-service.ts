@@ -19,6 +19,7 @@ import {
   type CacheHealthReport,
   type ClientReport,
   type DailyReport,
+  type HandoffPacket,
   type ModelReport,
   type ProjectReport,
   type SessionDetail,
@@ -315,6 +316,19 @@ export class UsageService {
       includeSubagents,
       this.costService.pricedModels(),
       options,
+    );
+  }
+
+  generateHandoffPacket(
+    sessionId: string,
+    includeSubagents = true,
+    phaseName?: string,
+  ): HandoffPacket | { ambiguous: string[] } | undefined {
+    return this.aggregation.generateHandoffPacket(
+      sessionId,
+      includeSubagents,
+      this.costService.pricedModels(),
+      phaseName,
     );
   }
 
