@@ -302,18 +302,6 @@ export class UsageService {
     return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
   }
 
-<<<<<<< HEAD
-  generateHandoffPacket(
-    sessionId: string,
-    includeSubagents = true,
-    phaseName?: string,
-  ): HandoffPacket | { ambiguous: string[] } | undefined {
-    return this.aggregation.generateHandoffPacket(
-      sessionId,
-      includeSubagents,
-      this.costService.pricedModels(),
-      phaseName,
-=======
   cacheHealth(
     sessionId: string,
     includeSubagents = true,
@@ -328,7 +316,19 @@ export class UsageService {
       includeSubagents,
       this.costService.pricedModels(),
       options,
->>>>>>> main
+    );
+  }
+
+  generateHandoffPacket(
+    sessionId: string,
+    includeSubagents = true,
+    phaseName?: string,
+  ): HandoffPacket | { ambiguous: string[] } | undefined {
+    return this.aggregation.generateHandoffPacket(
+      sessionId,
+      includeSubagents,
+      this.costService.pricedModels(),
+      phaseName,
     );
   }
 

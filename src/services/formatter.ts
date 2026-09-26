@@ -940,7 +940,6 @@ export function formatCounterfactual(
   return out.join('\n');
 }
 
-<<<<<<< HEAD
 export function formatHandoffPacket(packet: HandoffPacket): string {
   const out: string[] = [];
   out.push(
@@ -1024,7 +1023,10 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   out.push('');
   out.push('Usage: Feed this packet to the next agent phase instead of raw history.');
   out.push('The packet is ~1-2KB vs 50-200KB of raw context -- massive token savings.');
-=======
+
+  return out.join('\n').trimEnd();
+}
+
 export function formatCacheHealth(report: CacheHealthReport): string {
   const out: string[] = [];
   out.push(`Cache health -- Session ${report.sessionId}`);
@@ -1095,7 +1097,6 @@ export function formatCacheHealth(report: CacheHealthReport): string {
   out.push('  - Keep file load order stable; avoid re-globbing large directories');
   out.push('  - Use subagents for exploratory work that might touch many files');
   out.push('  - Consider /compact to reset the prefix cleanly before a major context shift');
->>>>>>> main
 
   return out.join('\n').trimEnd();
 }

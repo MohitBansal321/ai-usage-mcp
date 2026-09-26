@@ -100,11 +100,8 @@ async function main(): Promise<void> {
   registerDailyUsage(server, ctx);
   registerUsageBreakdown(server, ctx);
   registerCounterfactualCost(server, ctx);
-<<<<<<< HEAD
-  registerHandoffPacket(server, ctx);
-=======
   registerCacheHealth(server, ctx);
->>>>>>> main
+  registerHandoffPacket(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server);
