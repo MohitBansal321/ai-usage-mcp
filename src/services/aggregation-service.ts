@@ -4,6 +4,7 @@ import type {
   Page,
   PageRequest,
   SessionRow,
+  TurnRow,
   UsageFilter,
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
@@ -124,6 +125,44 @@ export interface BreakdownReport {
   page: PageInfo;
   overall: AggregateRow;
   unmatchedScope?: UnmatchedScope;
+}
+
+export interface CacheBreakEvent {
+  /** Turn index in the session (0-based). */
+  turnIndex: number;
+  /** ISO timestamp of the turn. */
+  timestamp: string;
+  /** Cache write tokens on this turn. */
+  cacheWriteTokens: number;
+  /** Cache read tokens on this turn. */
+  cacheReadTokens: number;
+  /** Ratio of this turn's cache writes to the rolling average before it. */
+  writeSpikeRatio: number;
+  /** Rolling average of cache writes over previous N turns. */
+  baselineWriteAvg: number;
+  /** Estimated extra cost from the cache break (cache write premium). */
+  estimatedExtraCost: number;
+  /** Human-readable explanation of what likely happened. */
+  explanation: string;
+}
+
+export interface CacheHealthReport {
+  sessionId: string;
+  totalTurns: number;
+  turnsAnalyzed: number;
+  /** Overall cache hit rate for the session. */
+  hitRate: number | undefined;
+  /** Overall reads per write for the session. */
+  readsPerWrite: number | undefined;
+  /** Detected cache break events, ordered by time. */
+  breaks: CacheBreakEvent[];
+  /** Summary statistics. */
+  summary: {
+    totalCacheWrites: number;
+    totalCacheReads: number;
+    maxWriteSpikeRatio: number;
+    breakCount: number;
+  };
 }
 
 export interface SessionDetail {
@@ -322,6 +361,139 @@ export class AggregationService {
         previousTotals,
       ),
     };
+  }
+
+  /** Analyzes a session for cache breaks -- sudden spikes in cache write tokens. */
+  cacheHealth(
+    sessionId: string,
+    includeSubagents = true,
+    pricedModels?: string[],
+    options: {
+      /** Minimum spike ratio to flag as a break (default: 10x). */
+      spikeThreshold?: number;
+      /** Minimum absolute cache writes to consider (default: 5000). */
+      minCacheWrites?: number;
+      /** Rolling window for baseline (default: 5 turns). */
+      baselineWindow?: number;
+    } = {},
+  ): CacheHealthReport | { ambiguous: string[] } | undefined {
+    const matches = this.repo.findSessionIds(sessionId);
+    if (matches.length === 0) return undefined;
+    const exact = matches.includes(sessionId)
+      ? sessionId
+      : matches.length === 1
+        ? matches[0]
+        : undefined;
+    if (!exact) return { ambiguous: matches };
+
+    const priced = pricedModels ? { pricedModels } : {};
+    const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
+    const turns = this.repo.turns(base, { limit: 5000 });
+    if (turns.length === 0) {
+      return {
+        sessionId: exact,
+        totalTurns: 0,
+        turnsAnalyzed: 0,
+        hitRate: undefined,
+        readsPerWrite: undefined,
+        breaks: [],
+        summary: { totalCacheWrites: 0, totalCacheReads: 0, maxWriteSpikeRatio: 0, breakCount: 0 },
+      };
+    }
+
+    const spikeThreshold = options.spikeThreshold ?? 10;
+    const minCacheWrites = options.minCacheWrites ?? 5000;
+    const baselineWindow = options.baselineWindow ?? 5;
+
+    let totalCacheWrites = 0;
+    let totalCacheReads = 0;
+    let maxWriteSpikeRatio = 0;
+    const breaks: CacheBreakEvent[] = [];
+
+    for (let i = 0; i < turns.length; i++) {
+      const turn = turns[i]!;
+      const cw = turn.cacheWriteTokens ?? 0;
+      const cr = turn.cacheReadTokens ?? 0;
+      totalCacheWrites += cw;
+      totalCacheReads += cr;
+
+      if (cw < minCacheWrites) continue;
+      if (i < baselineWindow) continue;
+
+      let baselineSum = 0;
+      for (let j = i - baselineWindow; j < i; j++) {
+        baselineSum += turns[j]!.cacheWriteTokens ?? 0;
+      }
+      const baselineAvg = baselineSum / baselineWindow;
+      if (baselineAvg === 0) continue;
+
+      const ratio = cw / baselineAvg;
+      if (ratio >= spikeThreshold) {
+        maxWriteSpikeRatio = Math.max(maxWriteSpikeRatio, ratio);
+        const writePremium = cw * 1.25;
+        const estimatedExtraCost = writePremium * 0.000015;
+        breaks.push({
+          turnIndex: i,
+          timestamp: turn.timestamp,
+          cacheWriteTokens: cw,
+          cacheReadTokens: cr,
+          writeSpikeRatio: Math.round(ratio * 100) / 100,
+          baselineWriteAvg: Math.round(baselineAvg),
+          estimatedExtraCost: Math.round(estimatedExtraCost * 1000000) / 1000000,
+          explanation: this.explainCacheBreak(cw, baselineAvg, turn, turns, i),
+        });
+      }
+    }
+
+    const hitRate = totalCacheWrites + totalCacheReads > 0
+      ? totalCacheReads / (totalCacheWrites + totalCacheReads)
+      : undefined;
+    const readsPerWrite = totalCacheWrites > 0
+      ? totalCacheReads / totalCacheWrites
+      : undefined;
+
+    return {
+      sessionId: exact,
+      totalTurns: turns.length,
+      turnsAnalyzed: turns.length,
+      hitRate,
+      readsPerWrite,
+      breaks,
+      summary: {
+        totalCacheWrites,
+        totalCacheReads,
+        maxWriteSpikeRatio: Math.round(maxWriteSpikeRatio * 100) / 100,
+        breakCount: breaks.length,
+      },
+    };
+  }
+
+  private explainCacheBreak(
+    currentWrites: number,
+    baselineAvg: number,
+    turn: TurnRow,
+    allTurns: TurnRow[],
+    index: number,
+  ): string {
+    const parts: string[] = [];
+    parts.push(`Cache writes jumped from ~${Math.round(baselineAvg)} to ${currentWrites} tokens (${Math.round(currentWrites / baselineAvg * 100) / 100}x baseline).`);
+
+    if (turn.model && turn.model !== '(unknown)') {
+      parts.push(`Model: ${turn.model}.`);
+    }
+    if (turn.turnKind === 'subagent') {
+      parts.push('This was a subagent turn -- subagents often re-read parent context.');
+    }
+    const prevTurn = allTurns[index - 1];
+    if (prevTurn && prevTurn.model !== turn.model) {
+      parts.push(`Model switched from ${prevTurn.model} to ${turn.model} -- this invalidates the prefix cache.`);
+    }
+    if (turn.speed === 'fast' && prevTurn?.speed !== 'fast') {
+      parts.push('Switched to fast mode -- different cache tier.');
+    }
+    parts.push('Likely cause: a core file was edited mid-session, the file load order changed, or a global config (CLAUDE.md, AGENTS.md) was modified -- all of which break the prefix cache and force a full re-read at write prices.');
+
+    return parts.join(' ');
   }
 
   /** Resolves an exact or partial session id, then assembles its detail view. */

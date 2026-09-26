@@ -16,6 +16,7 @@ import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record
 import {
   AggregationService,
   type BreakdownReport,
+  type CacheHealthReport,
   type ClientReport,
   type DailyReport,
   type ModelReport,
@@ -298,6 +299,23 @@ export class UsageService {
     includeSubagents = true,
   ): SessionDetail | { ambiguous: string[] } | undefined {
     return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
+  }
+
+  cacheHealth(
+    sessionId: string,
+    includeSubagents = true,
+    options: {
+      spikeThreshold?: number;
+      minCacheWrites?: number;
+      baselineWindow?: number;
+    } = {},
+  ): CacheHealthReport | { ambiguous: string[] } | undefined {
+    return this.aggregation.cacheHealth(
+      sessionId,
+      includeSubagents,
+      this.costService.pricedModels(),
+      options,
+    );
   }
 
   dailyUsage(query: UsageQuery = {}, grain: TimeGrain = 'day'): DailyReport {
