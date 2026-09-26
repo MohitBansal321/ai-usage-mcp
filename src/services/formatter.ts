@@ -2,6 +2,7 @@ import type { AggregateRow, Page, SessionRow } from '../db/repositories/usage-re
 import type { CostTotals } from '../models/usage-record.js';
 import type {
   BreakdownReport,
+  CacheHealthReport,
   ClientReport,
   DailyReport,
   ModelReport,
@@ -936,4 +937,78 @@ export function formatCounterfactual(
     out.push(`Note: ${caveat}`);
   }
   return out.join('\n');
+}
+
+export function formatCacheHealth(report: CacheHealthReport): string {
+  const out: string[] = [];
+  out.push(`Cache health -- Session ${report.sessionId}`);
+  out.push(`Turns analyzed: ${int(report.turnsAnalyzed)} of ${int(report.totalTurns)}`);
+  out.push('');
+
+  if (report.totalTurns === 0) {
+    out.push('No turns in this session.');
+    return out.join('\n');
+  }
+
+  out.push('Overall cache metrics:');
+  if (report.hitRate !== undefined) {
+    out.push(`  Hit rate:       ${(report.hitRate * 100).toFixed(2)}%`);
+  } else {
+    out.push(`  Hit rate:       n/a (no cache traffic)`);
+  }
+  if (report.readsPerWrite !== undefined) {
+    out.push(`  Reads per write: ${report.readsPerWrite.toFixed(1)}`);
+  } else {
+    out.push(`  Reads per write: n/a (no cache writes)`);
+  }
+  out.push(`  Total cache reads:  ${tokens(report.summary.totalCacheReads)}`);
+  out.push(`  Total cache writes: ${tokens(report.summary.totalCacheWrites)}`);
+  out.push('');
+
+  if (report.breaks.length === 0) {
+    out.push('No cache breaks detected with current thresholds.');
+    out.push('');
+    out.push('A "cache break" is a sudden spike in cache_write_tokens -- typically caused by');
+    out.push('editing a core file mid-session, changing the file load order, or modifying a');
+    out.push('global config (CLAUDE.md, AGENTS.md). This invalidates the prefix cache, forcing');
+    out.push('the agent to re-read all prior context at full write prices.');
+    out.push('');
+    out.push(
+      'Adjust --spike-threshold (default 10x) or --min-cache-writes (default 5000) to tune sensitivity.',
+    );
+    return out.join('\n');
+  }
+
+  out.push(`Cache breaks detected: ${report.breaks.length}`);
+  out.push(`Max spike ratio: ${report.summary.maxWriteSpikeRatio}x baseline`);
+  out.push('');
+
+  for (const br of report.breaks) {
+    out.push(`--- Break at turn ${br.turnIndex} (${br.timestamp}) ---`);
+    out.push(
+      `  Cache writes:  ${tokens(br.cacheWriteTokens)}  (baseline ~${int(br.baselineWriteAvg)})`,
+    );
+    out.push(`  Cache reads:   ${tokens(br.cacheReadTokens)}`);
+    out.push(`  Spike ratio:   ${br.writeSpikeRatio}x`);
+    out.push(`  Est. extra cost from write premium: ${usd(br.estimatedExtraCost)}`);
+    out.push(`  Explanation: ${br.explanation}`);
+    out.push('');
+  }
+
+  out.push('What this means:');
+  out.push('Each break represents a moment the prefix cache was invalidated. The agent had to');
+  out.push(
+    're-write the entire context prefix at cache-write prices (1.25x-2x input rate) instead',
+  );
+  out.push('of reading it at cache-read prices (0.1x input rate). On a 50k token context, that');
+  out.push('cost difference is roughly 50,000 * (1.25 - 0.1) * $0.000015 = $0.0086 per break --');
+  out.push('small per event, but repeated breaks in a 5-hour rate limit window can exhaust it.');
+  out.push('');
+  out.push('To avoid breaks:');
+  out.push('  - Do not edit core files (entrypoints, configs, CLAUDE.md) mid-session');
+  out.push('  - Keep file load order stable; avoid re-globbing large directories');
+  out.push('  - Use subagents for exploratory work that might touch many files');
+  out.push('  - Consider /compact to reset the prefix cleanly before a major context shift');
+
+  return out.join('\n').trimEnd();
 }

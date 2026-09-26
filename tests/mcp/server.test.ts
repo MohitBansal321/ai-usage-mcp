@@ -118,6 +118,7 @@ describe('MCP server over stdio', () => {
   it('starts and exposes exactly the expected tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'cache_health',
       'client_usage',
       'counterfactual_cost',
       'daily_usage',
@@ -137,7 +138,7 @@ describe('MCP server over stdio', () => {
     // added later cannot ship without annotations: without them a client
     // prompts for confirmation on every call, which for a reporting server
     // that only reads local files is pure friction.
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(10);
 
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint, `${tool.name} readOnlyHint`).toBe(true);
