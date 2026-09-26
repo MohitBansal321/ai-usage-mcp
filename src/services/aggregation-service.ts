@@ -445,12 +445,11 @@ export class AggregationService {
       }
     }
 
-    const hitRate = totalCacheWrites + totalCacheReads > 0
-      ? totalCacheReads / (totalCacheWrites + totalCacheReads)
-      : undefined;
-    const readsPerWrite = totalCacheWrites > 0
-      ? totalCacheReads / totalCacheWrites
-      : undefined;
+    const hitRate =
+      totalCacheWrites + totalCacheReads > 0
+        ? totalCacheReads / (totalCacheWrites + totalCacheReads)
+        : undefined;
+    const readsPerWrite = totalCacheWrites > 0 ? totalCacheReads / totalCacheWrites : undefined;
 
     return {
       sessionId: exact,
@@ -476,7 +475,9 @@ export class AggregationService {
     index: number,
   ): string {
     const parts: string[] = [];
-    parts.push(`Cache writes jumped from ~${Math.round(baselineAvg)} to ${currentWrites} tokens (${Math.round(currentWrites / baselineAvg * 100) / 100}x baseline).`);
+    parts.push(
+      `Cache writes jumped from ~${Math.round(baselineAvg)} to ${currentWrites} tokens (${Math.round((currentWrites / baselineAvg) * 100) / 100}x baseline).`,
+    );
 
     if (turn.model && turn.model !== '(unknown)') {
       parts.push(`Model: ${turn.model}.`);
@@ -486,12 +487,16 @@ export class AggregationService {
     }
     const prevTurn = allTurns[index - 1];
     if (prevTurn && prevTurn.model !== turn.model) {
-      parts.push(`Model switched from ${prevTurn.model} to ${turn.model} -- this invalidates the prefix cache.`);
+      parts.push(
+        `Model switched from ${prevTurn.model} to ${turn.model} -- this invalidates the prefix cache.`,
+      );
     }
     if (turn.speed === 'fast' && prevTurn?.speed !== 'fast') {
       parts.push('Switched to fast mode -- different cache tier.');
     }
-    parts.push('Likely cause: a core file was edited mid-session, the file load order changed, or a global config (CLAUDE.md, AGENTS.md) was modified -- all of which break the prefix cache and force a full re-read at write prices.');
+    parts.push(
+      'Likely cause: a core file was edited mid-session, the file load order changed, or a global config (CLAUDE.md, AGENTS.md) was modified -- all of which break the prefix cache and force a full re-read at write prices.',
+    );
 
     return parts.join(' ');
   }

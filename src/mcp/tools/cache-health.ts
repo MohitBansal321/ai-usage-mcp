@@ -1,11 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatCacheHealth } from '../../services/formatter.js';
-import {
-  readOnlyTool,
-  textResult,
-  type ToolContext,
-} from './shared.js';
+import { readOnlyTool, textResult, type ToolContext } from './shared.js';
 
 export function registerCacheHealth(server: McpServer, ctx: ToolContext): void {
   server.registerTool(

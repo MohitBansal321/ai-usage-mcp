@@ -973,7 +973,9 @@ export function formatCacheHealth(report: CacheHealthReport): string {
     out.push('global config (CLAUDE.md, AGENTS.md). This invalidates the prefix cache, forcing');
     out.push('the agent to re-read all prior context at full write prices.');
     out.push('');
-    out.push('Adjust --spike-threshold (default 10x) or --min-cache-writes (default 5000) to tune sensitivity.');
+    out.push(
+      'Adjust --spike-threshold (default 10x) or --min-cache-writes (default 5000) to tune sensitivity.',
+    );
     return out.join('\n');
   }
 
@@ -983,7 +985,9 @@ export function formatCacheHealth(report: CacheHealthReport): string {
 
   for (const br of report.breaks) {
     out.push(`--- Break at turn ${br.turnIndex} (${br.timestamp}) ---`);
-    out.push(`  Cache writes:  ${tokens(br.cacheWriteTokens)}  (baseline ~${int(br.baselineWriteAvg)})`);
+    out.push(
+      `  Cache writes:  ${tokens(br.cacheWriteTokens)}  (baseline ~${int(br.baselineWriteAvg)})`,
+    );
     out.push(`  Cache reads:   ${tokens(br.cacheReadTokens)}`);
     out.push(`  Spike ratio:   ${br.writeSpikeRatio}x`);
     out.push(`  Est. extra cost from write premium: ${usd(br.estimatedExtraCost)}`);
@@ -993,7 +997,9 @@ export function formatCacheHealth(report: CacheHealthReport): string {
 
   out.push('What this means:');
   out.push('Each break represents a moment the prefix cache was invalidated. The agent had to');
-  out.push('re-write the entire context prefix at cache-write prices (1.25x-2x input rate) instead');
+  out.push(
+    're-write the entire context prefix at cache-write prices (1.25x-2x input rate) instead',
+  );
   out.push('of reading it at cache-read prices (0.1x input rate). On a 50k token context, that');
   out.push('cost difference is roughly 50,000 * (1.25 - 0.1) * $0.000015 = $0.0086 per break --');
   out.push('small per event, but repeated breaks in a 5-hour rate limit window can exhaust it.');
