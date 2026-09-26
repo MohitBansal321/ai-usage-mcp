@@ -34,8 +34,21 @@ import {
 } from './budget-service.js';
 import { CounterfactualService, type CounterfactualReport } from './counterfactual-service.js';
 import { ComparePeriodError, resolvePeriod, type PeriodInput } from './period.js';
+import {
+  refreshCommunityPricing,
+  type PricingRefreshOptions,
+  type PricingRefreshResult,
+} from './pricing-refresh.js';
+import { RepriceService, type RepriceResult } from './reprice-service.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
 import { VerifyService, type VerifyReport } from './verify-service.js';
+import type { CommunityPricingState } from '../pricing/index.js';
+
+/** A refresh, and what applying it did to the stored rows. */
+export type PricingRefreshReport = PricingRefreshResult & {
+  /** Present when the refresh changed the table and that priced stored rows. */
+  repriced?: RepriceResult;
+};
 
 export interface UsageQuery extends PeriodInput {
   /** Restrict to any of these clients. */
@@ -74,6 +87,8 @@ export interface StatusReport {
     mode: 'builtin' | 'overlay' | 'replace';
     /** The built-in table an overlay sits on. Present only for `overlay`. */
     baseVersion?: string;
+    /** What the community price list contributes, or why it is off. */
+    community?: CommunityPricingState;
   };
   syncState: SyncState[];
 }
@@ -97,6 +112,7 @@ export class UsageService {
   private readonly exportService: ExportService;
   private readonly budgetService: BudgetService;
   private readonly lifecycleService: LifecycleService;
+  private readonly repriceService: RepriceService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -114,6 +130,7 @@ export class UsageService {
     this.exportService = new ExportService(this.usageRepo);
     this.budgetService = new BudgetService(this.usageRepo);
     this.lifecycleService = new LifecycleService(this.usageRepo, db, dbPath);
+    this.repriceService = new RepriceService(this.usageRepo, this.costService);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -180,6 +197,7 @@ export class UsageService {
     };
     if (this.costService.overridePath) pricing.overridePath = this.costService.overridePath;
     if (this.costService.baseVersion) pricing.baseVersion = this.costService.baseVersion;
+    if (this.costService.community) pricing.community = this.costService.community;
 
     return {
       databasePath: this.dbPath,
@@ -192,8 +210,44 @@ export class UsageService {
     };
   }
 
-  sync(options: SyncOptions = {}): Promise<SyncReport> {
-    return this.syncService.sync(options);
+  /**
+   * Collects, then prices any stored rows the table has since learned to price.
+   *
+   * The second step runs on every sync, not only after a pricing change: a
+   * background refresh can swap the table while a collector is mid-read, and
+   * rows that collector priced with the old table land after the swap. The check
+   * is one DISTINCT query, and writes nothing when no unpriced row can be priced.
+   */
+  async sync(options: SyncOptions = {}): Promise<SyncReport> {
+    const report = await this.syncService.sync(options);
+    const repriced = this.repriceService.repriceUnpriced();
+    return repriced.records > 0 ? { ...report, repriced } : report;
+  }
+
+  /**
+   * Re-reads the pricing in force and prices whatever stored rows it now can.
+   * Returns undefined when no price changed. Throws, leaving the current table
+   * in force, if the override on disk has become malformed.
+   */
+  reloadPricing(): RepriceResult | undefined {
+    if (!this.costService.reload()) return undefined;
+    return this.repriceService.repriceUnpriced();
+  }
+
+  /**
+   * Downloads the community price list when the cached copy is over a day old,
+   * and applies it at once. Never throws: a failed download, or a new list that
+   * cannot be applied, leaves the prices in force as they were.
+   */
+  async refreshPricing(options: PricingRefreshOptions = {}): Promise<PricingRefreshReport> {
+    const result = await refreshCommunityPricing(options);
+    if (result.status !== 'updated') return result;
+    try {
+      const repriced = this.reloadPricing();
+      return repriced?.records ? { ...result, repriced } : result;
+    } catch (err) {
+      return { status: 'failed', reason: `downloaded, but not applied: ${(err as Error).message}` };
+    }
   }
 
   verify(options: { allStores?: boolean; cutoff?: Date } = {}): Promise<VerifyReport> {

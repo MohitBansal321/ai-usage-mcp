@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -354,5 +356,124 @@ describe('MCP server on a stale install', () => {
     expect(text).toContain('ai-usage status');
     expect(text).toContain('Update available:');
     expect(text).toContain('999.0.0 latest');
+  });
+});
+
+describe('MCP server learning the price of a model released after its pricing table', () => {
+  const NEW_MODEL = 'claude-future-9';
+  let dir: string;
+  let client: Client;
+  let transport: StdioClientTransport;
+  let prices: Server;
+  let downloads = 0;
+
+  beforeAll(async () => {
+    dir = tempDir('mcp-community-');
+    const config = join(dir, 'config');
+    mkdirSync(config, { recursive: true });
+    // A fresh "you are current" answer, so the update check stays off the network.
+    writeFileSync(
+      join(config, 'update-check.json'),
+      JSON.stringify({ checkedAt: Date.now(), latest: '0.0.0' }),
+    );
+
+    // Stands in for LiteLLM's price list.
+    prices = createServer((_req, res) => {
+      downloads++;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          [NEW_MODEL]: {
+            litellm_provider: 'anthropic',
+            mode: 'chat',
+            input_cost_per_token: 4e-6,
+            output_cost_per_token: 2e-5,
+            cache_read_input_token_cost: 2e-7,
+            cache_creation_input_token_cost: 5e-6,
+            cache_creation_input_token_cost_above_1hr: 8e-6,
+          },
+        }),
+      );
+    });
+    await new Promise<void>((done) => prices.listen(0, '127.0.0.1', done));
+    const { port } = prices.address() as AddressInfo;
+
+    const claudeProjects = buildClaudeProjects(dir, [
+      {
+        slug: '-work-project-one',
+        sessions: [
+          {
+            sessionId: 'cc-new',
+            lines: [
+              assistantLine({
+                sessionId: 'cc-new',
+                requestId: 'r1',
+                messageId: 'm1',
+                model: NEW_MODEL,
+                input: 1000,
+                output: 2000,
+                cacheRead: 1_000_000,
+                timestamp: new Date(Date.now() - 1000).toISOString(),
+                stopReason: 'end_turn',
+              }),
+            ],
+          },
+        ],
+      },
+    ]);
+
+    transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [SERVER],
+      env: {
+        ...process.env,
+        AI_USAGE_HOME: config,
+        AI_USAGE_DB: join(dir, 'usage.db'),
+        AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
+        AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
+        AI_USAGE_FRESHNESS_MS: '0',
+        AI_USAGE_NO_UPDATE_CHECK: '0',
+        AI_USAGE_NO_PRICING_REFRESH: '0',
+        AI_USAGE_PRICING_URL: `http://127.0.0.1:${port}/prices.json`,
+        CI: '',
+      },
+    });
+    client = new Client({ name: 'community-client', version: '1.0.0' });
+    await client.connect(transport);
+  }, 60_000);
+
+  afterAll(async () => {
+    await client?.close();
+    await new Promise<void>((done) => prices.close(() => done()));
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('downloads the list in the background and prices the model without a restart', async () => {
+    // The refresh races the first sync, and either order must end priced: a row
+    // stored unpriced before the list lands is priced when it does.
+    let cost: { estimated: number; estimatedRecords: number; unavailableRecords: number } = {
+      estimated: 0,
+      estimatedRecords: 0,
+      unavailableRecords: 1,
+    };
+    for (let attempt = 0; attempt < 100 && cost.estimatedRecords === 0; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 100));
+      const result = await client.callTool({ name: 'usage_summary', arguments: {} });
+      cost = (result.structuredContent as any).cost;
+    }
+
+    expect(cost.estimatedRecords).toBe(1);
+    expect(cost.unavailableRecords).toBe(0);
+    // 1,000 x $4 + 2,000 x $20 + 1,000,000 cache-read x $0.20, per million.
+    expect(cost.estimated).toBeCloseTo(0.244, 10);
+    expect(downloads).toBe(1);
+  }, 30_000);
+
+  it('says where the price came from', async () => {
+    const read = await client.readResource({ uri: 'usage://status' });
+    const text = (read.contents[0] as { text: string }).text;
+    expect(text).toMatch(/Pricing table: +builtin-[\d-]+\+litellm-\d{4}-\d{2}-\d{2}/);
+    expect(text).toContain(`Community:     1 model(s) the built-in tables lack`);
+    expect(text).toContain(NEW_MODEL);
   });
 });

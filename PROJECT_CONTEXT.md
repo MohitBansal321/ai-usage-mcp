@@ -468,8 +468,10 @@ Do not start Phase 2 until every box is true:
 - [x] README: OpenCode install
 - [x] README: troubleshooting
 - [x] README: what data stays local
-- [x] No API key and no conversation content ever leaves the machine — no network code in the
-      package; only token counts, model ids, timestamps, session ids and project paths are read
+- [x] No API key and no conversation content ever leaves the machine — the only network code
+      is two documented GETs of public files (the npm version check and the community price
+      list, see AGENTS.md rule 3), neither carrying usage data; only token counts, model ids,
+      timestamps, session ids and project paths are read
 
 ## 15. Suggested project structure
 

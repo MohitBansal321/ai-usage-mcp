@@ -104,6 +104,14 @@ figure. Pricing tables live in [src/pricing/tables/](src/pricing/tables/) and a 
 override them with a JSON file (`AI_USAGE_PRICING_FILE`, else `<config dir>/pricing.json`); a
 malformed override throws rather than silently falling back, and so does an
 `AI_USAGE_PRICING_FILE` naming a file that does not exist (only the default path may be absent).
+Between the built-in tables and the override sit **community prices**
+([src/pricing/community.ts](src/pricing/community.ts)): LiteLLM's price list, downloaded daily
+by [src/services/pricing-refresh.ts](src/services/pricing-refresh.ts), filling only models the
+built-in tables lack. Estimates are stored per row at collection time, so
+[src/services/reprice-service.ts](src/services/reprice-service.ts) prices `unavailable`
+Claude Code rows after every sync and whenever the table changes; it never touches a
+`reported` or already-`estimated` row, and must stay in lockstep with the collector's estimate
+inputs so a re-priced row equals what `sync --full` would write.
 
 MCP specifics:
 
@@ -131,7 +139,10 @@ MCP specifics:
   [tests/fixtures/build-fixtures.ts](tests/fixtures/build-fixtures.ts): `AI_USAGE_DB`,
   `AI_USAGE_OPENCODE_DB`, `AI_USAGE_CLAUDE_PROJECTS`, `AI_USAGE_HOME`,
   `AI_USAGE_FRESHNESS_MS`, `AI_USAGE_NO_UPDATE_CHECK`. Never let a test read the developer's
-  own `~/.claude` or `opencode.db`.
+  own `~/.claude` or `opencode.db`. [vitest.config.ts](vitest.config.ts) sets
+  `AI_USAGE_NO_PRICING_REFRESH=1` for every test (and every child spawned with
+  `...process.env`), so no test downloads the price list or reads a copy a real server cached;
+  a test of that feature turns it back on explicitly.
 - Coverage thresholds in [vitest.config.ts](vitest.config.ts) are calibrated to the current v8
   provider and understate real coverage: `src/cli/**`, `src/mcp/**` and `src/version.ts` are
   covered by subprocess-based integration tests that v8 cannot attribute. Recalibrate rather

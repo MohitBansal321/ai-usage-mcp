@@ -7,6 +7,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-26
+
+A Claude model released after the pricing table was captured used to report every Claude Code
+turn on it as cost _unavailable_ -- for every user, until a release caught up, and even then
+only for turns collected afterwards. Claude Opus 5.5 did exactly that from the day it shipped.
+
+### Added
+
+- **New models are priced automatically.** The MCP server (in the background, after its
+  handshake) and `ai-usage sync` download LiteLLM's community price list at most once a day
+  and use it for the Anthropic models the built-in table lacks. It only fills gaps -- a
+  built-in price is never replaced -- and takes a model only when it gives every rate the
+  engine needs (input, output, cache read, both cache-write TTLs); a long-context price tier
+  it cannot express leaves the model unpriced. Estimates it contributes cite a table version
+  such as `builtin-2026-09-26+litellm-2026-10-02`, and `ai-usage status` gains a `Community:`
+  line naming what it priced, when the list was fetched, or why it is off. It is the package's
+  second documented network request: one GET of a public file, no usage data, no identifier.
+  `AI_USAGE_NO_PRICING_REFRESH=1` turns it off, as does the existing
+  `AI_USAGE_NO_UPDATE_CHECK=1`, so nobody who set that to stay offline gains a request by
+  upgrading. `AI_USAGE_PRICING_URL` points it at a mirror.
+- **Claude Opus 5.5, Claude Fable 5.1 and Claude Mythos 5.1 are in the built-in table**
+  (`anthropic-2026-09-26`, every earlier Anthropic rate re-checked and unchanged), each with
+  its own cache-read discount -- 0.05x for Opus 5.5, 0.025x for Fable 5.1 and Mythos 5.1.
+  Inheriting the table's 0.1x default would have overstated their cache reads, which are most
+  of a Claude Code session's tokens, by 2-4x.
+
+### Fixed
+
+- **Records stored before a price existed are priced once one does.** Estimates are computed
+  when a record is collected, and incremental sync never re-reads an old record, so a model
+  that gained a price -- from a release, an override, or now the community list -- stayed
+  unpriced for every turn already stored, leaving sessions half priced until a
+  `sync --full`. Every sync now prices the `unavailable` Claude Code records the table can
+  price, with exactly the number a full re-sync would write. Only `unavailable` records
+  change: a cost a client reported itself, and an existing estimate, are never touched.
+- **The packaging test passes on Windows when node lives under a path with a space.** It
+  handed the smoke script an unquoted `C:\Program Files\nodejs\node.exe ...` to run through a
+  shell.
+- **The README no longer says the MCP server makes no network calls.** The update check has
+  run in the server's background since 0.4.0; the privacy section now lists both requests.
+
 ## [0.9.0] - 2026-09-18
 
 Three places where this tool accepted something it could not honour and answered anyway. Each
@@ -779,7 +820,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.6.0...v0.7.0

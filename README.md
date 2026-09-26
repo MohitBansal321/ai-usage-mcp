@@ -341,12 +341,14 @@ The advice differs by how you installed it, and the notice says the right one:
 | A project dependency                | `npm i ai-usage-mcp@latest`                           |
 | A source checkout                   | `git pull && npm run build`                           |
 
-That check is the only network call in the package: a version lookup against the npm registry,
-at most once a day, cached in `<config dir>/update-check.json`, skipped when `CI` is set, and
-silently abandoned after 1.5s if you are offline. It sends no usage data and no identifier --
-just a GET for a version string. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it off everywhere,
-CLI and server alike. In the server it runs _after_ the handshake, never during it, so it
-cannot slow down a client starting up.
+That check is one of the package's two network requests (the other downloads prices for new
+models -- see [New models are priced automatically](#new-models-are-priced-automatically)): a
+version lookup against the npm registry, at most once a day, cached in
+`<config dir>/update-check.json`, skipped when `CI` is set, and silently abandoned after 1.5s
+if you are offline. It sends no usage data and no identifier -- just a GET for a version
+string. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it off everywhere, CLI and server alike; that
+switch turns off the price download too. In the server it runs _after_ the handshake, never
+during it, so it cannot slow down a client starting up.
 
 ---
 
@@ -823,7 +825,7 @@ reads exactly like free:
 ```text
 opencode  --  6,841 records, 280 sessions
   Cost (reported by client, exact): $0.48  [6,841 records]
-  No estimate attempted for 6,813 record(s) -- no price in table builtin-2026-09-16 for
+  No estimate attempted for 6,813 record(s) -- no price in table builtin-2026-09-26 for
   that model: big-pickle, gpt-5.5, z-ai/glm-5.2 and 16 more. Any $0 above covers only what
   was reported, not those records.
 ```
@@ -841,7 +843,8 @@ Reported and estimated costs are shown on separate lines and must not be added t
 
 Cache tokens are priced properly rather than lumped in with input:
 
-- cache **read** bills at 0.1× the input rate
+- cache **read** bills at 0.1× the input rate on most models, 0.05× on Opus 5.5 and 0.025× on
+  Fable 5.1 / Mythos 5.1
 - cache **write** bills at 1.25× (5-minute TTL) or **2×** (1-hour TTL)
 
 The two cache-write TTLs are tracked separately because both occur heavily in practice — on
@@ -853,18 +856,54 @@ TTL, so averaging the rates would have understated cost substantially.
 Pricing is versioned data (`src/pricing/tables/`), one file per provider, each keeping its
 own capture date:
 
-| Table                  | Models                                                                 |
-| ---------------------- | ---------------------------------------------------------------------- |
-| `anthropic-2026-06-24` | Fable 5, Mythos 5, Opus 5 / 4.8 / 4.7 / 4.6, Sonnet 5 / 4.6, Haiku 4.5 |
-| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                        |
+| Table                  | Models                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `anthropic-2026-09-26` | Fable 5.1 / 5, Mythos 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6, Sonnet 5 / 4.6, Haiku 4.5 |
+| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                                          |
 
 They are composed into one table, reported by `ai-usage status` as `builtin-<date>` with
 every provider's provenance behind it. Two tables may not price the same model id — that
 raises an error at build time rather than silently applying one vendor's rates to another's
 tokens.
 
-**Any model not listed above has no estimate**, and the reports say so explicitly rather
-than showing `$0`. Add it yourself with an override.
+A Claude model released after that capture date is normally priced within a day anyway --
+see the next section. Anything that neither covers has no estimate, and the reports say so
+explicitly rather than showing `$0`. Add it yourself with an override.
+
+### New models are priced automatically
+
+A pricing table captured on one date cannot price a model released on the next, so every
+Claude Code turn on a new model used to report its cost as unavailable until a release caught
+up. Now the MCP server downloads [LiteLLM's community price
+list](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) in
+the background, at most once a day, and uses it for the Claude models the built-in table does
+not have yet:
+
+- **It only fills gaps.** A model the built-in table prices keeps the built-in price; the
+  community list never changes a number this package ships.
+- **It takes a model only if every rate is there** -- input, output, cache read, both
+  cache-write TTLs. A missing rate is not borrowed from a default, because newer models are
+  exactly where the defaults go wrong (Opus 5.5 reads cache at 0.05×, not 0.1×). A model
+  with a long-context price tier, which the table cannot express, is left unpriced.
+- **It is labelled.** Estimates it contributes to cite a table version like
+  `builtin-2026-09-26+litellm-2026-10-02`, and `ai-usage status` lists the models it priced:
+
+  ```text
+  Pricing table:  builtin-2026-09-26+litellm-2026-10-02  (Anthropic first-party ...; plus 1 model(s) ...)
+    Community:     1 model(s) the built-in tables lack, from LiteLLM's price list fetched 2026-10-02: claude-opus-6
+  ```
+
+- **Earlier turns are priced too.** Records stored as unavailable before a price existed are
+  priced as soon as one does -- from the community list, a release, or your own override --
+  on the next sync, with no `sync --full` needed. Only `unavailable` records change; a cost a
+  client reported itself is never touched.
+
+It is one plain GET of a public ~3 MB file, carrying no usage data and no identifier. The
+converted prices are cached in `<config dir>/pricing-community.json`; a failed download keeps
+the previous copy. The CLI's `ai-usage sync` refreshes it as well. Turn it off with
+`AI_USAGE_NO_PRICING_REFRESH=1` (or `AI_USAGE_NO_UPDATE_CHECK=1`, which turns off both network
+requests); prices are then exactly the built-in tables plus your override.
+`AI_USAGE_PRICING_URL` points it at a mirror.
 
 The OpenAI numbers are the **Standard tier, short context** rates. OpenAI also publishes
 long-context, Batch, Flex and Fast-mode rates, and nothing in a stored record says which
@@ -1014,10 +1053,13 @@ main/subagent split separately.
 
 - No telemetry, no analytics, no crash reporting, no phone-home.
 - No cloud sync, no accounts, no API keys — the tool never calls an LLM API.
-- **One outbound request exists, and only in the CLI:** `ai-usage status` asks the npm registry
-  for the latest published version number. It sends nothing but that GET — no usage data, no
-  identifiers — caches the answer for a day, and is disabled by `AI_USAGE_NO_UPDATE_CHECK=1`.
-  The MCP server makes no network calls at all.
+- **Two outbound requests exist**, both plain GETs of public files that send no usage data and
+  no identifiers, both at most once a day, and both disabled by `AI_USAGE_NO_UPDATE_CHECK=1`:
+  - the **update check** asks the npm registry for the latest published version number
+    (`ai-usage status`, and the MCP server in the background after its handshake);
+  - the **price refresh** downloads LiteLLM's public price list, so models released after the
+    built-in table are priced (`ai-usage sync`, and the MCP server in the background after its
+    handshake). `AI_USAGE_NO_PRICING_REFRESH=1` turns off just this one.
 - **No conversation content is read into the database.** The collectors extract token counts,
   model ids, timestamps, session ids and project paths. Prompts, completions, tool inputs and
   file contents are skipped.
@@ -1045,16 +1087,18 @@ Delete that file to erase everything the tool knows.
 
 It prints the reason and every path it looked at. Point it at the right place:
 
-| Variable                   | Purpose                                                                 |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `AI_USAGE_OPENCODE_DB`     | Path to `opencode.db`                                                   |
-| `AI_USAGE_CLAUDE_PROJECTS` | Path to Claude Code's `projects/` directory                             |
-| `AI_USAGE_DB`              | Where to keep our database                                              |
-| `AI_USAGE_HOME`            | Relocates both the database and the config dir in one go                |
-| `AI_USAGE_PRICING_FILE`    | Pricing override file                                                   |
-| `AI_USAGE_FRESHNESS_MS`    | How long a sync stays fresh before a tool call re-syncs (default 30000) |
-| `AI_USAGE_NO_UPDATE_CHECK` | Set to `1` to stop `status` checking npm for a newer version            |
-| `AI_USAGE_SQLITE_DRIVER`   | Force `node:sqlite` or `better-sqlite3`; unset picks the best available |
+| Variable                      | Purpose                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `AI_USAGE_OPENCODE_DB`        | Path to `opencode.db`                                                   |
+| `AI_USAGE_CLAUDE_PROJECTS`    | Path to Claude Code's `projects/` directory                             |
+| `AI_USAGE_DB`                 | Where to keep our database                                              |
+| `AI_USAGE_HOME`               | Relocates both the database and the config dir in one go                |
+| `AI_USAGE_PRICING_FILE`       | Pricing override file                                                   |
+| `AI_USAGE_FRESHNESS_MS`       | How long a sync stays fresh before a tool call re-syncs (default 30000) |
+| `AI_USAGE_NO_UPDATE_CHECK`    | Set to `1` to turn off both network requests (update check and prices)  |
+| `AI_USAGE_NO_PRICING_REFRESH` | Set to `1` to stop downloading prices for models the tables lack        |
+| `AI_USAGE_PRICING_URL`        | Where to download the community price list from (a mirror)              |
+| `AI_USAGE_SQLITE_DRIVER`      | Force `node:sqlite` or `better-sqlite3`; unset picks the best available |
 
 ### Numbers look lower than `opencode stats`
 
@@ -1129,8 +1173,12 @@ and remains the fix if you are pinned to an older Node and need the fallback to 
 
 ### A model shows cost as unavailable, or "no estimate attempted"
 
-That model is not in the pricing table. Add it via a [pricing override
-file](#adding-or-correcting-prices-yourself). The tool will not guess a price.
+That model is not in the pricing table. A new Claude model is normally picked up within a day
+from the [community price list](#new-models-are-priced-automatically) -- the `Community:` line
+of `ai-usage status` says whether it is on, when the list was last downloaded, and what it
+priced. If it is off, or the list does not have the model yet, add it via a [pricing override
+file](#adding-or-correcting-prices-yourself). Either way, records already stored are priced
+on the next sync. The tool will not guess a price.
 
 `ai-usage models --json` lists the model ids exactly as your clients recorded them, which are
 the keys your override file needs.

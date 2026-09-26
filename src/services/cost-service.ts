@@ -1,10 +1,22 @@
 import type { ClientId, CostBasis } from '../models/usage-record.js';
 import {
   loadPricing,
+  type CommunityPricingState,
   type LoadedPricing,
   type PricingMode,
   type PricingTable,
 } from '../pricing/index.js';
+
+/**
+ * Clients that record no cost of their own, so their collector estimates one
+ * from the pricing table at collection time.
+ *
+ * A stored row from one of these that was `unavailable` -- its model was not
+ * in the table when it was collected -- is what a later table can still price.
+ * Rows from any other client carry the cost the client itself reported, which
+ * no pricing table may overwrite.
+ */
+export const ESTIMATED_CLIENTS: readonly ClientId[] = ['claude-code'];
 
 /**
  * Where each client puts reasoning tokens relative to `outputTokens`.
@@ -74,14 +86,37 @@ export interface Estimate {
  *     already inside `output_tokens`. Adding them would double-charge.
  */
 export class CostService {
-  private readonly loaded: LoadedPricing;
+  private loaded: LoadedPricing;
+  /** False when a caller handed the table over, which there is then no disk copy to re-read. */
+  private readonly fromDisk: boolean;
 
   /**
    * `mode` is metadata about how the table was assembled, not an input to any
    * number, so a caller handing over a table directly may omit it.
    */
   constructor(loaded?: Omit<LoadedPricing, 'mode'> & { mode?: PricingMode }) {
+    this.fromDisk = !loaded;
     this.loaded = loaded ? { ...loaded, mode: loaded.mode ?? 'builtin' } : loadPricing();
+  }
+
+  /**
+   * Re-reads the pricing in force from disk -- built-in tables, community
+   * prices and override -- and returns whether any price changed.
+   *
+   * A long-running MCP server needs this: the community list it downloads in
+   * the background would otherwise only take effect on the next restart. The
+   * table is replaced whole, and only when it differs, so a caller holding the
+   * old one keeps a consistent table rather than a half-updated one. Throws if
+   * the override on disk has become malformed, leaving the current table in
+   * force.
+   */
+  reload(): boolean {
+    if (!this.fromDisk) return false;
+    const next = loadPricing();
+    const changed = JSON.stringify(next.table) !== JSON.stringify(this.loaded.table);
+    if (changed) this.loaded = next;
+    else this.loaded = { ...next, table: this.loaded.table };
+    return changed;
   }
 
   get table(): PricingTable {
@@ -104,6 +139,11 @@ export class CostService {
   /** The built-in version an overlay sits on. Absent unless `pricingMode` is 'overlay'. */
   get baseVersion(): string | undefined {
     return this.loaded.baseVersion;
+  }
+
+  /** What the community price list contributed. Absent when the table was handed over. */
+  get community(): CommunityPricingState | undefined {
+    return this.loaded.community;
   }
 
   knowsModel(model: string): boolean {

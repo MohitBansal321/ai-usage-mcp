@@ -119,14 +119,20 @@ async function run(argv: string[]): Promise<number> {
       }
 
       case 'sync': {
-        const report = await service.sync({
-          ...(args.since ? { since: new Date(args.since) } : {}),
-          ...(args.until ? { until: new Date(args.until) } : {}),
-          ...(args.allStores ? { allStores: true } : {}),
-          ...(args.full ? { full: true } : {}),
-          ...(args.clients ? { clients: args.clients } : {}),
-        });
-        emit(args, formatSyncReport(report), report);
+        // The price list downloads alongside the sync rather than before it, so
+        // a slow network never adds to the command's wall time more than once a
+        // day. Whichever finishes last prices the stored rows the other missed.
+        const [report, pricingRefresh] = await Promise.all([
+          service.sync({
+            ...(args.since ? { since: new Date(args.since) } : {}),
+            ...(args.until ? { until: new Date(args.until) } : {}),
+            ...(args.allStores ? { allStores: true } : {}),
+            ...(args.full ? { full: true } : {}),
+            ...(args.clients ? { clients: args.clients } : {}),
+          }),
+          service.refreshPricing(),
+        ]);
+        emit(args, formatSyncReport(report, pricingRefresh), { ...report, pricingRefresh });
         return report.results.some((r) => !r.available && r.reason?.startsWith('Collection failed'))
           ? 1
           : 0;

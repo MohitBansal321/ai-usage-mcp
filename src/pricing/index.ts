@@ -9,6 +9,12 @@ import type {
   PricingTable,
 } from './types.js';
 import { builtinPricing, BUILTIN_PRICING_VERSION } from './tables/index.js';
+import {
+  communityPricingDisabledBy,
+  communityPricingUrl,
+  readCommunityPricing,
+  withCommunityPricing,
+} from './community.js';
 
 export type {
   PricingTable,
@@ -18,6 +24,17 @@ export type {
   PricingMode,
 } from './types.js';
 export { anthropicPricing, openaiPricing, providerTables, builtinPricing } from './tables/index.js';
+export {
+  COMMUNITY_PRICING_URL,
+  communityPricingDisabledBy,
+  communityPricingUrl,
+  convertLiteLLMPrices,
+  readCommunityPricing,
+  withCommunityPricing,
+  writeCommunityPricing,
+  type CommunityPricing,
+  type ConvertedList,
+} from './community.js';
 
 /**
  * Where a user can drop prices without waiting for a release.
@@ -37,6 +54,23 @@ export function configDir(): string {
   return xdg ? join(xdg, 'ai-usage-mcp') : join(homedir(), '.config', 'ai-usage-mcp');
 }
 
+/** Where the downloaded community price list is cached. See `./community.ts`. */
+export function communityPricingPath(): string {
+  return join(configDir(), 'pricing-community.json');
+}
+
+/** What the community price list contributed to the table in force, for `status`. */
+export interface CommunityPricingState {
+  /** The list's URL. */
+  source: string;
+  /** Why community prices are not in effect, when they are not. */
+  disabledBy?: string;
+  /** When the cached list was downloaded. Absent until the first refresh succeeds. */
+  fetchedAt?: string;
+  /** The models it priced: only those the built-in tables lack. */
+  added: string[];
+}
+
 export interface LoadedPricing {
   table: PricingTable;
   /** Set when a user override file contributed to the table in force. */
@@ -45,6 +79,8 @@ export interface LoadedPricing {
   mode: PricingMode;
   /** The built-in version an overlay sits on top of. Absent for other modes. */
   baseVersion?: string;
+  /** Absent only when a caller handed a table over directly. */
+  community?: CommunityPricingState;
 }
 
 class PricingOverrideError extends Error {}
@@ -189,8 +225,37 @@ export function applyPricingOverride(
  *
  * A malformed override throws rather than silently falling back: quietly using
  * different prices than the user thinks are in effect would be worse.
+ *
+ * Underneath the override sit the community prices (see `./community.ts`),
+ * filling only the models the built-in tables lack. An override still wins over
+ * them, and a `"replace": true` override discards them along with the built-in
+ * table, since starting from nothing is what it asks for.
  */
 export function loadPricing(): LoadedPricing {
+  const community: CommunityPricingState = { source: communityPricingUrl(), added: [] };
+  let base = builtinPricing;
+  const disabledBy = communityPricingDisabledBy();
+  if (disabledBy) {
+    community.disabledBy = disabledBy;
+  } else {
+    const cached = readCommunityPricing(communityPricingPath());
+    if (cached) {
+      const merged = withCommunityPricing(builtinPricing, cached);
+      base = merged.table;
+      community.fetchedAt = cached.fetchedAt;
+      community.added = merged.added;
+    }
+  }
+
+  const loaded = loadOverride(base);
+  if (loaded.mode === 'replace' && !disabledBy) {
+    community.disabledBy = 'a pricing override with "replace": true';
+    community.added = [];
+  }
+  return { ...loaded, community };
+}
+
+function loadOverride(base: PricingTable): LoadedPricing {
   const overridePath = pricingOverridePath();
   if (!existsSync(overridePath)) {
     // Naming a file that is not there is a mistake worth stopping for. Falling
@@ -206,7 +271,7 @@ export function loadPricing(): LoadedPricing {
           'Create it, correct the path, or unset the variable to use built-in pricing.',
       );
     }
-    return { table: builtinPricing, mode: 'builtin' };
+    return { table: base, mode: 'builtin' };
   }
 
   let parsed: unknown;
@@ -215,11 +280,7 @@ export function loadPricing(): LoadedPricing {
   } catch (err) {
     throw new Error(`Pricing override at ${overridePath} is not valid JSON`, { cause: err });
   }
-  return applyPricingOverride(
-    builtinPricing,
-    parsePricingOverride(overridePath, parsed),
-    overridePath,
-  );
+  return applyPricingOverride(base, parsePricingOverride(overridePath, parsed), overridePath);
 }
 
 export { BUILTIN_PRICING_VERSION };

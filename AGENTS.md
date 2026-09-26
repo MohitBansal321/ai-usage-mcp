@@ -20,12 +20,21 @@ the machine.
 2. **MCP must not know where data comes from.** MCP → usage service → collectors. Business
    logic lives in `services/`, never in an MCP tool handler.
 3. **Nothing leaves the machine.** No telemetry, no cloud sync, no API keys, no conversation
-   content. SQLite only — no Postgres, Redis, or Kafka. **One documented exception:** the
-   update check GETs a version string from the npm registry — cached for a day, abandoned after
-   1.5s, skipped under `CI`, disabled by `AI_USAGE_NO_UPDATE_CHECK=1`. It carries no usage data
-   and no identifier. It runs in the CLI's `status` and, in the MCP server, only in the
-   background after the handshake. Nothing else in this package may open a socket; if a change
-   needs to, it does not belong here.
+   content. SQLite only — no Postgres, Redis, or Kafka. **Two documented exceptions**, both
+   plain GETs of public files that carry no usage data and no identifier, both skipped under
+   `CI`, and both disabled by `AI_USAGE_NO_UPDATE_CHECK=1`:
+   - the **update check** GETs a version string from the npm registry — cached for a day,
+     abandoned after 1.5s. It runs in the CLI's `status` and, in the MCP server, only in the
+     background after the handshake.
+   - the **price refresh** GETs LiteLLM's public price list
+     (`src/services/pricing-refresh.ts`) — cached for a day, abandoned after 20s, also
+     disabled by `AI_USAGE_NO_PRICING_REFRESH=1`. It runs in the CLI's `sync` and, in the MCP
+     server, only in the background after the handshake. Its prices only fill models the
+     built-in tables lack; they never replace a built-in price.
+
+   Nothing else in this package may open a socket; if a change needs to, it does not belong
+   here.
+
 4. **Do not parse `opencode stats` output to collect data.** It is a box-drawing TUI table.
    Read the database instead — resolved via `$XDG_DATA_HOME/opencode` before
    `~/.local/share/opencode`, because a sandboxed launcher splits these into two stores.

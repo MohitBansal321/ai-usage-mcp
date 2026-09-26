@@ -77,7 +77,9 @@ describe('packaging (the CI job `npm run check` used to miss)', () => {
   it('passes the real CI MCP smoke script against the built server', () => {
     const result = spawnSync(process.execPath, [SMOKE_SCRIPT], {
       encoding: 'utf8',
-      env: { ...env, AI_USAGE_MCP_BIN: `${process.execPath} ${SERVER}` },
+      // Quoted: the smoke script runs this through a shell, and on Windows node
+      // usually lives under `C:\Program Files`, which splits unquoted at the space.
+      env: { ...env, AI_USAGE_MCP_BIN: `"${process.execPath}" "${SERVER}"` },
     });
 
     expect(

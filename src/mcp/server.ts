@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { formatPricingRefresh } from '../services/formatter.js';
+import { startPricingWatch } from '../services/pricing-refresh.js';
 import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
 import { registerClientUsage } from './tools/client-usage.js';
@@ -44,6 +46,12 @@ function createFreshnessGate(service: UsageService): () => Promise<void> {
             // stderr only: stdout is the MCP transport and must stay clean JSON-RPC.
             process.stderr.write(`[ai-usage] ${result.collector}: ${result.reason}\n`);
           }
+        }
+        if (report.repriced) {
+          process.stderr.write(
+            `[ai-usage] priced ${report.repriced.records} stored record(s) that had no price: ` +
+              `${report.repriced.models.join(', ')}\n`,
+          );
         }
         lastSyncAt = Date.now();
       } catch (err) {
@@ -113,6 +121,13 @@ async function main(): Promise<void> {
   // After the handshake, never during it: the registry lookup is allowed to be
   // slow, and no client should wait on it to start using the tools.
   void startUpdateWatch();
+
+  // Same rule for the price list. A new list applies at once -- including to
+  // rows already stored -- so a session never needs a restart to see it.
+  startPricingWatch(async () => {
+    const refresh = await service.refreshPricing();
+    for (const line of formatPricingRefresh(refresh)) process.stderr.write(`[ai-usage] ${line}\n`);
+  });
 }
 
 main().catch((err) => {

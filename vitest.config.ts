@@ -4,6 +4,11 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // Hermetic by default: no test may download the community price list, or
+    // read the copy a real server cached under the developer's config dir. The
+    // tests of that feature turn it back on explicitly. Inherited by every
+    // spawned CLI and server that is handed `...process.env`.
+    env: { AI_USAGE_NO_PRICING_REFRESH: '1' },
     testTimeout: 60_000,
     hookTimeout: 60_000,
     coverage: {

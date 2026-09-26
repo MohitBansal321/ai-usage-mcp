@@ -317,4 +317,30 @@ describe('formatStatus', () => {
     expect(current).not.toContain('Update available');
     expect(formatStatus(status, null)).not.toContain('Update available');
   });
+
+  it('says what the community price list priced, or why it priced nothing', () => {
+    const withCommunity = (community: {
+      added: string[];
+      disabledBy?: string;
+      fetchedAt?: string;
+    }) =>
+      formatStatus(
+        { ...status, pricing: { ...status.pricing, community: { source: 'x', ...community } } },
+        null,
+      );
+
+    expect(withCommunity({ added: [], disabledBy: 'AI_USAGE_NO_PRICING_REFRESH=1' })).toContain(
+      'Community:     off (AI_USAGE_NO_PRICING_REFRESH=1)',
+    );
+    expect(withCommunity({ added: [] })).toContain('not downloaded yet');
+    expect(withCommunity({ added: [], fetchedAt: '2026-09-26T10:00:00.000Z' })).toContain(
+      'fetched 2026-09-26; the built-in tables already price every model in it',
+    );
+    expect(
+      withCommunity({ added: ['claude-future-9'], fetchedAt: '2026-09-26T10:00:00.000Z' }),
+    ).toContain(
+      "Community:     1 model(s) the built-in tables lack, from LiteLLM's price list fetched 2026-09-26: claude-future-9",
+    );
+    expect(formatStatus(status, null)).not.toContain('Community:');
+  });
 });
