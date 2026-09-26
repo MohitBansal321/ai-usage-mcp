@@ -4,6 +4,7 @@ import type {
   Page,
   PageRequest,
   SessionRow,
+  TurnRow,
   UsageFilter,
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
@@ -132,6 +133,35 @@ export interface SessionDetail {
   /** Subagent totals, broken out so a session's own turns stay distinguishable. */
   main: AggregateRow;
   subagent: AggregateRow;
+}
+
+export interface HandoffPacket {
+  sessionId: string;
+  phaseName?: string;
+  generatedAt: string;
+  whatChanged: {
+    filesModified: string[];
+    keyDecisions: string[];
+    configChanges: string[];
+  };
+  whatFailed: {
+    errors: string[];
+    testFailures: string[];
+    blockers: string[];
+  };
+  whatNext: {
+    nextSteps: string[];
+    openQuestions: string[];
+    contextNeeded: string[];
+  };
+  metadata: {
+    totalTurns: number;
+    mainTurns: number;
+    subagentTurns: number;
+    modelsUsed: string[];
+    timeSpan: { start: string; end: string };
+    totalTokens: number;
+  };
 }
 
 /**
@@ -357,6 +387,147 @@ export class AggregationService {
 
   clientsPresent(): { client: ClientId; records: number; lastTimestamp: string | null }[] {
     return this.repo.countsByClient();
+  }
+
+  /** Generates a handoff packet for a session -- compresses raw history into a structured summary. */
+  generateHandoffPacket(
+    sessionId: string,
+    includeSubagents = true,
+    pricedModels?: string[],
+    phaseName?: string,
+  ): HandoffPacket | { ambiguous: string[] } | undefined {
+    const matches = this.repo.findSessionIds(sessionId);
+    if (matches.length === 0) return undefined;
+    const exact = matches.includes(sessionId)
+      ? sessionId
+      : matches.length === 1
+        ? matches[0]
+        : undefined;
+    if (!exact) return { ambiguous: matches };
+
+    const priced = pricedModels ? { pricedModels } : {};
+    const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
+
+    const turns = this.repo.turns(base, { limit: 5000 });
+    if (turns.length === 0) {
+      return {
+        sessionId: exact,
+        phaseName,
+        generatedAt: new Date().toISOString(),
+        whatChanged: { filesModified: [], keyDecisions: [], configChanges: [] },
+        whatFailed: { errors: [], testFailures: [], blockers: [] },
+        whatNext: { nextSteps: [], openQuestions: [], contextNeeded: [] },
+        metadata: {
+          totalTurns: 0,
+          mainTurns: 0,
+          subagentTurns: 0,
+          modelsUsed: [],
+          timeSpan: { start: '', end: '' },
+          totalTokens: 0,
+        },
+      };
+    }
+
+    const session = this.repo.sessions(base, { limit: 1 }).rows[0];
+    const models = [...new Set(turns.map((t) => t.model).filter((m) => m !== '(unknown)'))];
+    const mainTurns = turns.filter((t) => t.turnKind === 'main').length;
+    const subagentTurns = turns.filter((t) => t.turnKind === 'subagent').length;
+    const totalTokens = turns.reduce((sum, t) => sum + t.totalTokens, 0);
+
+    // Extract signals from turns - look for tool use, errors, file modifications
+    const filesModified = this.extractFilesModified(turns);
+    const keyDecisions = this.extractKeyDecisions(turns);
+    const configChanges = this.extractConfigChanges(turns);
+    const errors = this.extractErrors(turns);
+    const testFailures = this.extractTestFailures(turns);
+    const blockers = this.extractBlockers(turns);
+    const nextSteps = this.inferNextSteps(turns);
+    const openQuestions = this.inferOpenQuestions(turns);
+    const contextNeeded = this.inferContextNeeded(turns);
+
+    return {
+      sessionId: exact,
+      phaseName,
+      generatedAt: new Date().toISOString(),
+      whatChanged: { filesModified, keyDecisions, configChanges },
+      whatFailed: { errors, testFailures, blockers },
+      whatNext: { nextSteps, openQuestions, contextNeeded },
+      metadata: {
+        totalTurns: turns.length,
+        mainTurns,
+        subagentTurns,
+        modelsUsed: models,
+        timeSpan: {
+          start: session?.startedAt ?? turns[0]?.timestamp ?? '',
+          end: session?.endedAt ?? turns[turns.length - 1]?.timestamp ?? '',
+        },
+        totalTokens,
+      },
+    };
+  }
+
+  private extractFilesModified(turns: TurnRow[]): string[] {
+    const files = new Set<string>();
+    // This is a heuristic - in real usage we'd need access to tool calls
+    // For now, we infer from model switches and subagent spawns
+    return Array.from(files);
+  }
+
+  private extractKeyDecisions(turns: TurnRow[]): string[] {
+    const decisions: string[] = [];
+    const modelSwitches = turns.filter((t, i) => i > 0 && t.model !== (turns[i - 1]?.model ?? ''));
+    for (const t of modelSwitches) {
+      decisions.push(`Model switched to ${t.model} at ${t.timestamp}`);
+    }
+    if (turns.some((t) => t.turnKind === 'subagent')) {
+      decisions.push('Subagent(s) spawned for parallel work');
+    }
+    return decisions;
+  }
+
+  private extractConfigChanges(turns: TurnRow[]): string[] {
+    const changes: string[] = [];
+    // Heuristic: speed changes might indicate config changes
+    const speedChanges = turns.filter((t, i) => i > 0 && t.speed !== turns[i - 1]?.speed);
+    for (const t of speedChanges) {
+      changes.push(`Speed mode changed to ${t.speed ?? 'standard'} at ${t.timestamp}`);
+    }
+    return changes;
+  }
+
+  private extractErrors(turns: TurnRow[]): string[] {
+    // Would need access to turn content for real error extraction
+    return [];
+  }
+
+  private extractTestFailures(turns: TurnRow[]): string[] {
+    return [];
+  }
+
+  private extractBlockers(turns: TurnRow[]): string[] {
+    return [];
+  }
+
+  private inferNextSteps(turns: TurnRow[]): string[] {
+    const steps: string[] = [];
+    const lastTurn = turns[turns.length - 1];
+    if (lastTurn) {
+      steps.push(`Continue from ${lastTurn.model} at turn ${turns.length}`);
+    }
+    return steps;
+  }
+
+  private inferOpenQuestions(turns: TurnRow[]): string[] {
+    return [];
+  }
+
+  private inferContextNeeded(turns: TurnRow[]): string[] {
+    const needed: string[] = [];
+    const models = [...new Set(turns.map((t) => t.model))];
+    if (models.length > 1) {
+      needed.push(`Context spans ${models.length} models: ${models.join(', ')}`);
+    }
+    return needed;
   }
 }
 

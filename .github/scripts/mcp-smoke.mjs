@@ -65,6 +65,7 @@ const EXPECTED = [
   'client_usage',
   'counterfactual_cost',
   'daily_usage',
+  'generate_handoff_packet',
   'model_usage',
   'project_usage',
   'recent_sessions',
@@ -83,8 +84,9 @@ const SMOKE_ARGS = {
 };
 
 // Tools that cannot be smoke-called at all. `session_usage` needs a real session
-// id, and CI runs against an empty database where none exists.
-const SKIP = new Set(['session_usage']);
+// id, and CI runs against an empty database where none exists. `generate_handoff_packet`
+// also needs a real session id.
+const SKIP = new Set(['session_usage', 'generate_handoff_packet']);
 const list = await send('tools/list', {});
 const names = (list.result?.tools ?? []).map((t) => t.name).sort();
 if (JSON.stringify(names) !== JSON.stringify(EXPECTED)) fail(`tools mismatch: ${names.join(', ')}`);
