@@ -62,6 +62,7 @@ child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/ini
 // src/mcp/server.ts and the assertions in tests/mcp/server.test.ts. If you are
 // adding a tool and CI failed here, that is this list doing its job.
 const EXPECTED = [
+  'cache_health',
   'client_usage',
   'counterfactual_cost',
   'daily_usage',
@@ -84,9 +85,15 @@ const SMOKE_ARGS = {
 };
 
 // Tools that cannot be smoke-called at all. `session_usage` needs a real session
+<<<<<<< HEAD
 // id, and CI runs against an empty database where none exists. `generate_handoff_packet`
 // also needs a real session id.
 const SKIP = new Set(['session_usage', 'generate_handoff_packet']);
+=======
+// id, and CI runs against an empty database where none exists. `cache_health` also
+// needs a real session id.
+const SKIP = new Set(['session_usage', 'cache_health']);
+>>>>>>> main
 const list = await send('tools/list', {});
 const names = (list.result?.tools ?? []).map((t) => t.name).sort();
 if (JSON.stringify(names) !== JSON.stringify(EXPECTED)) fail(`tools mismatch: ${names.join(', ')}`);

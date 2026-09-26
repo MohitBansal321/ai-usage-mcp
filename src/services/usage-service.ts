@@ -16,6 +16,7 @@ import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record
 import {
   AggregationService,
   type BreakdownReport,
+  type CacheHealthReport,
   type ClientReport,
   type DailyReport,
   type HandoffPacket,
@@ -301,6 +302,7 @@ export class UsageService {
     return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
   }
 
+<<<<<<< HEAD
   generateHandoffPacket(
     sessionId: string,
     includeSubagents = true,
@@ -311,6 +313,22 @@ export class UsageService {
       includeSubagents,
       this.costService.pricedModels(),
       phaseName,
+=======
+  cacheHealth(
+    sessionId: string,
+    includeSubagents = true,
+    options: {
+      spikeThreshold?: number;
+      minCacheWrites?: number;
+      baselineWindow?: number;
+    } = {},
+  ): CacheHealthReport | { ambiguous: string[] } | undefined {
+    return this.aggregation.cacheHealth(
+      sessionId,
+      includeSubagents,
+      this.costService.pricedModels(),
+      options,
+>>>>>>> main
     );
   }
 

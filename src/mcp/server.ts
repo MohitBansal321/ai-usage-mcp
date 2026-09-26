@@ -5,6 +5,7 @@ import { formatPricingRefresh } from '../services/formatter.js';
 import { startPricingWatch } from '../services/pricing-refresh.js';
 import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
+import { registerCacheHealth } from './tools/cache-health.js';
 import { registerClientUsage } from './tools/client-usage.js';
 import { registerCounterfactualCost } from './tools/counterfactual-cost.js';
 import { registerDailyUsage } from './tools/daily-usage.js';
@@ -99,7 +100,11 @@ async function main(): Promise<void> {
   registerDailyUsage(server, ctx);
   registerUsageBreakdown(server, ctx);
   registerCounterfactualCost(server, ctx);
+<<<<<<< HEAD
   registerHandoffPacket(server, ctx);
+=======
+  registerCacheHealth(server, ctx);
+>>>>>>> main
 
   registerResources(server, ctx);
   registerPrompts(server);
