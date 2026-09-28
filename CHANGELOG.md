@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-28
+
+The fastest way to burn through a rate limit is a lost prompt cache: the whole context gets
+re-written at cache-write prices instead of read back cheaply, and nothing tells you it
+happened. `cache_health` shows where it happened, why, and what it cost.
+
 ### Added
 
 - **`cache_health` finds where a session lost its prompt cache.** Given a session, it lists
@@ -832,7 +838,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.7.0...v0.8.0
