@@ -142,6 +142,8 @@ export interface CacheHealthReport {
   turnsAnalyzed: number;
   /** True when the session exceeded the turn read limit and only its start was analyzed. */
   truncated: boolean;
+  /** Subagent turns left out because includeSubagents was false. */
+  skippedSubagentTurns: number;
   /** Overall cache hit rate for the analyzed turns. */
   hitRate: number | undefined;
   /** Overall reads per write for the analyzed turns. */
@@ -381,6 +383,9 @@ export class AggregationService {
       { limit: TURNS_MAX_LIMIT },
     );
     const breaks = detectCacheBreaks(turns, options, priceBreak);
+    const skippedSubagentTurns = includeSubagents
+      ? 0
+      : this.repo.turnKindCounts({ sessionId: exact }).subagent;
 
     const totalCacheWrites = turns.reduce((sum, t) => sum + t.cacheWriteTokens, 0);
     const totalCacheReads = turns.reduce((sum, t) => sum + t.cacheReadTokens, 0);
@@ -391,6 +396,7 @@ export class AggregationService {
       includeSubagents,
       turnsAnalyzed: turns.length,
       truncated: turns.length === TURNS_MAX_LIMIT,
+      skippedSubagentTurns,
       hitRate:
         totalCacheWrites + totalCacheReads > 0
           ? totalCacheReads / (totalCacheWrites + totalCacheReads)

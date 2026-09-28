@@ -265,5 +265,12 @@ It syncs first, then compares only activity before a shared cutoff: both clients
 their stores continuously, so without a cutoff the source is always a few requests ahead and
 the diff could never be zero.
 
+It compares only sessions the source still holds. Both clients delete their own history --
+Claude Code removes transcripts after `cleanupPeriodDays`, 30 days by default -- while the
+local database keeps what it collected, so after a month the database legitimately holds more
+than the source. Those sessions are listed on a separate `Retained, not compared` line instead
+of being counted as a mismatch. Any source record missing from the database still fails the
+check, because the source side is never narrowed.
+
 Current result on the development machine: **exact match, zero delta on every token class,
 for both clients.**

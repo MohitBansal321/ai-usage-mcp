@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { TurnRow } from '../../src/db/repositories/usage-repository.js';
 import { detectCacheBreaks } from '../../src/services/cache-breaks.js';
 import { UsageService } from '../../src/services/usage-service.js';
+import { formatCacheHealth } from '../../src/services/formatter.js';
 import { assistantLine, buildClaudeProjects, tempDir } from '../fixtures/build-fixtures.js';
 
 const T0 = Date.parse('2026-09-01T10:00:00Z');
@@ -170,5 +171,51 @@ describe('UsageService.cacheHealth', () => {
     expect(report.breaks[0]!.estimatedExtraCost).toBeCloseTo(expected, 10);
     expect(report.summary.estimatedExtraCost).toBeCloseTo(expected, 10);
     expect(report.summary.unpricedBreaks).toBe(0);
+    expect(report.skippedSubagentTurns).toBe(0);
+  });
+
+  it('says a subagent-only session has turns, rather than "No turns"', async () => {
+    // Some OpenCode sessions run all their work in subagents. With subagents off by
+    // default, the report analyzed nothing and read as though the session were empty.
+    dir = tempDir('cache-breaks-sub-');
+    const line = (i: number) =>
+      assistantLine({
+        sessionId: 'sub-sess',
+        requestId: `r${i}`,
+        messageId: `m${i}`,
+        timestamp: new Date(T0 + i * 10_000).toISOString(),
+        output: 50,
+        cacheRead: 8_000,
+        cacheWrite5m: 300,
+        stopReason: 'end_turn',
+      });
+    process.env.AI_USAGE_CLAUDE_PROJECTS = buildClaudeProjects(dir, [
+      {
+        slug: '-work-sub',
+        sessions: [
+          {
+            sessionId: 'sub-sess',
+            lines: [],
+            subagents: [{ name: 'agent-1', lines: [line(0), line(1), line(2)] }],
+          },
+        ],
+      },
+    ]);
+    service = UsageService.open({ dbPath: join(dir, 'usage.db') });
+    await service.sync();
+
+    const report = service.cacheHealth('sub-sess');
+    if (!report || 'ambiguous' in report) throw new Error('session not resolved');
+    expect(report.turnsAnalyzed).toBe(0);
+    expect(report.skippedSubagentTurns).toBe(3);
+    const text = formatCacheHealth(report, service.costService);
+    expect(text).not.toContain('No turns in this session.');
+    expect(text).toContain('all of its work ran in subagents');
+    expect(text).toContain('set includeSubagents');
+
+    const withSubs = service.cacheHealth('sub-sess', true);
+    if (!withSubs || 'ambiguous' in withSubs) throw new Error('session not resolved');
+    expect(withSubs.turnsAnalyzed).toBe(3);
+    expect(withSubs.skippedSubagentTurns).toBe(0);
   });
 });

@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-28
+
+### Fixed
+
+- **`verify` no longer fails on any install older than a month.** Claude Code deletes its
+  transcripts after `cleanupPeriodDays` (30 days by default) and OpenCode sessions can be
+  deleted too, but the local database keeps what it collected -- which is its job. `verify`
+  compared all of that history against the source files that were left, so it reported the
+  database as "ahead" of its source and told the user to treat correct numbers as suspect. It
+  now compares only the sessions the source still holds, and lists the rest on a separate
+  `Retained, not compared` line with their session count and token totals. A source record
+  missing from the database still fails the check, since the source side is never narrowed.
+- **`cache_health` no longer calls a subagent-only session empty.** With subagents excluded by
+  default, a session whose work all ran in subagents (common in OpenCode) was reported as
+  "No turns in this session." It now says the session has no main-thread turns, and whenever
+  subagent turns were skipped it says how many and how to include them
+  (`skippedSubagentTurns` in the structured output).
+
 ## [0.11.0] - 2026-09-28
 
 The fastest way to burn through a rate limit is a lost prompt cache: the whole context gets
@@ -838,7 +856,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.8.0...v0.9.0
