@@ -642,7 +642,7 @@ export class AggregationService {
     };
   }
 
-  private extractFilesModified(turns: TurnRow[]): string[] {
+  private extractFilesModified(_turns: TurnRow[]): string[] {
     const files = new Set<string>();
     // This is a heuristic - in real usage we'd need access to tool calls
     // For now, we infer from model switches and subagent spawns
@@ -671,16 +671,16 @@ export class AggregationService {
     return changes;
   }
 
-  private extractErrors(turns: TurnRow[]): string[] {
+  private extractErrors(_turns: TurnRow[]): string[] {
     // Would need access to turn content for real error extraction
     return [];
   }
 
-  private extractTestFailures(turns: TurnRow[]): string[] {
+  private extractTestFailures(_turns: TurnRow[]): string[] {
     return [];
   }
 
-  private extractBlockers(turns: TurnRow[]): string[] {
+  private extractBlockers(_turns: TurnRow[]): string[] {
     return [];
   }
 
@@ -693,7 +693,7 @@ export class AggregationService {
     return steps;
   }
 
-  private inferOpenQuestions(turns: TurnRow[]): string[] {
+  private inferOpenQuestions(_turns: TurnRow[]): string[] {
     return [];
   }
 
