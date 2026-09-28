@@ -8,6 +8,7 @@ import {
   type PageRequest,
   type TimeGrain,
   type SessionRow,
+  type TurnRow,
   type UsageFilter,
 } from '../db/repositories/usage-repository.js';
 import { ClaudeCodeCollector } from '../collectors/claude-code/collector.js';
@@ -19,7 +20,6 @@ import {
   type CacheHealthReport,
   type ClientReport,
   type DailyReport,
-  type HandoffPacket,
   type ModelReport,
   type ProjectReport,
   type SessionDetail,
@@ -44,6 +44,7 @@ import {
 import { RepriceService, type RepriceResult } from './reprice-service.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
 import { VerifyService, type VerifyReport } from './verify-service.js';
+import type { CacheBreakOptions } from './cache-breaks.js';
 import type { CommunityPricingState } from '../pricing/index.js';
 
 /** A refresh, and what applying it did to the stored rows. */
@@ -304,31 +305,29 @@ export class UsageService {
 
   cacheHealth(
     sessionId: string,
-    includeSubagents = true,
-    options: {
-      spikeThreshold?: number;
-      minCacheWrites?: number;
-      baselineWindow?: number;
-    } = {},
+    includeSubagents = false,
+    options: CacheBreakOptions = {},
   ): CacheHealthReport | { ambiguous: string[] } | undefined {
+    // A break's cost is the write premium: what the rewritten prefix cost at
+    // cache-write rates, less what reading the same tokens would have cost.
+    const priceBreak = (turn: TurnRow): number | undefined => {
+      const base = { model: turn.model, inputTokens: 0, outputTokens: 0, speed: turn.speed };
+      const written = this.costService.estimate({
+        ...base,
+        cacheWriteTokens: turn.cacheWriteTokens,
+        cacheWrite5mTokens: turn.cacheWrite5mTokens,
+        cacheWrite1hTokens: turn.cacheWrite1hTokens,
+      });
+      const read = this.costService.estimate({ ...base, cacheReadTokens: turn.cacheWriteTokens });
+      if (written.estimatedCost === undefined || read.estimatedCost === undefined) return undefined;
+      return written.estimatedCost - read.estimatedCost;
+    };
     return this.aggregation.cacheHealth(
       sessionId,
       includeSubagents,
       this.costService.pricedModels(),
       options,
-    );
-  }
-
-  generateHandoffPacket(
-    sessionId: string,
-    includeSubagents = true,
-    phaseName?: string,
-  ): HandoffPacket | { ambiguous: string[] } | undefined {
-    return this.aggregation.generateHandoffPacket(
-      sessionId,
-      includeSubagents,
-      this.costService.pricedModels(),
-      phaseName,
+      priceBreak,
     );
   }
 

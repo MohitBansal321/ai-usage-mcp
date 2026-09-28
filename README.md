@@ -378,6 +378,7 @@ Break my last 7 days down day by day.
 | `project_usage`       | Per-project tokens and cost, by the directory a turn ran in                |
 | `daily_usage`         | Per-day tokens and cost, newest day first                                  |
 | `counterfactual_cost` | These tokens at another model's list rates, beside what they actually cost |
+| `cache_health`        | One session's cache breaks: when the cached prefix was lost, why, and cost |
 
 Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
@@ -391,6 +392,15 @@ fast-mode premium and the two clients' different reasoning-token conventions are
 It is a **counterfactual, not a saving**: the same task on a different model generally takes a
 different number of turns carrying a different context on each, and nothing on disk can say
 what that would have been. The caveat ships with the numbers.
+
+`cache_health` finds the turns in a session where the prompt cache stopped working: cache
+writes spike **and** cache reads fall below half of what the previous turn had cached, so the
+whole context was re-written at cache-write prices. A write spike alone -- reading one large
+file -- is not a break, because the existing prefix was still read back. Each break names a
+likely cause (a model or speed switch, idling past the 5-minute cache TTL, or an early-context
+change such as an edited `CLAUDE.md`) and its write premium, priced from the same versioned
+table as every other estimate. Main and subagent turns keep separate caches, so subagents are
+excluded by default and baselined separately when `includeSubagents` is set.
 
 ## Resources and prompts
 
