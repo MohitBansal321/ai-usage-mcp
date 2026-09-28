@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-09-28
+
+### Changed
+
+- **The README now opens with what this package does that a transcript reader cannot:** keep
+  history past Claude Code's 30-day transcript cleanup, find and price prompt-cache breaks, and
+  prove its totals with `verify`. A short _ai-usage or ccusage?_ section replaces the claim that
+  other tools probably inflate your numbers -- ccusage counts Claude Code correctly, and its
+  token totals match this package's exactly. No code changes.
+
+### Fixed
+
+- The README said the server exposes seven MCP tools; it exposes ten, and `usage_breakdown` was
+  missing from the tools table.
+
 ## [0.11.1] - 2026-09-28
 
 ### Fixed
@@ -856,7 +871,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.9.0...v0.10.0
