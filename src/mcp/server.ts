@@ -9,6 +9,7 @@ import { registerCacheHealth } from './tools/cache-health.js';
 import { registerClientUsage } from './tools/client-usage.js';
 import { registerCounterfactualCost } from './tools/counterfactual-cost.js';
 import { registerDailyUsage } from './tools/daily-usage.js';
+import { registerHandoffPacket } from './tools/handoff-packet.js';
 import { registerModelUsage } from './tools/model-usage.js';
 import { registerProjectUsage } from './tools/project-usage.js';
 import { registerRecentSessions } from './tools/recent-sessions.js';
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   registerUsageBreakdown(server, ctx);
   registerCounterfactualCost(server, ctx);
   registerCacheHealth(server, ctx);
+  registerHandoffPacket(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server);
