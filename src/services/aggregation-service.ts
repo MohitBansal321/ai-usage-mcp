@@ -4,14 +4,22 @@ import type {
   Page,
   PageRequest,
   SessionRow,
-  TurnRow,
   UsageFilter,
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
+import { TURNS_MAX_LIMIT } from '../db/repositories/usage-repository.js';
 import type { ClientId } from '../models/usage-record.js';
 import type { CrossTabRow, GroupAxis, TimeGrain } from '../db/repositories/usage-repository.js';
 import { zeroFill, type TimeBucket } from './time-buckets.js';
 import { compareTotals, comparisonCaveats, type Comparison } from './comparison.js';
+import {
+  detectCacheBreaks,
+  type BreakPricer,
+  type CacheBreakEvent,
+  type CacheBreakOptions,
+} from './cache-breaks.js';
+
+export type { CacheBreakEvent } from './cache-breaks.js';
 
 /**
  * What a list-shaped report says about the rows it did NOT return.
@@ -127,41 +135,28 @@ export interface BreakdownReport {
   unmatchedScope?: UnmatchedScope;
 }
 
-export interface CacheBreakEvent {
-  /** Turn index in the session (0-based). */
-  turnIndex: number;
-  /** ISO timestamp of the turn. */
-  timestamp: string;
-  /** Cache write tokens on this turn. */
-  cacheWriteTokens: number;
-  /** Cache read tokens on this turn. */
-  cacheReadTokens: number;
-  /** Ratio of this turn's cache writes to the rolling average before it. */
-  writeSpikeRatio: number;
-  /** Rolling average of cache writes over previous N turns. */
-  baselineWriteAvg: number;
-  /** Estimated extra cost from the cache break (cache write premium). */
-  estimatedExtraCost: number;
-  /** Human-readable explanation of what likely happened. */
-  explanation: string;
-}
-
 export interface CacheHealthReport {
   sessionId: string;
-  totalTurns: number;
+  /** Whether subagent turns were analyzed (as their own stream) alongside main turns. */
+  includeSubagents: boolean;
   turnsAnalyzed: number;
-  /** Overall cache hit rate for the session. */
+  /** True when the session exceeded the turn read limit and only its start was analyzed. */
+  truncated: boolean;
+  /** Overall cache hit rate for the analyzed turns. */
   hitRate: number | undefined;
-  /** Overall reads per write for the session. */
+  /** Overall reads per write for the analyzed turns. */
   readsPerWrite: number | undefined;
   /** Detected cache break events, ordered by time. */
   breaks: CacheBreakEvent[];
-  /** Summary statistics. */
   summary: {
     totalCacheWrites: number;
     totalCacheReads: number;
     maxWriteSpikeRatio: number;
     breakCount: number;
+    /** Sum over the breaks that could be priced; absent when none could. */
+    estimatedExtraCost?: number;
+    /** Breaks on a model with no price, excluded from estimatedExtraCost. */
+    unpricedBreaks: number;
   };
 }
 
@@ -171,35 +166,6 @@ export interface SessionDetail {
   /** Subagent totals, broken out so a session's own turns stay distinguishable. */
   main: AggregateRow;
   subagent: AggregateRow;
-}
-
-export interface HandoffPacket {
-  sessionId: string;
-  phaseName?: string;
-  generatedAt: string;
-  whatChanged: {
-    filesModified: string[];
-    keyDecisions: string[];
-    configChanges: string[];
-  };
-  whatFailed: {
-    errors: string[];
-    testFailures: string[];
-    blockers: string[];
-  };
-  whatNext: {
-    nextSteps: string[];
-    openQuestions: string[];
-    contextNeeded: string[];
-  };
-  metadata: {
-    totalTurns: number;
-    mainTurns: number;
-    subagentTurns: number;
-    modelsUsed: string[];
-    timeSpan: { start: string; end: string };
-    totalTokens: number;
-  };
 }
 
 /**
@@ -392,19 +358,13 @@ export class AggregationService {
     };
   }
 
-  /** Analyzes a session for cache breaks -- sudden spikes in cache write tokens. */
+  /** Analyzes a session for cache breaks -- turns where the cached prefix was not reused. */
   cacheHealth(
     sessionId: string,
-    includeSubagents = true,
+    includeSubagents = false,
     pricedModels?: string[],
-    options: {
-      /** Minimum spike ratio to flag as a break (default: 10x). */
-      spikeThreshold?: number;
-      /** Minimum absolute cache writes to consider (default: 5000). */
-      minCacheWrites?: number;
-      /** Rolling window for baseline (default: 5 turns). */
-      baselineWindow?: number;
-    } = {},
+    options: CacheBreakOptions = {},
+    priceBreak?: BreakPricer,
   ): CacheHealthReport | { ambiguous: string[] } | undefined {
     const matches = this.repo.findSessionIds(sessionId);
     if (matches.length === 0) return undefined;
@@ -416,120 +376,41 @@ export class AggregationService {
     if (!exact) return { ambiguous: matches };
 
     const priced = pricedModels ? { pricedModels } : {};
-    const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
-    const turns = this.repo.turns(base, { limit: 5000 });
-    if (turns.length === 0) {
-      return {
-        sessionId: exact,
-        totalTurns: 0,
-        turnsAnalyzed: 0,
-        hitRate: undefined,
-        readsPerWrite: undefined,
-        breaks: [],
-        summary: { totalCacheWrites: 0, totalCacheReads: 0, maxWriteSpikeRatio: 0, breakCount: 0 },
-      };
-    }
+    const turns = this.repo.turns(
+      { sessionId: exact, includeSubagents, ...priced },
+      { limit: TURNS_MAX_LIMIT },
+    );
+    const breaks = detectCacheBreaks(turns, options, priceBreak);
 
-    const spikeThreshold = options.spikeThreshold ?? 10;
-    const minCacheWrites = options.minCacheWrites ?? 5000;
-    const baselineWindow = options.baselineWindow ?? 5;
-
-    let totalCacheWrites = 0;
-    let totalCacheReads = 0;
-    let maxWriteSpikeRatio = 0;
-    const breaks: CacheBreakEvent[] = [];
-
-    for (let i = 0; i < turns.length; i++) {
-      const turn = turns[i]!;
-      const cw = turn.cacheWriteTokens ?? 0;
-      const cr = turn.cacheReadTokens ?? 0;
-      totalCacheWrites += cw;
-      totalCacheReads += cr;
-
-      if (cw < minCacheWrites) continue;
-      if (i < baselineWindow) continue;
-
-      let baselineSum = 0;
-      for (let j = i - baselineWindow; j < i; j++) {
-        baselineSum += turns[j]!.cacheWriteTokens ?? 0;
-      }
-      const baselineAvg = baselineSum / baselineWindow;
-      if (baselineAvg === 0) continue;
-
-      const ratio = cw / baselineAvg;
-      if (ratio >= spikeThreshold) {
-        maxWriteSpikeRatio = Math.max(maxWriteSpikeRatio, ratio);
-        const writePremium = cw * 1.25;
-        const estimatedExtraCost = writePremium * 0.000015;
-        breaks.push({
-          turnIndex: i,
-          timestamp: turn.timestamp,
-          cacheWriteTokens: cw,
-          cacheReadTokens: cr,
-          writeSpikeRatio: Math.round(ratio * 100) / 100,
-          baselineWriteAvg: Math.round(baselineAvg),
-          estimatedExtraCost: Math.round(estimatedExtraCost * 1000000) / 1000000,
-          explanation: this.explainCacheBreak(cw, baselineAvg, turn, turns, i),
-        });
-      }
-    }
-
-    const hitRate =
-      totalCacheWrites + totalCacheReads > 0
-        ? totalCacheReads / (totalCacheWrites + totalCacheReads)
-        : undefined;
-    const readsPerWrite = totalCacheWrites > 0 ? totalCacheReads / totalCacheWrites : undefined;
+    const totalCacheWrites = turns.reduce((sum, t) => sum + t.cacheWriteTokens, 0);
+    const totalCacheReads = turns.reduce((sum, t) => sum + t.cacheReadTokens, 0);
+    const priceable = breaks.filter((b) => b.estimatedExtraCost !== undefined);
 
     return {
       sessionId: exact,
-      totalTurns: turns.length,
+      includeSubagents,
       turnsAnalyzed: turns.length,
-      hitRate,
-      readsPerWrite,
+      truncated: turns.length === TURNS_MAX_LIMIT,
+      hitRate:
+        totalCacheWrites + totalCacheReads > 0
+          ? totalCacheReads / (totalCacheWrites + totalCacheReads)
+          : undefined,
+      readsPerWrite: totalCacheWrites > 0 ? totalCacheReads / totalCacheWrites : undefined,
       breaks,
       summary: {
         totalCacheWrites,
         totalCacheReads,
-        maxWriteSpikeRatio: Math.round(maxWriteSpikeRatio * 100) / 100,
+        maxWriteSpikeRatio: Math.max(0, ...breaks.map((b) => b.writeSpikeRatio)),
         breakCount: breaks.length,
+        ...(priceable.length > 0
+          ? {
+              estimatedExtraCost: priceable.reduce((s, b) => s + (b.estimatedExtraCost ?? 0), 0),
+            }
+          : {}),
+        unpricedBreaks: breaks.length - priceable.length,
       },
     };
   }
-
-  private explainCacheBreak(
-    currentWrites: number,
-    baselineAvg: number,
-    turn: TurnRow,
-    allTurns: TurnRow[],
-    index: number,
-  ): string {
-    const parts: string[] = [];
-    parts.push(
-      `Cache writes jumped from ~${Math.round(baselineAvg)} to ${currentWrites} tokens (${Math.round((currentWrites / baselineAvg) * 100) / 100}x baseline).`,
-    );
-
-    if (turn.model && turn.model !== '(unknown)') {
-      parts.push(`Model: ${turn.model}.`);
-    }
-    if (turn.turnKind === 'subagent') {
-      parts.push('This was a subagent turn -- subagents often re-read parent context.');
-    }
-    const prevTurn = allTurns[index - 1];
-    if (prevTurn && prevTurn.model !== turn.model) {
-      parts.push(
-        `Model switched from ${prevTurn.model} to ${turn.model} -- this invalidates the prefix cache.`,
-      );
-    }
-    if (turn.speed === 'fast' && prevTurn?.speed !== 'fast') {
-      parts.push('Switched to fast mode -- different cache tier.');
-    }
-    parts.push(
-      'Likely cause: a core file was edited mid-session, the file load order changed, or a global config (CLAUDE.md, AGENTS.md) was modified -- all of which break the prefix cache and force a full re-read at write prices.',
-    );
-
-    return parts.join(' ');
-  }
-
   /** Resolves an exact or partial session id, then assembles its detail view. */
   session(
     sessionId: string,
@@ -563,147 +444,6 @@ export class AggregationService {
 
   clientsPresent(): { client: ClientId; records: number; lastTimestamp: string | null }[] {
     return this.repo.countsByClient();
-  }
-
-  /** Generates a handoff packet for a session -- compresses raw history into a structured summary. */
-  generateHandoffPacket(
-    sessionId: string,
-    includeSubagents = true,
-    pricedModels?: string[],
-    phaseName?: string,
-  ): HandoffPacket | { ambiguous: string[] } | undefined {
-    const matches = this.repo.findSessionIds(sessionId);
-    if (matches.length === 0) return undefined;
-    const exact = matches.includes(sessionId)
-      ? sessionId
-      : matches.length === 1
-        ? matches[0]
-        : undefined;
-    if (!exact) return { ambiguous: matches };
-
-    const priced = pricedModels ? { pricedModels } : {};
-    const base: UsageFilter = { sessionId: exact, includeSubagents, ...priced };
-
-    const turns = this.repo.turns(base, { limit: 5000 });
-    if (turns.length === 0) {
-      return {
-        sessionId: exact,
-        phaseName,
-        generatedAt: new Date().toISOString(),
-        whatChanged: { filesModified: [], keyDecisions: [], configChanges: [] },
-        whatFailed: { errors: [], testFailures: [], blockers: [] },
-        whatNext: { nextSteps: [], openQuestions: [], contextNeeded: [] },
-        metadata: {
-          totalTurns: 0,
-          mainTurns: 0,
-          subagentTurns: 0,
-          modelsUsed: [],
-          timeSpan: { start: '', end: '' },
-          totalTokens: 0,
-        },
-      };
-    }
-
-    const session = this.repo.sessions(base, { limit: 1 }).rows[0];
-    const models = [...new Set(turns.map((t) => t.model).filter((m) => m !== '(unknown)'))];
-    const mainTurns = turns.filter((t) => t.turnKind === 'main').length;
-    const subagentTurns = turns.filter((t) => t.turnKind === 'subagent').length;
-    const totalTokens = turns.reduce((sum, t) => sum + t.totalTokens, 0);
-
-    // Extract signals from turns - look for tool use, errors, file modifications
-    const filesModified = this.extractFilesModified(turns);
-    const keyDecisions = this.extractKeyDecisions(turns);
-    const configChanges = this.extractConfigChanges(turns);
-    const errors = this.extractErrors(turns);
-    const testFailures = this.extractTestFailures(turns);
-    const blockers = this.extractBlockers(turns);
-    const nextSteps = this.inferNextSteps(turns);
-    const openQuestions = this.inferOpenQuestions(turns);
-    const contextNeeded = this.inferContextNeeded(turns);
-
-    return {
-      sessionId: exact,
-      phaseName,
-      generatedAt: new Date().toISOString(),
-      whatChanged: { filesModified, keyDecisions, configChanges },
-      whatFailed: { errors, testFailures, blockers },
-      whatNext: { nextSteps, openQuestions, contextNeeded },
-      metadata: {
-        totalTurns: turns.length,
-        mainTurns,
-        subagentTurns,
-        modelsUsed: models,
-        timeSpan: {
-          start: session?.startedAt ?? turns[0]?.timestamp ?? '',
-          end: session?.endedAt ?? turns[turns.length - 1]?.timestamp ?? '',
-        },
-        totalTokens,
-      },
-    };
-  }
-
-  private extractFilesModified(_turns: TurnRow[]): string[] {
-    const files = new Set<string>();
-    // This is a heuristic - in real usage we'd need access to tool calls
-    // For now, we infer from model switches and subagent spawns
-    return Array.from(files);
-  }
-
-  private extractKeyDecisions(turns: TurnRow[]): string[] {
-    const decisions: string[] = [];
-    const modelSwitches = turns.filter((t, i) => i > 0 && t.model !== (turns[i - 1]?.model ?? ''));
-    for (const t of modelSwitches) {
-      decisions.push(`Model switched to ${t.model} at ${t.timestamp}`);
-    }
-    if (turns.some((t) => t.turnKind === 'subagent')) {
-      decisions.push('Subagent(s) spawned for parallel work');
-    }
-    return decisions;
-  }
-
-  private extractConfigChanges(turns: TurnRow[]): string[] {
-    const changes: string[] = [];
-    // Heuristic: speed changes might indicate config changes
-    const speedChanges = turns.filter((t, i) => i > 0 && t.speed !== turns[i - 1]?.speed);
-    for (const t of speedChanges) {
-      changes.push(`Speed mode changed to ${t.speed ?? 'standard'} at ${t.timestamp}`);
-    }
-    return changes;
-  }
-
-  private extractErrors(_turns: TurnRow[]): string[] {
-    // Would need access to turn content for real error extraction
-    return [];
-  }
-
-  private extractTestFailures(_turns: TurnRow[]): string[] {
-    return [];
-  }
-
-  private extractBlockers(_turns: TurnRow[]): string[] {
-    return [];
-  }
-
-  private inferNextSteps(turns: TurnRow[]): string[] {
-    const steps: string[] = [];
-    const lastTurn = turns[turns.length - 1];
-    if (lastTurn) {
-      steps.push(`Continue from ${lastTurn.model} at turn ${turns.length}`);
-    }
-    return steps;
-  }
-
-  private inferOpenQuestions(_turns: TurnRow[]): string[] {
-    return [];
-  }
-
-  private inferContextNeeded(turns: TurnRow[]): string[] {
-    const needed: string[] = [];
-    const models = [...new Set(turns.map((t) => t.model))];
-    if (models.length > 1) {
-      needed.push(`Context spans ${models.length} models: ${models.join(', ')}`);
-    }
-    return needed;
   }
 }
 

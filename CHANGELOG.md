@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`cache_health` finds where a session lost its prompt cache.** Given a session, it lists
+  each turn whose cached prefix was not reused -- cache writes spiking to at least 10x the
+  recent baseline while cache reads fall below half of what the previous turn had cached --
+  with a likely cause (model or speed switch, idle past the 5-minute TTL, or an early-context
+  change such as an edited `CLAUDE.md`) and the write premium it cost. The premium is an
+  API-equivalent estimate from the versioned pricing table and is reported as unavailable for
+  a model with no price. A large new file read is not reported as a break, since the existing
+  prefix was still read back. Main and subagent turns keep separate caches: subagents are
+  excluded by default, and baselined on their own when `includeSubagents` is set.
+
 ## [0.10.0] - 2026-09-26
 
 A Claude model released after the pricing table was captured used to report every Claude Code

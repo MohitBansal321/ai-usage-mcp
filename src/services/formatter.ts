@@ -5,7 +5,6 @@ import type {
   CacheHealthReport,
   ClientReport,
   DailyReport,
-  HandoffPacket,
   ModelReport,
   PageInfo,
   ProjectReport,
@@ -940,115 +939,32 @@ export function formatCounterfactual(
   return out.join('\n');
 }
 
-export function formatHandoffPacket(packet: HandoffPacket): string {
-  const out: string[] = [];
-  out.push(
-    `Handoff Packet -- Session ${packet.sessionId}${packet.phaseName ? ` (${packet.phaseName})` : ''}`,
-  );
-  out.push(`Generated: ${packet.generatedAt}`);
-  out.push('');
-
-  const m = packet.metadata;
-  out.push(`Session: ${m.totalTurns} turns (${m.mainTurns} main, ${m.subagentTurns} subagent)`);
-  out.push(`Models: ${m.modelsUsed.length ? m.modelsUsed.join(', ') : '(unknown)'}`);
-  out.push(`Time span: ${m.timeSpan.start} -> ${m.timeSpan.end}`);
-  out.push(`Total tokens: ${m.totalTokens.toLocaleString()}`);
-  out.push('');
-
-  const wc = packet.whatChanged;
-  out.push('=== WHAT CHANGED ===');
-  if (wc.filesModified.length) {
-    out.push('Files modified:');
-    for (const f of wc.filesModified) out.push(`  - ${f}`);
-  } else {
-    out.push('Files modified: (none detected)');
-  }
-  if (wc.keyDecisions.length) {
-    out.push('Key decisions:');
-    for (const d of wc.keyDecisions) out.push(`  - ${d}`);
-  } else {
-    out.push('Key decisions: (none recorded)');
-  }
-  if (wc.configChanges.length) {
-    out.push('Config changes:');
-    for (const c of wc.configChanges) out.push(`  - ${c}`);
-  } else {
-    out.push('Config changes: (none detected)');
-  }
-  out.push('');
-
-  const wf = packet.whatFailed;
-  out.push('=== WHAT FAILED ===');
-  if (wf.errors.length) {
-    out.push('Errors:');
-    for (const e of wf.errors) out.push(`  - ${e}`);
-  } else {
-    out.push('Errors: (none)');
-  }
-  if (wf.testFailures.length) {
-    out.push('Test failures:');
-    for (const t of wf.testFailures) out.push(`  - ${t}`);
-  } else {
-    out.push('Test failures: (none)');
-  }
-  if (wf.blockers.length) {
-    out.push('Blockers:');
-    for (const b of wf.blockers) out.push(`  - ${b}`);
-  } else {
-    out.push('Blockers: (none)');
-  }
-  out.push('');
-
-  const wn = packet.whatNext;
-  out.push("=== WHAT'S NEXT ===");
-  if (wn.nextSteps.length) {
-    out.push('Next steps:');
-    for (const s of wn.nextSteps) out.push(`  - ${s}`);
-  } else {
-    out.push('Next steps: (none inferred)');
-  }
-  if (wn.openQuestions.length) {
-    out.push('Open questions:');
-    for (const q of wn.openQuestions) out.push(`  - ${q}`);
-  } else {
-    out.push('Open questions: (none)');
-  }
-  if (wn.contextNeeded.length) {
-    out.push('Context needed for continuation:');
-    for (const c of wn.contextNeeded) out.push(`  - ${c}`);
-  } else {
-    out.push('Context needed: (none)');
-  }
-
-  out.push('');
-  out.push('Usage: Feed this packet to the next agent phase instead of raw history.');
-  out.push('The packet is ~1-2KB vs 50-200KB of raw context -- massive token savings.');
-
-  return out.join('\n').trimEnd();
-}
-
-export function formatCacheHealth(report: CacheHealthReport): string {
+export function formatCacheHealth(report: CacheHealthReport, costService: CostService): string {
   const out: string[] = [];
   out.push(`Cache health -- Session ${report.sessionId}`);
-  out.push(`Turns analyzed: ${int(report.turnsAnalyzed)} of ${int(report.totalTurns)}`);
+  out.push(
+    `Turns analyzed: ${int(report.turnsAnalyzed)} ` +
+      `(${report.includeSubagents ? 'main and subagent turns, each baselined separately' : 'main turns only'})`,
+  );
+  if (report.truncated) {
+    out.push(
+      `Note: only the first ${int(report.turnsAnalyzed)} turns were read; later turns are not analyzed.`,
+    );
+  }
   out.push('');
 
-  if (report.totalTurns === 0) {
+  if (report.turnsAnalyzed === 0) {
     out.push('No turns in this session.');
     return out.join('\n');
   }
 
   out.push('Overall cache metrics:');
-  if (report.hitRate !== undefined) {
-    out.push(`  Hit rate:       ${(report.hitRate * 100).toFixed(2)}%`);
-  } else {
-    out.push(`  Hit rate:       n/a (no cache traffic)`);
-  }
-  if (report.readsPerWrite !== undefined) {
-    out.push(`  Reads per write: ${report.readsPerWrite.toFixed(1)}`);
-  } else {
-    out.push(`  Reads per write: n/a (no cache writes)`);
-  }
+  out.push(
+    `  Hit rate:        ${report.hitRate !== undefined ? `${(report.hitRate * 100).toFixed(2)}%` : 'n/a (no cache traffic)'}`,
+  );
+  out.push(
+    `  Reads per write: ${report.readsPerWrite !== undefined ? report.readsPerWrite.toFixed(1) : 'n/a (no cache writes)'}`,
+  );
   out.push(`  Total cache reads:  ${tokens(report.summary.totalCacheReads)}`);
   out.push(`  Total cache writes: ${tokens(report.summary.totalCacheWrites)}`);
   out.push('');
@@ -1056,47 +972,56 @@ export function formatCacheHealth(report: CacheHealthReport): string {
   if (report.breaks.length === 0) {
     out.push('No cache breaks detected with current thresholds.');
     out.push('');
-    out.push('A "cache break" is a sudden spike in cache_write_tokens -- typically caused by');
-    out.push('editing a core file mid-session, changing the file load order, or modifying a');
-    out.push('global config (CLAUDE.md, AGENTS.md). This invalidates the prefix cache, forcing');
-    out.push('the agent to re-read all prior context at full write prices.');
-    out.push('');
     out.push(
-      'Adjust --spike-threshold (default 10x) or --min-cache-writes (default 5000) to tune sensitivity.',
+      'A cache break is a turn that re-wrote its context prefix instead of reading it back:',
     );
+    out.push('cache writes spike AND cache reads fall below half of what the previous turn had');
+    out.push('cached. A write spike alone (e.g. reading one large file) is not a break.');
+    out.push('Tune with spikeThreshold (default 10x) and minCacheWrites (default 5000).');
     return out.join('\n');
   }
 
   out.push(`Cache breaks detected: ${report.breaks.length}`);
   out.push(`Max spike ratio: ${report.summary.maxWriteSpikeRatio}x baseline`);
+  if (report.summary.estimatedExtraCost !== undefined) {
+    out.push(
+      `Write premium across breaks (estimated, API-equivalent): ${usd(report.summary.estimatedExtraCost)}`,
+    );
+  }
+  if (report.summary.unpricedBreaks > 0) {
+    out.push(
+      `Write premium unavailable for ${int(report.summary.unpricedBreaks)} break(s) ` +
+        `(no price in table ${costService.pricingVersion} for that model).`,
+    );
+  }
   out.push('');
 
   for (const br of report.breaks) {
-    out.push(`--- Break at turn ${br.turnIndex} (${br.timestamp}) ---`);
     out.push(
-      `  Cache writes:  ${tokens(br.cacheWriteTokens)}  (baseline ~${int(br.baselineWriteAvg)})`,
+      `--- Break at turn ${br.turnIndex} (${br.timestamp})${br.turnKind === 'subagent' ? ' [subagent]' : ''} ---`,
     );
-    out.push(`  Cache reads:   ${tokens(br.cacheReadTokens)}`);
-    out.push(`  Spike ratio:   ${br.writeSpikeRatio}x`);
-    out.push(`  Est. extra cost from write premium: ${usd(br.estimatedExtraCost)}`);
-    out.push(`  Explanation: ${br.explanation}`);
+    out.push(`  Model:         ${br.model}`);
+    out.push(
+      `  Cache writes:  ${tokens(br.cacheWriteTokens)}  (baseline ~${int(br.baselineWriteAvg)}, ${br.writeSpikeRatio}x)`,
+    );
+    out.push(
+      `  Cache reads:   ${tokens(br.cacheReadTokens)}  (previous turn had ${tokens(br.previousPrefixTokens)} cached)`,
+    );
+    out.push(
+      `  Write premium: ${br.estimatedExtraCost !== undefined ? `${usd(br.estimatedExtraCost)} (estimated, API-equivalent)` : 'unavailable (model not priced)'}`,
+    );
+    out.push(`  ${br.explanation}`);
     out.push('');
   }
 
-  out.push('What this means:');
-  out.push('Each break represents a moment the prefix cache was invalidated. The agent had to');
-  out.push(
-    're-write the entire context prefix at cache-write prices (1.25x-2x input rate) instead',
-  );
-  out.push('of reading it at cache-read prices (0.1x input rate). On a 50k token context, that');
-  out.push('cost difference is roughly 50,000 * (1.25 - 0.1) * $0.000015 = $0.0086 per break --');
-  out.push('small per event, but repeated breaks in a 5-hour rate limit window can exhaust it.');
-  out.push('');
+  if (report.summary.estimatedExtraCost !== undefined) {
+    out.push(`Note: ${costService.estimatedCostLabel()}`);
+    out.push('');
+  }
   out.push('To avoid breaks:');
-  out.push('  - Do not edit core files (entrypoints, configs, CLAUDE.md) mid-session');
-  out.push('  - Keep file load order stable; avoid re-globbing large directories');
-  out.push('  - Use subagents for exploratory work that might touch many files');
-  out.push('  - Consider /compact to reset the prefix cleanly before a major context shift');
+  out.push('  - Avoid editing CLAUDE.md/AGENTS.md or MCP/tool config mid-session');
+  out.push('  - Avoid idling past the 5-minute cache TTL in the middle of a task');
+  out.push('  - Avoid switching model or speed mode mid-task; each has its own cache');
 
   return out.join('\n').trimEnd();
 }

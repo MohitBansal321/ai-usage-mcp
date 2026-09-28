@@ -9,11 +9,13 @@ export function registerCacheHealth(server: McpServer, ctx: ToolContext): void {
     {
       ...readOnlyTool('Cache Health'),
       description:
-        'Analyzes a session for cache breaks -- sudden spikes in cache write tokens that ' +
-        'indicate the prefix cache was invalidated (e.g., by editing a core file mid-session, ' +
-        'changing file load order, or modifying a global config like CLAUDE.md). ' +
-        'Reports each break with the turn, token delta, estimated extra cost, and a human ' +
-        'explanation of the likely cause. Also returns overall cache hit rate and reads-per-write.',
+        'Finds cache breaks in a session -- turns where the prompt-cache prefix was not reused, ' +
+        'so the context was re-written at cache-write prices instead of read back cheaply. ' +
+        'A break is a spike in cache writes AND a drop in cache reads; a write spike alone ' +
+        '(e.g. reading one large file) is not one. Each break lists the turn, token counts, ' +
+        'likely cause (model or speed switch, idle past the 5-minute TTL, or an early-context ' +
+        'change such as an edited CLAUDE.md), and its API-equivalent write premium from the ' +
+        'pricing table. Also returns the overall cache hit rate and reads-per-write.',
       inputSchema: z.strictObject({
         sessionId: z
           .string()
@@ -23,7 +25,8 @@ export function registerCacheHealth(server: McpServer, ctx: ToolContext): void {
           .boolean()
           .optional()
           .describe(
-            'Include subagent/sidechain turns. Defaults to true; they often re-read parent context.',
+            'Also analyze subagent/sidechain turns, baselined separately from main turns since ' +
+              'they keep their own cache. Defaults to false.',
           ),
         spikeThreshold: z
           .number()
@@ -63,24 +66,9 @@ export function registerCacheHealth(server: McpServer, ctx: ToolContext): void {
             'Provide a longer prefix.',
         );
       }
-      return textResult(formatCacheHealth(report), {
-        sessionId: report.sessionId,
-        totalTurns: report.totalTurns,
-        turnsAnalyzed: report.turnsAnalyzed,
-        hitRate: report.hitRate,
-        readsPerWrite: report.readsPerWrite,
-        breakCount: report.summary.breakCount,
-        breaks: report.breaks.map((b) => ({
-          turnIndex: b.turnIndex,
-          timestamp: b.timestamp,
-          cacheWriteTokens: b.cacheWriteTokens,
-          cacheReadTokens: b.cacheReadTokens,
-          writeSpikeRatio: b.writeSpikeRatio,
-          baselineWriteAvg: b.baselineWriteAvg,
-          estimatedExtraCost: b.estimatedExtraCost,
-          explanation: b.explanation,
-        })),
-        summary: report.summary,
+      return textResult(formatCacheHealth(report, ctx.service.costService), {
+        ...report,
+        pricingVersion: ctx.service.costService.pricingVersion,
       });
     },
   );
