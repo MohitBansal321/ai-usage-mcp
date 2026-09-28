@@ -20,7 +20,10 @@ the machine.
 2. **MCP must not know where data comes from.** MCP → usage service → collectors. Business
    logic lives in `services/`, never in an MCP tool handler.
 3. **Nothing leaves the machine.** No telemetry, no cloud sync, no API keys, no conversation
-   content. SQLite only — no Postgres, Redis, or Kafka. **Two documented exceptions**, both
+   content. The one piece of content-derived text stored is each client's **own one-line
+   session title** (Claude Code's `aiTitle`, OpenCode's `session.title`), kept in the local
+   database for display and deliberately left out of `export`. Prompts, messages and tool
+   output are never stored. SQLite only — no Postgres, Redis, or Kafka. **Two documented exceptions**, both
    plain GETs of public files that carry no usage data and no identifier, both skipped under
    `CI`, and both disabled by `AI_USAGE_NO_UPDATE_CHECK=1`:
    - the **update check** GETs a version string from the npm registry — cached for a day,

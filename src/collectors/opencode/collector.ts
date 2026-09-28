@@ -6,6 +6,7 @@ import type {
   CollectOptions,
   CollectResult,
   CollectorAvailability,
+  SessionTitle,
   StoreInfo,
   UsageCollector,
   UsageRecord,
@@ -17,6 +18,9 @@ import {
 } from '../../models/usage-record.js';
 import { isWithin, msToIso, num } from '../collector.js';
 import { discoverOpenCodeStores } from './stores.js';
+
+/** OpenCode's placeholder for a session it has not titled yet. */
+const DEFAULT_TITLE = /^New session - \d{4}-\d{2}-\d{2}T/;
 
 /** Shape of the JSON blob in `message.data` (only the fields we rely on). */
 interface OpenCodeMessageData {
@@ -125,15 +129,23 @@ export class OpenCodeCollector implements UsageCollector {
     const prior = isOpenCodeCursor(options.cursor) ? options.cursor : { stores: {} };
     const cursor: OpenCodeCursor = { stores: { ...prior.stores } };
     const records: UsageRecord[] = [];
+    const sessionTitles: SessionTitle[] = [];
 
     for (const store of targets) {
       const since = prior.stores[store.path] ?? 0;
       const result = this.collectStore(store, since, options, notes);
       records.push(...result.records);
+      sessionTitles.push(...result.titles);
       cursor.stores[store.path] = Math.max(since, result.maxTimeUpdated);
     }
 
-    return { records, cursor, notes, stores };
+    return {
+      records,
+      cursor,
+      notes,
+      stores,
+      ...(sessionTitles.length > 0 ? { sessionTitles } : {}),
+    };
   }
 
   private collectStore(
@@ -141,9 +153,10 @@ export class OpenCodeCollector implements UsageCollector {
     sinceTimeUpdated: number,
     options: CollectOptions,
     notes: string[],
-  ): { records: UsageRecord[]; maxTimeUpdated: number } {
+  ): { records: UsageRecord[]; maxTimeUpdated: number; titles: SessionTitle[] } {
     const opened = openReadOnly(store.path, notes);
     const records: UsageRecord[] = [];
+    const titles: SessionTitle[] = [];
     let maxTimeUpdated = sinceTimeUpdated;
     let unknownModel = 0;
 
@@ -226,6 +239,17 @@ export class OpenCodeCollector implements UsageCollector {
 
         records.push(record);
       }
+
+      // Titles are read whole every sync: the session table is small (hundreds of
+      // rows), and a title changes without its messages changing, so the message
+      // cursor cannot say which ones are stale. OpenCode names an untitled session
+      // "New session - <timestamp>"; that is a placeholder, not a title.
+      for (const s of opened.db
+        .prepare('SELECT id, title FROM session WHERE title IS NOT NULL')
+        .iterate() as IterableIterator<{ id: string; title: string }>) {
+        const title = s.title.trim();
+        if (title && !DEFAULT_TITLE.test(title)) titles.push({ sessionId: s.id, title });
+      }
     } finally {
       opened.close();
     }
@@ -235,7 +259,7 @@ export class OpenCodeCollector implements UsageCollector {
         `${unknownModel} OpenCode message(s) record no model id; reported as "${UNKNOWN_MODEL}".`,
       );
     }
-    return { records, maxTimeUpdated };
+    return { records, maxTimeUpdated, titles };
   }
 }
 

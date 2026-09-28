@@ -15,6 +15,7 @@ import type {
 import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
 import type { BudgetReport, Projection } from './budget-service.js';
+import type { UsageReport } from './report-service.js';
 import type { ImportResult, PruneResult, VacuumResult } from './lifecycle-service.js';
 import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
 import type { TokenTotals } from '../models/usage-record.js';
@@ -530,7 +531,9 @@ export function formatSessions(page: Page<SessionRow>, costService: CostService)
   const out: string[] = [`Sessions (${sessions.length}):`, ''];
   for (const s of sessions) {
     out.push(`${s.sessionId}  [${s.client}]`);
+    if (s.title) out.push(`  Title:     ${s.title}`);
     out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
+    if (s.gitBranch) out.push(`  Branch:    ${s.gitBranch}`);
     out.push(`  Models:    ${s.models.length ? s.models.join(', ') : '(unknown)'}`);
     out.push(`  Started:   ${s.startedAt}`);
     out.push(
@@ -548,8 +551,10 @@ export function formatSessionDetail(detail: SessionDetail, costService: CostServ
   const s = detail.session;
   const out: string[] = [];
   out.push(`Session ${s.sessionId}`);
+  if (s.title) out.push(`  Title:     ${s.title}`);
   out.push(`  Client:    ${s.client}`);
   out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
+  if (s.gitBranch) out.push(`  Branch:    ${s.gitBranch}`);
   out.push(`  Models:    ${s.models.length ? s.models.join(', ') : '(unknown)'}`);
   out.push(`  Started:   ${s.startedAt}`);
   out.push(`  Ended:     ${s.endedAt}`);
@@ -1046,4 +1051,81 @@ export function formatCacheHealth(report: CacheHealthReport, costService: CostSe
   out.push('  - Avoid switching model or speed mode mid-task; each has its own cache');
 
   return out.join('\n').trimEnd();
+}
+
+const VERDICT_LINE: Record<UsageReport['verdict'], string> = {
+  healthy: 'Healthy -- little of this usage went to carrying old context.',
+  'some-waste': 'Some waste -- a noticeable share of this usage re-read or rebuilt old context.',
+  'high-waste': 'High waste -- a large share of this usage re-read or rebuilt old context.',
+  'no-data': 'No usage with an estimate in this period, so there is nothing to weigh.',
+};
+
+const pct = (share: number) => `${(share * 100).toFixed(1)}%`;
+const branchName = (b: string) => (b === 'HEAD' ? 'HEAD (detached)' : b);
+
+/**
+ * The report a new user runs first: a verdict, where the usage went, and what
+ * to change. Shares lead and dollars follow, because on a subscription the
+ * dollar figure is not money spent -- it is only the weight the shares use.
+ */
+export function formatUsageReport(report: UsageReport): string {
+  const out: string[] = [`Usage report -- ${report.period}`, ''];
+  out.push(
+    `${int(report.turns)} turns across ${int(report.sessions)} sessions, ${tokens(report.totalTokens)} tokens.`,
+  );
+  out.push(`Verdict: ${VERDICT_LINE[report.verdict]}`);
+  if (report.verdict === 'no-data') return out.join('\n');
+
+  out.push('');
+  out.push(`Where it went (share of usage, weighted by API-equivalent price):`);
+  const c = report.contextCarry;
+  out.push(
+    `  ${pct(c.share).padStart(6)}  re-reading context above ${c.thresholdTokens / 1000}k tokens ` +
+      `(${int(c.turns)} turns; largest context ${tokens(c.largestContextTokens)})`,
+  );
+  const r = report.cacheRebuilds;
+  out.push(
+    `  ${pct(r.share).padStart(6)}  rebuilding a lost cache (${int(r.count)} times, ` +
+      `${int(r.afterIdle)} after an idle break)`,
+  );
+  out.push(`  ${pct(report.wasteShare).padStart(6)}  total -- avoidable in part, not whole`);
+
+  out.push('');
+  out.push('What to change:');
+  report.fixes.forEach((fix, i) => out.push(`  ${i + 1}. ${fix}`));
+
+  if (report.topSessions.length > 0) {
+    out.push('');
+    out.push('Heaviest sessions:');
+    for (const s of report.topSessions) {
+      const name = s.title ?? s.sessionId;
+      const where = [s.gitBranch ? branchName(s.gitBranch) : undefined, s.client]
+        .filter(Boolean)
+        .join(', ');
+      out.push(`  ${pct(s.share).padStart(6)}  ${name}  [${where}]`);
+      out.push(
+        `          ${int(s.turns)} turns, peak context ${tokens(s.peakContextTokens)}, ` +
+          `${int(s.rebuilds)} cache rebuild(s)  (${s.sessionId})`,
+      );
+    }
+  }
+
+  if (report.topBranches.length > 0) {
+    out.push('');
+    out.push('By branch:');
+    for (const b of report.topBranches) {
+      out.push(
+        `  ${pct(b.share).padStart(6)}  ${branchName(b.gitBranch)}  ` +
+          `(${int(b.sessions)} session(s), ${int(b.turns)} turns)`,
+      );
+    }
+  }
+
+  out.push('');
+  out.push(
+    `Weight: ${usd(report.weight.estimatedCost)} API-equivalent across ` +
+      `${int(report.weight.weightedTurns)} turns. On a subscription that is not money spent.`,
+  );
+  for (const caveat of report.caveats) out.push(`Note: ${caveat}`);
+  return out.join('\n');
 }

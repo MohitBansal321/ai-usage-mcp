@@ -24,6 +24,7 @@ import {
   formatSummary,
   formatSyncReport,
   formatVacuum,
+  formatUsageReport,
   formatVerify,
 } from '../services/formatter.js';
 
@@ -300,6 +301,11 @@ async function run(argv: string[]): Promise<number> {
         }
         const report = service.breakdown(args.by, queryFrom(args), pageFrom(args));
         return emit(args, formatBreakdown(report), report) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'report': {
+        const report = service.usageReport(queryFrom(args));
+        return emit(args, formatUsageReport(report), report) ? THRESHOLD_EXIT : 0;
       }
 
       case 'daily': {

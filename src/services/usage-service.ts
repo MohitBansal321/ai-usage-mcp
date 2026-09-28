@@ -8,7 +8,6 @@ import {
   type PageRequest,
   type TimeGrain,
   type SessionRow,
-  type TurnRow,
   type UsageFilter,
 } from '../db/repositories/usage-repository.js';
 import { ClaudeCodeCollector } from '../collectors/claude-code/collector.js';
@@ -44,7 +43,8 @@ import {
 import { RepriceService, type RepriceResult } from './reprice-service.js';
 import { SyncService, type SyncOptions, type SyncReport } from './sync-service.js';
 import { VerifyService, type VerifyReport } from './verify-service.js';
-import type { CacheBreakOptions } from './cache-breaks.js';
+import { writePremiumPricer, type CacheBreakOptions } from './cache-breaks.js';
+import { ReportService, type UsageReport } from './report-service.js';
 import type { CommunityPricingState } from '../pricing/index.js';
 
 /** A refresh, and what applying it did to the stored rows. */
@@ -111,6 +111,7 @@ export class UsageService {
   private readonly aggregation: AggregationService;
   private readonly syncService: SyncService;
   private readonly verifyService: VerifyService;
+  private readonly reportService: ReportService;
   private readonly counterfactualService: CounterfactualService;
   private readonly exportService: ExportService;
   private readonly budgetService: BudgetService;
@@ -129,6 +130,7 @@ export class UsageService {
     this.collectors = [new OpenCodeCollector(), new ClaudeCodeCollector(this.costService)];
     this.syncService = new SyncService(this.usageRepo, this.syncRepo, this.collectors);
     this.verifyService = new VerifyService(this.usageRepo);
+    this.reportService = new ReportService(this.usageRepo, this.costService);
     this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
     this.exportService = new ExportService(this.usageRepo);
     this.budgetService = new BudgetService(this.usageRepo);
@@ -303,31 +305,28 @@ export class UsageService {
     return this.aggregation.session(sessionId, includeSubagents, this.costService.pricedModels());
   }
 
+  /**
+   * Where a period's usage went and how much of it did no new work, with fixes.
+   * A report of all time is rarely what anyone wants first, so with no period
+   * given it covers the last 7 days -- and its label says so.
+   */
+  usageReport(query: UsageQuery = {}): UsageReport {
+    const hasPeriod = Boolean(query.today || query.days || query.since || query.until);
+    const { filter, label } = this.filterFor(hasPeriod ? query : { ...query, days: 7 });
+    return this.reportService.report(filter, label);
+  }
+
   cacheHealth(
     sessionId: string,
     includeSubagents = false,
     options: CacheBreakOptions = {},
   ): CacheHealthReport | { ambiguous: string[] } | undefined {
-    // A break's cost is the write premium: what the rewritten prefix cost at
-    // cache-write rates, less what reading the same tokens would have cost.
-    const priceBreak = (turn: TurnRow): number | undefined => {
-      const base = { model: turn.model, inputTokens: 0, outputTokens: 0, speed: turn.speed };
-      const written = this.costService.estimate({
-        ...base,
-        cacheWriteTokens: turn.cacheWriteTokens,
-        cacheWrite5mTokens: turn.cacheWrite5mTokens,
-        cacheWrite1hTokens: turn.cacheWrite1hTokens,
-      });
-      const read = this.costService.estimate({ ...base, cacheReadTokens: turn.cacheWriteTokens });
-      if (written.estimatedCost === undefined || read.estimatedCost === undefined) return undefined;
-      return written.estimatedCost - read.estimatedCost;
-    };
     return this.aggregation.cacheHealth(
       sessionId,
       includeSubagents,
       this.costService.pricedModels(),
       options,
-      priceBreak,
+      writePremiumPricer(this.costService),
     );
   }
 

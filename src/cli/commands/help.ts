@@ -3,6 +3,8 @@ export const HELP_TEXT = `ai-usage -- local token usage and cost across coding a
 Usage: ai-usage <command> [options]
 
 Commands:
+  report                Verdict, where usage went, what to change (same as usage_report)
+                        Defaults to the last 7 days.
   status                Collectors, data stores, database path, record counts, last sync
   sync                  Run the collectors and store what they find
   stats                 Totals for a period, split by client   (same numbers as the usage_summary MCP tool)

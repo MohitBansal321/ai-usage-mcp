@@ -76,6 +76,13 @@ export interface UsageRecord {
    */
   speed?: string;
 
+  /**
+   * The git branch the turn ran on, as the client recorded it (`HEAD` is a
+   * detached checkout). `undefined` when the source does not record one --
+   * OpenCode never does.
+   */
+  gitBranch?: string;
+
   /** e.g. 'opencode.db:message', 'claude-jsonl:main'. Traceable back to the bytes. */
   source: string;
   /** Version of the *client* that produced the data, so bad data can be traced. */
@@ -104,6 +111,17 @@ export interface CollectResult {
   notes: string[];
   /** Where the data physically came from, for `ai-usage status`. */
   stores: StoreInfo[];
+  /**
+   * Human-readable session titles the client itself generated (Claude Code's
+   * `aiTitle`, OpenCode's `session.title`). Stored locally for display only and
+   * never exported. Absent when the collector saw none.
+   */
+  sessionTitles?: SessionTitle[];
+}
+
+export interface SessionTitle {
+  sessionId: string;
+  title: string;
 }
 
 export interface StoreInfo {

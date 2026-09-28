@@ -82,6 +82,9 @@ export class SyncService {
       try {
         const result = await collector.collect(collectOptions);
         const written = this.usageRepo.upsertMany(result.records);
+        if (result.sessionTitles) {
+          this.usageRepo.upsertSessionTitles(collector.client, result.sessionTitles);
+        }
         this.syncRepo.set({
           source: collector.name,
           lastSyncAt: new Date().toISOString(),

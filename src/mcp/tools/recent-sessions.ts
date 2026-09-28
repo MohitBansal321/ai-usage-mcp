@@ -39,8 +39,10 @@ export function registerRecentSessions(server: McpServer, ctx: ToolContext): voi
         }),
         sessions: result.rows.map((s) => ({
           sessionId: s.sessionId,
+          title: s.title ?? null,
           client: s.client,
           projectPath: s.projectPath ?? null,
+          gitBranch: s.gitBranch ?? null,
           models: s.models,
           startedAt: s.startedAt,
           endedAt: s.endedAt,
