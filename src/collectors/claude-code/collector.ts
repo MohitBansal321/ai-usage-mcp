@@ -78,7 +78,21 @@ interface RequestAccumulator {
   messageId?: string;
 }
 
+/**
+ * Bumped whenever the collector starts reading something new from transcripts,
+ * so files ingested by an older reader are read again and the new fields filled
+ * in. 2: `gitBranch` and `ai-title` lines (0.12).
+ *
+ * A migration cannot do this job alone. Two servers of different versions can
+ * share one database -- Claude Code's and OpenCode's, updated separately -- and
+ * an older one re-syncing after the migration writes a fresh cursor with its own
+ * reader, after which the newer one would skip every file as unchanged and never
+ * see the new fields. A cursor without this version is treated as no cursor.
+ */
+export const CLAUDE_CURSOR_VERSION = 2;
+
 export interface ClaudeCursor {
+  version: typeof CLAUDE_CURSOR_VERSION;
   /** Per transcript path: size + mtime at the time it was fully ingested. */
   files: Record<string, { sizeBytes: number; mtimeMs: number }>;
 }
@@ -87,6 +101,7 @@ function isClaudeCursor(value: unknown): value is ClaudeCursor {
   return (
     typeof value === 'object' &&
     value !== null &&
+    (value as ClaudeCursor).version === CLAUDE_CURSOR_VERSION &&
     typeof (value as ClaudeCursor).files === 'object' &&
     (value as ClaudeCursor).files !== null
   );
@@ -165,11 +180,13 @@ export class ClaudeCodeCollector implements UsageCollector {
       notes.push(`Additional Claude Code transcript root detected but NOT collected: ${s.path}.`);
     }
 
-    const prior = isClaudeCursor(options.cursor) ? options.cursor : { files: {} };
+    const prior: ClaudeCursor = isClaudeCursor(options.cursor)
+      ? options.cursor
+      : { version: CLAUDE_CURSOR_VERSION, files: {} };
     // A time-filtered sync must not mark files as fully ingested, or a later
     // unfiltered sync would skip them and silently under-report.
     const filtered = Boolean(options.since || options.until);
-    const cursor: ClaudeCursor = { files: { ...prior.files } };
+    const cursor: ClaudeCursor = { version: CLAUDE_CURSOR_VERSION, files: { ...prior.files } };
 
     const records: UsageRecord[] = [];
     let scanned = 0;

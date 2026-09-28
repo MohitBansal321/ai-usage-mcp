@@ -178,3 +178,39 @@ describe('session titles and branches', () => {
     }
   });
 });
+
+describe('backfill survives an older server sharing the database', () => {
+  it('re-reads transcripts whose cursor an older reader wrote, filling titles and branches', async () => {
+    // Claude Code's and OpenCode's ai-usage servers can run different versions
+    // against one database. An older one re-syncing writes a cursor from a reader
+    // that captured no titles or branches; the newer one must not trust it.
+    const s = await open([bigSession()]);
+    const dbPath = join(dir!, 'usage.db');
+    const db = openSqlite(dbPath);
+    try {
+      const row = db
+        .prepare("SELECT cursor FROM sync_state WHERE source = 'claude-code'")
+        .get() as {
+        cursor: string;
+      };
+      const { files } = JSON.parse(row.cursor) as { files: unknown };
+      // What a 0.11 server leaves behind: an unversioned cursor over every file,
+      // and rows it wrote with no branch and no title.
+      db.prepare("UPDATE sync_state SET cursor = ? WHERE source = 'claude-code'").run(
+        JSON.stringify({ files }),
+      );
+      db.exec(
+        "UPDATE usage_records SET git_branch = NULL; DELETE FROM session_titles WHERE client = 'claude-code';",
+      );
+    } finally {
+      db.close();
+    }
+
+    await s.sync();
+
+    const detail = s.sessionUsage('big');
+    if (!detail || 'ambiguous' in detail) throw new Error('session not resolved');
+    expect(detail.session.title).toBe('Refactor the tariff service');
+    expect(detail.session.gitBranch).toBe('feat/a');
+  });
+});

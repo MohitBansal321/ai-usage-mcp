@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-28
+
+### Fixed
+
+- **Titles and branches are now filled in for old sessions even when an older ai-usage server
+  shares the database.** 0.12.0 relied on its migration clearing the Claude Code sync cursor so
+  the next sync re-read every transcript. But Claude Code's and OpenCode's ai-usage servers can
+  run different versions against one database. When the older one synced first, it re-read the
+  transcripts without capturing titles or branches and wrote a fresh cursor, and 0.12.0 then
+  skipped every file as unchanged. On the development machine that left 1 of 119 Claude Code
+  sessions titled. The cursor now carries a version, and one written by an older reader is
+  treated as no cursor, so the next sync re-reads and fills them in: 81 of 119 titled, 6,400
+  turns with a branch. While an older server keeps running beside a newer one, each of its
+  syncs causes one more full re-read, which is idempotent and takes under a second; upgrading
+  both avoids it.
+
 ## [0.12.0] - 2026-09-28
 
 On a Pro, Max or Team plan the price is fixed, so the question that matters is not what usage
@@ -900,7 +916,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...v0.11.1
