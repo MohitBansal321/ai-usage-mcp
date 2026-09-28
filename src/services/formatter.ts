@@ -842,6 +842,16 @@ export function formatVerify(report: VerifyReport): string {
     out.push(
       `  Ours (from local DB): input ${int(client.ours.inputTokens)}, output ${int(client.ours.outputTokens)}, cache-read ${int(client.ours.cacheReadTokens)}, cache-write ${int(client.ours.cacheWriteTokens)}, reasoning ${int(client.ours.reasoningTokens)}${client.ours.cost !== undefined ? `, cost ${usd(client.ours.cost)}` : ''}`,
     );
+    if (client.retained) {
+      const r = client.retained;
+      out.push(
+        `  Retained, not compared: ${int(r.sessions)} stored session(s) the source no longer holds ` +
+          `(${int(r.records ?? 0)} records; input ${int(r.inputTokens)}, output ${int(r.outputTokens)}, ` +
+          `cache-read ${int(r.cacheReadTokens)}, cache-write ${int(r.cacheWriteTokens)}, reasoning ${int(r.reasoningTokens)}).`,
+        `           The client deleted its copy after we collected it (Claude Code keeps transcripts for`,
+        `           cleanupPeriodDays, default 30), or it lives in a store not read here (try --all-stores).`,
+      );
+    }
     out.push('');
     for (const grain of client.grains) {
       const verdict = grain.gating === false ? 'INFO    ' : grain.matches ? 'MATCH   ' : 'DIFFERS ';
@@ -953,8 +963,20 @@ export function formatCacheHealth(report: CacheHealthReport, costService: CostSe
   }
   out.push('');
 
+  if (report.skippedSubagentTurns > 0) {
+    out.push(
+      `${int(report.skippedSubagentTurns)} subagent turn(s) not analyzed; ` +
+        'set includeSubagents to analyze them (baselined separately from main turns).',
+    );
+    out.push('');
+  }
+
   if (report.turnsAnalyzed === 0) {
-    out.push('No turns in this session.');
+    out.push(
+      report.skippedSubagentTurns > 0
+        ? 'This session has no main-thread turns -- all of its work ran in subagents.'
+        : 'No turns in this session.',
+    );
     return out.join('\n');
   }
 

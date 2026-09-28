@@ -1049,6 +1049,13 @@ RESULT: every client reconciles exactly against at least one independent read of
 to their stores while we read them, so without a cutoff the source always looks a few
 requests ahead.
 
+It compares only sessions the source still holds. Both clients delete their own history --
+Claude Code removes transcripts after `cleanupPeriodDays`, 30 days by default -- while the
+local database keeps what it collected, so after a month the database legitimately holds more
+than the source. Those sessions are listed on a separate `Retained, not compared` line instead
+of being counted as a mismatch. Any source record missing from the database still fails the
+check, because the source side is never narrowed.
+
 ### Subagent turns
 
 Included by default, because they are real spend. Every report says which way it went, and

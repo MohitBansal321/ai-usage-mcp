@@ -297,6 +297,24 @@ describe('UsageService', () => {
     }
   });
 
+  it('still reconciles after the source deletes history we already collected', async () => {
+    // Claude Code deletes transcripts after cleanupPeriodDays (default 30) and we
+    // keep them, so after a month every install used to fail verify with the
+    // database "ahead" of its source by exactly that deleted history.
+    const projectDir = join(process.env.AI_USAGE_CLAUDE_PROJECTS!, '-work-project-one');
+    rmSync(join(projectDir, 'cc-sess-1.jsonl'));
+    rmSync(join(projectDir, 'cc-sess-1'), { recursive: true, force: true });
+
+    const report = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
+    expect(report.allMatch).toBe(true);
+    const claude = report.clients.find((c) => c.client === 'claude-code')!;
+    expect(claude.retained?.sessions).toBe(1);
+    expect(claude.retained?.records).toBe(3);
+    expect(claude.ours.records).toBe(0);
+    // OpenCode lost nothing, so nothing is set aside for it.
+    expect(report.clients.find((c) => c.client === 'opencode')!.retained).toBeUndefined();
+  });
+
   it('shows days with no activity, not just the days that had some', () => {
     const report = service.dailyUsage({ days: 10 });
     // Ten buckets for a ten-day window, whether or not each had usage. Returning

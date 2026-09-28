@@ -628,6 +628,11 @@ export class UsageRepository {
     return this.groupedPage('provider', filter, page);
   }
 
+  /** Every session's totals, unpaged. For reconciliation, not for display. */
+  bySession(filter: UsageFilter = {}): GroupedRow[] {
+    return this.groupedPage('session_id', filter, {}).rows;
+  }
+
   /**
    * Token totals grouped by every dimension that changes what they would cost:
    * `client`, `model` and `speed`.

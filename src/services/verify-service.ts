@@ -32,7 +32,16 @@ export interface GrainComparison {
 
 export interface ClientVerification {
   client: 'opencode' | 'claude-code';
+  /** What we stored for the sessions the source still holds -- the compared figure. */
   ours: TokenSnapshot;
+  /**
+   * What we stored for sessions the source no longer holds. Both clients delete
+   * their own history (Claude Code's transcripts after `cleanupPeriodDays`,
+   * default 30), and keeping it is this database's job, so it is reported beside
+   * the comparison rather than counted as a mismatch. Also covers a store not read
+   * this run (see `--all-stores`). Absent when there is none.
+   */
+  retained?: TokenSnapshot & { sessions: number };
   grains: GrainComparison[];
   available: boolean;
   reason?: string;
@@ -110,22 +119,31 @@ export class VerifyService {
     };
   }
 
-  private oursFor(client: 'opencode' | 'claude-code', cutoff: Date): TokenSnapshot {
-    const t = this.repo.totals({ clients: [client], until: cutoff.toISOString() });
-    const snapshot: TokenSnapshot = {
-      inputTokens: t.inputTokens,
-      outputTokens: t.outputTokens,
-      cacheReadTokens: t.cacheReadTokens,
-      cacheWriteTokens: t.cacheWriteTokens,
-      reasoningTokens: t.reasoningTokens,
-      records: t.records,
-    };
-    if (client === 'opencode') snapshot.cost = round6(t.cost.reported);
-    return snapshot;
+  /** Splits what we stored into sessions the source still holds and the rest. */
+  private oursFor(
+    client: 'opencode' | 'claude-code',
+    cutoff: Date,
+    sourceSessions: ReadonlySet<string>,
+  ): Pick<ClientVerification, 'ours' | 'retained'> {
+    const ours = { ...ZERO, records: 0 };
+    const retained = { ...ZERO, records: 0, sessions: 0 };
+    let reported = 0;
+    for (const row of this.repo.bySession({ clients: [client], until: cutoff.toISOString() })) {
+      const target = sourceSessions.has(row.key) ? ours : retained;
+      target.inputTokens += row.inputTokens;
+      target.outputTokens += row.outputTokens;
+      target.cacheReadTokens += row.cacheReadTokens;
+      target.cacheWriteTokens += row.cacheWriteTokens;
+      target.reasoningTokens += row.reasoningTokens;
+      target.records += row.records;
+      if (target === retained) retained.sessions += 1;
+      else reported += row.cost.reported;
+    }
+    if (client === 'opencode') ours.cost = round6(reported);
+    return retained.sessions > 0 ? { ours, retained } : { ours };
   }
 
   private verifyOpenCode(allStores: boolean, cutoff: Date): ClientVerification {
-    const ours = this.oursFor('opencode', cutoff);
     const cutoffMs = cutoff.getTime();
     const stores = discoverOpenCodeStores().filter((s) => s.exists);
     const targets = allStores ? stores : stores.filter((s) => s.primary);
@@ -133,7 +151,7 @@ export class VerifyService {
     if (targets.length === 0) {
       return {
         client: 'opencode',
-        ours,
+        ours: this.oursFor('opencode', cutoff, new Set()).ours,
         grains: [],
         available: false,
         reason: 'No OpenCode database found to verify against.',
@@ -143,13 +161,15 @@ export class VerifyService {
     const message = { ...ZERO, cost: 0, records: 0 };
     const part = { ...ZERO, cost: 0, records: 0 };
     const session = { ...ZERO, cost: 0, records: 0 };
+    const sourceSessions = new Set<string>();
 
     for (const store of targets) {
       const db = openSqlite(store.path, { readonly: true });
       try {
-        for (const row of db.prepare('SELECT data FROM message').iterate() as IterableIterator<{
-          data: string;
-        }>) {
+        for (const row of db
+          .prepare('SELECT session_id, data FROM message')
+          .iterate() as IterableIterator<{ session_id: string; data: string }>) {
+          sourceSessions.add(row.session_id);
           let d: any;
           try {
             d = JSON.parse(row.data);
@@ -207,6 +227,7 @@ export class VerifyService {
     }
 
     for (const snap of [message, part, session]) snap.cost = round6(snap.cost);
+    const { ours, retained } = this.oursFor('opencode', cutoff, sourceSessions);
 
     const grains: GrainComparison[] = [
       compare('opencode.db message grain (what we collect)', message, ours),
@@ -227,7 +248,7 @@ export class VerifyService {
         'the rollup, the rollup is the stale one.';
     }
 
-    return { client: 'opencode', ours, grains, available: true };
+    return { client: 'opencode', ours, ...(retained ? { retained } : {}), grains, available: true };
   }
 
   /**
@@ -240,7 +261,6 @@ export class VerifyService {
    * produced the same number.
    */
   private async verifyClaudeCode(allStores: boolean, cutoff: Date): Promise<ClientVerification> {
-    const ours = this.oursFor('claude-code', cutoff);
     const cutoffMs = cutoff.getTime();
     const roots = discoverClaudeRoots().filter((s) => s.exists);
     const targets = allStores ? roots : roots.filter((s) => s.primary);
@@ -248,7 +268,7 @@ export class VerifyService {
     if (targets.length === 0) {
       return {
         client: 'claude-code',
-        ours,
+        ours: this.oursFor('claude-code', cutoff, new Set()).ours,
         grains: [],
         available: false,
         reason: 'No Claude Code transcripts found to verify against.',
@@ -257,6 +277,7 @@ export class VerifyService {
 
     const snapshot = { ...ZERO, records: 0 };
     const naive = { ...ZERO, records: 0 };
+    const sourceSessions = new Set<string>();
 
     for (const root of targets) {
       for (const file of listTranscripts(root.path)) {
@@ -282,6 +303,7 @@ export class VerifyService {
           if (o?.message?.model === '<synthetic>') continue;
           const ts = typeof o?.timestamp === 'string' ? Date.parse(o.timestamp) : NaN;
           if (!Number.isNaN(ts) && ts >= cutoffMs) continue;
+          if (typeof o.sessionId === 'string') sourceSessions.add(o.sessionId);
 
           // Naive sum, kept only to quantify how bad double counting would be.
           naive.inputTokens += num(u.input_tokens);
@@ -320,6 +342,7 @@ export class VerifyService {
       }
     }
 
+    const { ours, retained } = this.oursFor('claude-code', cutoff, sourceSessions);
     const grains: GrainComparison[] = [
       compare('claude JSONL, deduped by stop_reason line (independent rule)', snapshot, ours),
       {
@@ -335,7 +358,13 @@ export class VerifyService {
       },
     ];
 
-    return { client: 'claude-code', ours, grains, available: true };
+    return {
+      client: 'claude-code',
+      ours,
+      ...(retained ? { retained } : {}),
+      grains,
+      available: true,
+    };
   }
 }
 
