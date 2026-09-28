@@ -13,6 +13,7 @@ answers from the data Claude Code and OpenCode already wrote to your machine. No
 uploaded, and there is no API key or account.
 
 ```text
+> Where are my tokens going, and what should I change?
 > Where did this session lose its prompt cache?
 > Which of my projects is getting more expensive, day by day?
 > What would last week have cost on Sonnet instead of Opus?
@@ -46,7 +47,7 @@ RESULT: every client reconciles exactly against at least one independent read of
 
 Also: `counterfactual_cost` (these exact tokens at another model's rates), budgets with run
 rate and forecast, project × day breakdowns, and CSV/JSON export. It supports **Claude Code**
-and **OpenCode**, and exposes ten MCP tools plus resources, prompts and a debug CLI that prints
+and **OpenCode**, and exposes eleven MCP tools plus resources, prompts and a debug CLI that prints
 the same text the tools return.
 
 **It never fabricates a number.** If a source does not record something, it is reported as
@@ -390,6 +391,7 @@ Break my last 7 days down day by day.
 
 | Tool                  | Returns                                                                    |
 | --------------------- | -------------------------------------------------------------------------- |
+| `usage_report`        | Start here: verdict, where usage went, heaviest sessions, what to change   |
 | `usage_summary`       | Totals for a period, split by client, tokens + cost                        |
 | `session_usage`       | One session: client, model, duration, token breakdown, cost                |
 | `model_usage`         | Per-model tokens and cost                                                  |
@@ -400,6 +402,36 @@ Break my last 7 days down day by day.
 | `usage_breakdown`     | Two or more dimensions at once -- project × day, model × day, client × day |
 | `counterfactual_cost` | These tokens at another model's list rates, beside what they actually cost |
 | `cache_health`        | One session's cache breaks: when the cached prefix was lost, why, and cost |
+
+### Start here: `usage_report`
+
+On a Pro, Max or Team plan the price is fixed, so "what did it cost" is the wrong question. The
+useful one is how much of your limit went to real work. `usage_report` (or `ai-usage report`)
+answers it for the last 7 days by default:
+
+```text
+Verdict: High waste -- a large share of this usage re-read or rebuilt old context.
+
+Where it went (share of usage, weighted by API-equivalent price):
+   37.1%  re-reading context above 100k tokens (1,021 turns; largest context 735.2K)
+   10.2%  rebuilding a lost cache (12 times, 12 after an idle break)
+
+What to change:
+  1. Compact earlier. ... 5 session(s) grew past 200k tokens of context ...
+  2. Don't resume a session that has gone cold. ...
+
+Heaviest sessions:
+   47.7%  Admission transfer tariff services and roles linking  [development, claude-code]
+```
+
+It measures two kinds of waste from token counts alone. **Context carry** exists because every
+message re-sends the whole conversation, so a turn at 300k context re-reads 300k tokens to take
+one step; the part above 100k is what compacting earlier would not have carried. **Cache
+rebuilds** are turns where the cached prefix was lost and the whole context was re-written
+(the same detection as `cache_health`). Sessions are named by the title the client gave them
+and the git branch they ran on. Neither kind of waste is claimed as wholly avoidable, and the
+shares are a guide to where usage went, not exact limit consumption: Anthropic does not publish
+how subscription limits weight each token type.
 
 Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
@@ -455,6 +487,7 @@ test asserts the two lists cannot drift apart.
 Same service layer, different frontend — so the two can never disagree.
 
 ```bash
+ai-usage report      # start here: verdict, where usage went, what to change (last 7 days)
 ai-usage status      # collectors, data stores, db path, record counts, last sync
 ai-usage sync        # run the collectors
 ai-usage stats       # totals   (--today, --days N, --since/--until)

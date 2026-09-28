@@ -71,6 +71,7 @@ const EXPECTED = [
   'recent_sessions',
   'session_usage',
   'usage_breakdown',
+  'usage_report',
   'usage_summary',
 ];
 

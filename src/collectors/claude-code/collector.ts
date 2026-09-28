@@ -28,6 +28,9 @@ interface TranscriptLine {
   timestamp?: string;
   cwd?: string;
   version?: string;
+  gitBranch?: string;
+  /** On `type: "ai-title"` lines: Claude Code's own title for the session. */
+  aiTitle?: string;
   isSidechain?: boolean;
   message?: {
     id?: string;
@@ -70,6 +73,7 @@ interface RequestAccumulator {
   cwd?: string;
   version?: string;
   speed?: string;
+  gitBranch?: string;
   requestId?: string;
   messageId?: string;
 }
@@ -174,6 +178,7 @@ export class ClaudeCodeCollector implements UsageCollector {
     let syntheticSkipped = 0;
     let requestsSeen = 0;
     let linesWithUsage = 0;
+    const titles = new Map<string, string>();
 
     for (const root of roots) {
       for (const file of listTranscripts(root.path)) {
@@ -192,6 +197,7 @@ export class ClaudeCodeCollector implements UsageCollector {
         linesWithUsage += parsed.linesWithUsage;
         syntheticSkipped += parsed.syntheticSkipped;
         requestsSeen += parsed.requests.length;
+        for (const [sessionId, title] of parsed.titles) titles.set(sessionId, title);
 
         for (const acc of parsed.requests) {
           const record = this.toRecord(acc, file, unpricedModels);
@@ -223,15 +229,28 @@ export class ClaudeCodeCollector implements UsageCollector {
       );
     }
 
-    return { records, cursor: filtered ? prior : cursor, notes, stores };
+    const sessionTitles = [...titles].map(([sessionId, title]) => ({ sessionId, title }));
+    return {
+      records,
+      cursor: filtered ? prior : cursor,
+      notes,
+      stores,
+      ...(sessionTitles.length > 0 ? { sessionTitles } : {}),
+    };
   }
 
   /** Streams one transcript and reduces its lines to unique API requests. */
   private async readTranscript(
     file: TranscriptFile,
     notes: string[],
-  ): Promise<{ requests: RequestAccumulator[]; linesWithUsage: number; syntheticSkipped: number }> {
+  ): Promise<{
+    requests: RequestAccumulator[];
+    linesWithUsage: number;
+    syntheticSkipped: number;
+    titles: Map<string, string>;
+  }> {
     const groups = new Map<string, RequestAccumulator>();
+    const titles = new Map<string, string>();
     let linesWithUsage = 0;
     let syntheticSkipped = 0;
     let malformed = 0;
@@ -248,6 +267,14 @@ export class ClaudeCodeCollector implements UsageCollector {
         parsed = JSON.parse(line) as TranscriptLine;
       } catch {
         malformed++;
+        continue;
+      }
+
+      // Claude Code rewrites the title as the session goes on (up to 125 times in
+      // one transcript on the development machine); the last one is current.
+      if (parsed.type === 'ai-title') {
+        const title = typeof parsed.aiTitle === 'string' ? parsed.aiTitle.trim() : '';
+        if (title && parsed.sessionId) titles.set(parsed.sessionId, title);
         continue;
       }
 
@@ -309,12 +336,13 @@ export class ClaudeCodeCollector implements UsageCollector {
       if (parsed.cwd) acc.cwd = parsed.cwd;
       if (parsed.version) acc.version = parsed.version;
       if (usage.speed) acc.speed = usage.speed;
+      if (parsed.gitBranch) acc.gitBranch = parsed.gitBranch;
     }
 
     if (malformed > 0) {
       notes.push(`${transcriptLabel(file)}: skipped ${malformed} unparseable line(s).`);
     }
-    return { requests: [...groups.values()], linesWithUsage, syntheticSkipped };
+    return { requests: [...groups.values()], linesWithUsage, syntheticSkipped, titles };
   }
 
   private toRecord(
@@ -374,6 +402,7 @@ export class ClaudeCodeCollector implements UsageCollector {
     // Kept alongside the tokens it applied to. The estimate above already used
     // it, but a re-price reads the stored row, not this accumulator.
     if (acc.speed) record.speed = acc.speed;
+    if (acc.gitBranch) record.gitBranch = acc.gitBranch;
     return record;
   }
 }

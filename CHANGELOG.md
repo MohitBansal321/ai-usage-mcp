@@ -7,6 +7,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-28
+
+On a Pro, Max or Team plan the price is fixed, so the question that matters is not what usage
+cost but how much of it went to real work. This release answers it in one command.
+
+### Added
+
+- **`usage_report` (and `ai-usage report`) -- start here.** A verdict, where the period's usage
+  went, the heaviest sessions and branches, and plain-language fixes. It measures two kinds of
+  waste: **context carry** (the share spent re-reading context above 100k tokens -- every
+  message re-sends the whole conversation) and **cache rebuilds** (the whole context re-written
+  after the cached prefix was lost, most often by resuming a session after a break). Shares are
+  weighted by API-equivalent list price as a relative measure; on a subscription that figure is
+  not money spent, and the report says so. Defaults to the last 7 days. On the development
+  machine it found 43% of a month's usage going to the two, and one session taking 48% of a
+  week.
+- **Sessions have names.** `recent_sessions`, `session_usage` and the report show the title the
+  client gave each session (Claude Code's `aiTitle`, OpenCode's session title, skipping its
+  `New session - …` placeholder) and the git branch each Claude Code turn ran on. Titles are
+  stored locally for display only and are not included in `export`. OpenCode records no branch,
+  so none is shown for it.
+
+### Changed
+
+- Schema version 4 adds a `git_branch` column and a `session_titles` table. The first sync
+  after upgrading re-reads every Claude Code transcript once to fill them in for sessions
+  already stored; the re-read is idempotent. Turns whose transcripts Claude Code has already
+  deleted keep no branch.
+
 ## [0.11.2] - 2026-09-28
 
 ### Changed
@@ -871,7 +900,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.10.0...v0.11.0

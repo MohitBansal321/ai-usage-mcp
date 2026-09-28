@@ -97,6 +97,8 @@ export interface TurnRow {
   costBasis: string;
   /** As recorded by the source; 'fast' billed at premium rates. Absent if unsaid. */
   speed?: string;
+  /** Git branch the turn ran on. Absent when the source does not record one. */
+  gitBranch?: string;
 }
 
 /** Sessions reach thousands of turns, so a row read is always bounded. */
@@ -257,6 +259,10 @@ export interface SessionRow extends AggregateRow {
   durationSeconds: number;
   mainRecords: number;
   subagentRecords: number;
+  /** The client's own title for the session. Absent when it has none. */
+  title?: string;
+  /** Branch of the session's most recent turn that recorded one. */
+  gitBranch?: string;
 }
 
 interface RawAgg {
@@ -471,6 +477,7 @@ function toTurnRow(r: Record<string, unknown>): TurnRow {
   if (r.cost != null) turn.cost = r.cost as number;
   if (r.estimated_cost != null) turn.estimatedCost = r.estimated_cost as number;
   if (r.speed != null) turn.speed = r.speed as string;
+  if (r.git_branch != null) turn.gitBranch = r.git_branch as string;
   return turn;
 }
 
@@ -483,12 +490,14 @@ export class UsageRepository {
         id, client, provider, model, session_id, project_path, timestamp,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
         cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
-        cost, estimated_cost, cost_basis, currency, turn_kind, speed, source, source_version, created_at
+        cost, estimated_cost, cost_basis, currency, turn_kind, speed, git_branch, source, source_version,
+        created_at
       ) VALUES (
         @id, @client, @provider, @model, @sessionId, @projectPath, @timestamp,
         @inputTokens, @outputTokens, @cacheReadTokens, @cacheWriteTokens,
         @cacheWrite5mTokens, @cacheWrite1hTokens, @reasoningTokens, @totalTokens,
-        @cost, @estimatedCost, @costBasis, @currency, @turnKind, @speed, @source, @sourceVersion, @createdAt
+        @cost, @estimatedCost, @costBasis, @currency, @turnKind, @speed, @gitBranch, @source,
+        @sourceVersion, @createdAt
       )
       ON CONFLICT(id) DO UPDATE SET
         client=excluded.client, provider=excluded.provider, model=excluded.model,
@@ -501,7 +510,8 @@ export class UsageRepository {
         reasoning_tokens=excluded.reasoning_tokens, total_tokens=excluded.total_tokens,
         cost=excluded.cost, estimated_cost=excluded.estimated_cost,
         cost_basis=excluded.cost_basis, currency=excluded.currency,
-        turn_kind=excluded.turn_kind, speed=excluded.speed, source=excluded.source,
+        turn_kind=excluded.turn_kind, speed=excluded.speed, git_branch=excluded.git_branch,
+        source=excluded.source,
         source_version=excluded.source_version
     `);
   }
@@ -534,6 +544,7 @@ export class UsageRepository {
           currency: r.currency,
           turnKind: r.turnKind,
           speed: r.speed ?? null,
+          gitBranch: r.gitBranch ?? null,
           source: r.source,
           sourceVersion: r.sourceVersion ?? null,
           createdAt,
@@ -803,13 +814,57 @@ export class UsageRepository {
         `SELECT id, client, provider, model, session_id, project_path, timestamp, turn_kind,
                 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
                 cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
-                cost, estimated_cost, cost_basis, speed
+                cost, estimated_cost, cost_basis, speed, git_branch
          FROM usage_records ${sql}
          ORDER BY timestamp ASC, id ASC
          LIMIT :limit OFFSET :offset`,
       )
       .all(params) as Record<string, unknown>[];
     return rows.map(toTurnRow);
+  }
+
+  /**
+   * Every turn matching the filter, grouped by session and oldest first within
+   * each, streamed rather than loaded. For whole-period analysis (the usage
+   * report), which must see every turn and cannot page through {@link turns}.
+   */
+  *eachTurn(filter: UsageFilter = {}): Generator<TurnRow> {
+    const { sql, params } = buildWhere(filter);
+    const rows = this.db
+      .prepare(
+        `SELECT id, client, provider, model, session_id, project_path, timestamp, turn_kind,
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                cache_write_5m_tokens, cache_write_1h_tokens, reasoning_tokens, total_tokens,
+                cost, estimated_cost, cost_basis, speed, git_branch
+         FROM usage_records ${sql}
+         ORDER BY client, session_id, timestamp ASC, id ASC`,
+      )
+      .iterate(params) as IterableIterator<Record<string, unknown>>;
+    for (const r of rows) yield toTurnRow(r);
+  }
+
+  /** The client's own title for a session, if it has one. */
+  sessionTitle(client: ClientId, sessionId: string): string | undefined {
+    const row = this.db
+      .prepare('SELECT title FROM session_titles WHERE client = ? AND session_id = ?')
+      .get(client, sessionId) as { title: string } | undefined;
+    return row?.title;
+  }
+
+  /** Stores the clients' own session titles; the latest one seen wins. */
+  upsertSessionTitles(client: ClientId, titles: { sessionId: string; title: string }[]): void {
+    if (titles.length === 0) return;
+    const stmt = this.db.prepare(
+      `INSERT INTO session_titles (client, session_id, title, updated_at)
+       VALUES (:client, :sessionId, :title, :updatedAt)
+       ON CONFLICT(client, session_id) DO UPDATE SET
+         title = excluded.title, updated_at = excluded.updated_at`,
+    );
+    const updatedAt = new Date().toISOString();
+    this.db.transaction(() => {
+      for (const t of titles)
+        stmt.run({ client, sessionId: t.sessionId, title: t.title, updatedAt });
+    })();
   }
 
   /**
@@ -902,6 +957,14 @@ export class UsageRepository {
       .prepare(
         `SELECT session_id, client, MAX(project_path) AS project_path,
                 GROUP_CONCAT(DISTINCT model) AS models,
+                (SELECT t.title FROM session_titles t
+                  WHERE t.client = usage_records.client
+                    AND t.session_id = usage_records.session_id) AS title,
+                (SELECT b.git_branch FROM usage_records b
+                  WHERE b.client = usage_records.client
+                    AND b.session_id = usage_records.session_id
+                    AND b.git_branch IS NOT NULL
+                  ORDER BY b.timestamp DESC LIMIT 1) AS git_branch,
                 SUM(CASE WHEN turn_kind='main' THEN 1 ELSE 0 END)     AS main_records,
                 SUM(CASE WHEN turn_kind='subagent' THEN 1 ELSE 0 END) AS subagent_records,
                 ${aggSelect(priced)}
@@ -917,6 +980,8 @@ export class UsageRepository {
       models: string | null;
       main_records: number;
       subagent_records: number;
+      title: string | null;
+      git_branch: string | null;
     })[];
 
     const sessionRows = rows.map((r) => {
@@ -939,6 +1004,8 @@ export class UsageRepository {
         subagentRecords: r.subagent_records ?? 0,
       };
       if (r.project_path) row.projectPath = r.project_path;
+      if (r.title) row.title = r.title;
+      if (r.git_branch) row.gitBranch = r.git_branch;
       return row;
     });
 

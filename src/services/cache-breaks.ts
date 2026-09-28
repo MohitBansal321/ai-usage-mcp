@@ -1,4 +1,5 @@
 import type { TurnRow } from '../db/repositories/usage-repository.js';
+import type { CostService } from './cost-service.js';
 
 /** Idle longer than this and Anthropic's default (5-minute) cache entry has expired. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -38,6 +39,25 @@ export interface CacheBreakEvent {
 
 /** Prices one break's write premium; undefined when the model cannot be priced. */
 export type BreakPricer = (turn: TurnRow) => number | undefined;
+
+/**
+ * A break's cost is the write premium: what the rewritten prefix cost at
+ * cache-write rates, less what reading the same tokens back would have cost.
+ */
+export function writePremiumPricer(costService: CostService): BreakPricer {
+  return (turn) => {
+    const base = { model: turn.model, inputTokens: 0, outputTokens: 0, speed: turn.speed };
+    const written = costService.estimate({
+      ...base,
+      cacheWriteTokens: turn.cacheWriteTokens,
+      cacheWrite5mTokens: turn.cacheWrite5mTokens,
+      cacheWrite1hTokens: turn.cacheWrite1hTokens,
+    });
+    const read = costService.estimate({ ...base, cacheReadTokens: turn.cacheWriteTokens });
+    if (written.estimatedCost === undefined || read.estimatedCost === undefined) return undefined;
+    return written.estimatedCost - read.estimatedCost;
+  };
+}
 
 /**
  * Finds turns where the prefix cache was invalidated.

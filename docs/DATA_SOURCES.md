@@ -124,6 +124,14 @@ verified, and `session_message` is a **different, empty table** — 0 rows):
 - Cost is reported per message; a `0` from a free model is a real zero (`costBasis: reported`).
 - Subagent turns are **child sessions**: `session.parent_id IS NOT NULL`. On the live store,
   129 of 174 sessions in one store were children.
+- `session.title` is always set (288 of 288 sessions, verified 2026-09-28), but a session
+  OpenCode has not titled yet carries the placeholder `New session - <ISO timestamp>` (21 of
+  288). That is not a title and is not stored. Subagent child sessions have real titles, such
+  as `Find SEOHead usage across pages (@explore subagent)`. Titles change without their
+  messages changing, so they are read from the whole (small) `session` table on every sync
+  rather than through the message cursor.
+- OpenCode records **no git branch** anywhere (not in `session`, `message.data` or
+  `session.metadata`), so branch is unavailable for OpenCode, never guessed.
 
 ### 1.5 Opening a live database — **[CORRECTION]**
 
@@ -251,6 +259,24 @@ Neither obvious source is reliable on its own:
 Resolution: **walk the filesystem**, taking the longest run of tokens that exists as a
 directory at each level. This correctly recovers `ai-usage` and `js-refresh`. Falls back to
 `cwd`, then to a naive un-slug, and reports `(unknown)` if all fail.
+
+### 2.10 Session titles and git branch
+
+Verified 2026-09-28 against 85 transcripts (Claude Code 2.1.2xx):
+
+- **Titles** are separate lines, not fields on a message:
+  `{"type":"ai-title","aiTitle":"<one-line title>","sessionId":"…"}`. Claude Code rewrites
+  the title as the session goes on -- between 0 and 125 `ai-title` lines per transcript on the
+  development machine -- so **the last one wins**. 5 of 85 transcripts had none; those sessions
+  are shown by id. The title is Claude Code's own summary of the session, so it is stored
+  locally for display only and left out of `export`.
+- **`gitBranch`** is a top-level field on ordinary transcript lines, including subagent
+  transcripts (1,516 of 2,089 lines in the largest transcript; the rest are metadata lines). It
+  can change mid-session, so it is stored per turn. `HEAD` means a detached checkout and is
+  stored as recorded.
+- Transcripts deleted by `cleanupPeriodDays` cannot be re-read, so turns collected before this
+  was stored keep no branch: on the development machine 6,338 of 10,948 Claude Code turns have
+  one.
 
 ---
 

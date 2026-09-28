@@ -100,4 +100,34 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    name: 'add-git-branch-and-session-titles',
+    up(db) {
+      // Sessions were only ever shown by id, which means nothing to the person
+      // reading the report. Both clients already record something better: the git
+      // branch each Claude Code turn ran on, and a title each client generates for
+      // its sessions.
+      //
+      // The branch is per turn (it can change mid-session), so it lives on the row.
+      // A title is per session and rewritten as the session goes on, so it gets its
+      // own table keyed by client + session. Titles are the clients' own one-line
+      // summaries, kept locally for display; the export deliberately leaves them out.
+      //
+      // The Claude Code cursor is dropped so the next sync re-reads every transcript
+      // once and fills both in for sessions already stored. That re-read is
+      // idempotent -- records are keyed by source id -- exactly like `sync --full`.
+      db.exec(`
+        ALTER TABLE usage_records ADD COLUMN git_branch TEXT;
+        CREATE TABLE session_titles (
+          client     TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          title      TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (client, session_id)
+        );
+        DELETE FROM sync_state WHERE source = 'claude-code';
+      `);
+    },
+  },
 ];

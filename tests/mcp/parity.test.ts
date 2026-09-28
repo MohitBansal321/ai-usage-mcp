@@ -177,6 +177,11 @@ describe('CLI and MCP parity', () => {
     );
   });
 
+  it('report matches usage_report, including its 7-day default', async () => {
+    expect(cli(['report'])).toBe(await toolText('usage_report', {}));
+    expect(cli(['report', '--days', '30'])).toBe(await toolText('usage_report', { days: 30 }));
+  });
+
   it('models matches model_usage', async () => {
     expect(cli(['models'])).toBe(await toolText('model_usage', {}));
   });

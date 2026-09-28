@@ -14,6 +14,7 @@ export function buildOpenCodeDb(
     sessions: {
       id: string;
       parentId?: string | null;
+      title?: string;
       directory?: string;
       version?: string;
       projectId?: string;
@@ -71,7 +72,7 @@ export function buildOpenCodeDb(
       s.parentId ?? null,
       'slug',
       s.directory ?? '/work/project-one',
-      'title',
+      s.title ?? 'title',
       s.version ?? '1.18.25',
       1_700_000_000_000,
       1_700_000_000_000,
@@ -117,6 +118,8 @@ export interface ClaudeLine {
   timestamp?: string;
   cwd?: string;
   version?: string;
+  gitBranch?: string;
+  aiTitle?: string;
   message?: Record<string, unknown>;
 }
 

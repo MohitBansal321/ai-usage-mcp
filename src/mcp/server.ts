@@ -6,6 +6,7 @@ import { startPricingWatch } from '../services/pricing-refresh.js';
 import { UsageService } from '../services/usage-service.js';
 import { VERSION } from '../version.js';
 import { registerCacheHealth } from './tools/cache-health.js';
+import { registerUsageReport } from './tools/usage-report.js';
 import { registerClientUsage } from './tools/client-usage.js';
 import { registerCounterfactualCost } from './tools/counterfactual-cost.js';
 import { registerDailyUsage } from './tools/daily-usage.js';
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   registerUsageBreakdown(server, ctx);
   registerCounterfactualCost(server, ctx);
   registerCacheHealth(server, ctx);
+  registerUsageReport(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server);

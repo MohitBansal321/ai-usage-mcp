@@ -39,8 +39,10 @@ export function registerSessionUsage(server: McpServer, ctx: ToolContext): void 
 
       return textResult(formatSessionDetail(result, ctx.service.costService), {
         sessionId: result.session.sessionId,
+        title: result.session.title ?? null,
         client: result.session.client,
         projectPath: result.session.projectPath ?? null,
+        gitBranch: result.session.gitBranch ?? null,
         models: result.session.models,
         startedAt: result.session.startedAt,
         endedAt: result.session.endedAt,
