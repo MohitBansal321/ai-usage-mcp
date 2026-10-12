@@ -130,4 +130,33 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'add-plan-limit-readings',
+    up(db) {
+      // On a Pro or Max plan the number that matters is how much of the 5-hour
+      // and weekly limit is used, and no file on disk records it. Claude Code
+      // passes it to a configured status line on every update, so `ai-usage
+      // statusline` keeps each reading it is handed. One row per window per
+      // CHANGE: a status line runs on every assistant message, and repeating an
+      // unchanged reading would only grow the table.
+      //
+      // `observed_at` is when the reading reached us, not when Claude Code took
+      // it -- the payload carries no timestamp of its own. `last_seen_at` moves on
+      // each repeat of an unchanged reading, so a pace measured over the window
+      // counts the quiet time after the last change instead of ending at it.
+      db.exec(`
+        CREATE TABLE plan_limit_readings (
+          client         TEXT NOT NULL,
+          limit_window   TEXT NOT NULL,
+          observed_at    TEXT NOT NULL,
+          used_percent   REAL NOT NULL,
+          resets_at      TEXT NOT NULL,
+          last_seen_at   TEXT NOT NULL,
+          source_version TEXT,
+          PRIMARY KEY (client, limit_window, observed_at)
+        );
+      `);
+    },
+  },
 ];

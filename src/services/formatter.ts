@@ -16,6 +16,12 @@ import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
 import type { BudgetReport, Projection } from './budget-service.js';
 import type { UsageReport } from './report-service.js';
+import type {
+  PlanPace,
+  PlanUsageReport,
+  PlanWindowReport,
+  StatusLineReport,
+} from './plan-limit-service.js';
 import type { ImportResult, PruneResult, VacuumResult } from './lifecycle-service.js';
 import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
 import type { TokenTotals } from '../models/usage-record.js';
@@ -1128,4 +1134,153 @@ export function formatUsageReport(report: UsageReport): string {
   );
   for (const caveat of report.caveats) out.push(`Note: ${caveat}`);
   return out.join('\n');
+}
+
+/** `23.5%`, or `40%` for a whole number -- as Claude Code reported it, not padded. */
+function planPercent(n: number): string {
+  return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Local `HH:MM`. */
+function clock(iso: string): string {
+  const d = new Date(iso);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** Local `Mon, Oct 12 14:20`, for a time that may not be today. */
+function dayClock(iso: string): string {
+  const day = new Date(iso).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  return `${day} ${clock(iso)}`;
+}
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function paceLines(pace: PlanPace, resetsAt: string): string[] {
+  const lines = [
+    `  Pace:        +${pace.percentPerHour.toFixed(1)}%/hour, averaged over ${int(pace.readings)} ` +
+      `readings from ${dayClock(pace.from)} to ${clock(pace.to)}`,
+  ];
+  if (!pace.reachesFullAt) {
+    lines.push('               not rising -- no 100% time to project.');
+  } else if (pace.fullBeforeReset) {
+    lines.push(
+      `               -> 100% at ${dayClock(pace.reachesFullAt)}, BEFORE the reset at ` +
+        `${clock(resetsAt)}.`,
+    );
+  } else {
+    lines.push(
+      `               -> 100% at ${dayClock(pace.reachesFullAt)}, after the reset -- ` +
+        'on pace to stay under.',
+    );
+  }
+  return lines;
+}
+
+function planWindowLines(w: PlanWindowReport, costService: CostService): string[] {
+  const title = `${w.label[0]!.toUpperCase()}${w.label.slice(1)} window`;
+  if (w.state === 'none' || !w.latest) return [title, '  No reading recorded yet.'];
+  if (w.state === 'reset') {
+    return [
+      title,
+      `  Reset at ${dayClock(w.latest.resetsAt)}. No reading has arrived since, so usage in ` +
+        'the new window is unknown -- not 0%.',
+      `  The last reading, before the reset: ${planPercent(w.latest.usedPercent)}.`,
+    ];
+  }
+  const lines = [
+    title,
+    `  Used:        ${planPercent(w.latest.usedPercent).padEnd(8)}last read ${dayClock(w.latest.lastSeenAt)}`,
+    `  Resets:      ${dayClock(w.latest.resetsAt)}`,
+  ];
+  if (w.pace) lines.push(...paceLines(w.pace, w.latest.resetsAt));
+  if (w.local && w.windowStart) {
+    lines.push(`  This machine's Claude Code turns since ${dayClock(w.windowStart)}:`);
+    if (w.local.records === 0) {
+      lines.push('    none recorded.');
+    } else {
+      lines.push(...tokenLines(w.local, '    '));
+      lines.push(...costLines(w.local.cost, costService, '    '));
+    }
+  }
+  return lines;
+}
+
+export function formatPlanUsage(report: PlanUsageReport, costService: CostService): string {
+  const out: string[] = ['Plan limits -- as Claude Code last reported them', ''];
+  if (!report.noReadings) {
+    for (const w of report.windows) out.push(...planWindowLines(w, costService), '');
+  }
+  for (const caveat of report.caveats) out.push(`Note: ${caveat}`);
+  return out.join('\n');
+}
+
+const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', dim: '\x1b[2m', reset: '\x1b[0m' };
+
+/**
+ * One line for Claude Code's status bar.
+ *
+ * Kept short on purpose -- it shares a row with whatever the terminal is wide
+ * enough for -- but never at the price of a blend: an estimated figure says so,
+ * and a reported one is a separate segment. Colour marks only the things worth
+ * looking up for: a limit past 70% (yellow) or 90% (red), a pace that reaches
+ * 100% before the reset, and a cache break in this session.
+ */
+export function formatStatusLine(
+  report: StatusLineReport,
+  options: { color?: boolean; now?: Date } = {},
+): string {
+  const now = options.now ?? new Date();
+  const paint = (code: string, text: string) =>
+    options.color ? `${code}${text}${ANSI.reset}` : text;
+  const segments: string[] = [];
+
+  for (const limit of report.limits) {
+    const name = limit.window === 'five_hour' ? '5h' : 'wk';
+    const resets = new Date(limit.resetsAt);
+    const when = sameLocalDay(resets, now)
+      ? clock(limit.resetsAt)
+      : `${resets.toLocaleDateString('en-US', { weekday: 'short' })} ${clock(limit.resetsAt)}`;
+    const pct = planPercent(limit.usedPercent);
+    const level =
+      limit.usedPercent >= 90 ? ANSI.red : limit.usedPercent >= 70 ? ANSI.yellow : undefined;
+    let text = `${name} ${level ? paint(level, pct) : pct} ${paint(ANSI.dim, `\u21bb${when}`)}`;
+    if (limit.fullAt) text += ` ${paint(ANSI.red, `100% by ${clock(limit.fullAt)}`)}`;
+    segments.push(text);
+  }
+
+  const cost = report.today.cost;
+  const today: string[] = [];
+  if (cost.estimatedRecords > 0) today.push(`${usd(cost.estimated)} API-eq`);
+  // A reported $0 beside an estimate is clutter in a status bar; alone, it is
+  // the only figure there is and is shown.
+  if (cost.reportedRecords > 0 && (cost.reported > 0 || today.length === 0))
+    today.push(`${usd(cost.reported)} reported`);
+  if (report.today.records === 0) segments.push('today: no turns yet');
+  else if (today.length === 0) segments.push('today: cost n/a');
+  else segments.push(`today ${today.join(', ')}`);
+
+  if (report.session) {
+    const s = report.session;
+    let text = s.hitRate !== undefined ? `cache ${(s.hitRate * 100).toFixed(0)}%` : 'cache';
+    if (s.breakCount > 0) {
+      const extra =
+        s.estimatedExtraCost !== undefined ? ` +${usd(s.estimatedExtraCost)} API-eq` : '';
+      text += ` ${paint(ANSI.yellow, `${s.breakCount} break${s.breakCount === 1 ? '' : 's'}${extra}`)}`;
+    }
+    if (s.hitRate !== undefined || s.breakCount > 0) segments.push(text);
+  }
+
+  return segments.join(' \u00b7 ');
 }

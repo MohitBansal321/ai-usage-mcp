@@ -1,6 +1,8 @@
 import { sqliteDriver, type SqliteDatabase, type SqliteDriverName } from '../db/driver.js';
 import { openDatabase, resolveDatabasePath, schemaVersion } from '../db/database.js';
 import { SyncRepository, type SyncState } from '../db/repositories/sync-repository.js';
+import { PlanLimitRepository } from '../db/repositories/plan-limit-repository.js';
+import { parseStatusLineInput } from '../collectors/claude-code/statusline.js';
 import {
   UsageRepository,
   type Page,
@@ -45,6 +47,11 @@ import { SyncService, type SyncOptions, type SyncReport } from './sync-service.j
 import { VerifyService, type VerifyReport } from './verify-service.js';
 import { writePremiumPricer, type CacheBreakOptions } from './cache-breaks.js';
 import { ReportService, type UsageReport } from './report-service.js';
+import {
+  PlanLimitService,
+  type PlanUsageReport,
+  type StatusLineReport,
+} from './plan-limit-service.js';
 import type { CommunityPricingState } from '../pricing/index.js';
 
 /** A refresh, and what applying it did to the stored rows. */
@@ -117,6 +124,7 @@ export class UsageService {
   private readonly budgetService: BudgetService;
   private readonly lifecycleService: LifecycleService;
   private readonly repriceService: RepriceService;
+  private readonly planLimitService: PlanLimitService;
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -136,6 +144,7 @@ export class UsageService {
     this.budgetService = new BudgetService(this.usageRepo);
     this.lifecycleService = new LifecycleService(this.usageRepo, db, dbPath);
     this.repriceService = new RepriceService(this.usageRepo, this.costService);
+    this.planLimitService = new PlanLimitService(new PlanLimitRepository(db), this.usageRepo);
   }
 
   static open(options: { dbPath?: string } = {}): UsageService {
@@ -227,6 +236,22 @@ export class UsageService {
     const report = await this.syncService.sync(options);
     const repriced = this.repriceService.repriceUnpriced();
     return repriced.records > 0 ? { ...report, repriced } : report;
+  }
+
+  /**
+   * Syncs only when the newest sync of any collector is older than `maxAgeMs`.
+   *
+   * For callers that run far more often than the data changes -- a status line
+   * runs on every assistant message. Returns whether a sync ran.
+   */
+  async syncIfStale(maxAgeMs: number, now = new Date()): Promise<boolean> {
+    const newest = Math.max(
+      0,
+      ...this.syncRepo.all().map((s) => (s.lastSyncAt ? new Date(s.lastSyncAt).getTime() : 0)),
+    );
+    if (now.getTime() - newest < maxAgeMs) return false;
+    await this.sync();
+    return true;
   }
 
   /**
@@ -376,6 +401,66 @@ export class UsageService {
       filter,
       ...(options.now ? { now: options.now } : {}),
     });
+  }
+
+  /**
+   * Reads the JSON Claude Code hands a status-line command and keeps the
+   * plan-limit readings it carried. Never throws on bad input: anything
+   * unreadable is no data. Returns the session being rendered, and how many new
+   * readings were stored.
+   */
+  recordStatusLine(raw: string, now = new Date()): { sessionId?: string; written: number } {
+    const input = parseStatusLineInput(raw);
+    const written = this.planLimitService.record(input, now);
+    return { ...(input.sessionId ? { sessionId: input.sessionId } : {}), written };
+  }
+
+  /**
+   * Usage against the Pro/Max 5-hour and weekly limits, as Claude Code last
+   * reported it, with this machine's Claude Code turns in each window beside it.
+   * Each window is measured over its own span, so no period applies.
+   */
+  planUsage(options: { includeSubagents?: boolean; now?: Date } = {}): PlanUsageReport {
+    const { filter } = this.filterFor({ includeSubagents: options.includeSubagents });
+    return this.planLimitService.report(filter, options.now);
+  }
+
+  /**
+   * What a status line shows: current plan-limit readings, today's totals, and
+   * the cache in the session being rendered. Reads only -- record the payload
+   * with `recordStatusLine` first.
+   */
+  statusLine(sessionId: string | undefined, now = new Date()): StatusLineReport {
+    const { filter } = this.filterFor({});
+    const limits: StatusLineReport['limits'] = [];
+    for (const w of this.planLimitService.report(filter, now).windows) {
+      if (w.state !== 'current' || !w.latest) continue;
+      limits.push({
+        window: w.window,
+        usedPercent: w.latest.usedPercent,
+        resetsAt: w.latest.resetsAt,
+        ...(w.pace?.fullBeforeReset && w.pace.reachesFullAt
+          ? { fullAt: w.pace.reachesFullAt }
+          : {}),
+      });
+    }
+    const report: StatusLineReport = {
+      limits,
+      today: this.usageRepo.totals(this.filterFor({ today: true }).filter),
+    };
+    if (sessionId) {
+      const health = this.cacheHealth(sessionId);
+      if (health && !('ambiguous' in health)) {
+        report.session = {
+          breakCount: health.summary.breakCount,
+          ...(health.hitRate !== undefined ? { hitRate: health.hitRate } : {}),
+          ...(health.summary.estimatedExtraCost !== undefined
+            ? { estimatedExtraCost: health.summary.estimatedExtraCost }
+            : {}),
+        };
+      }
+    }
+    return report;
   }
 
   /**

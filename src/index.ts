@@ -45,6 +45,25 @@ export {
   type BudgetReport,
 } from './services/budget-service.js';
 export {
+  PlanLimitService,
+  PLAN_WINDOW_LABEL,
+  type PlanPace,
+  type PlanUsageReport,
+  type PlanWindowReport,
+  type StatusLineReport,
+} from './services/plan-limit-service.js';
+export {
+  parseStatusLineInput,
+  PLAN_LIMIT_WINDOWS,
+  type PlanLimitReading,
+  type PlanLimitWindow,
+  type StatusLineInput,
+} from './collectors/claude-code/statusline.js';
+export {
+  PlanLimitRepository,
+  type StoredPlanLimitReading,
+} from './db/repositories/plan-limit-repository.js';
+export {
   ExportService,
   EXPORT_COLUMNS,
   EXPORT_FORMATS,

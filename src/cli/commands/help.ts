@@ -17,6 +17,10 @@ Commands:
   breakdown             Two or more dimensions at once         (same as usage_breakdown)
   counterfactual        These tokens on another model          (same as counterfactual_cost)
   budget                Spend against a target, with run rate and projection
+  limits                Pro/Max 5-hour and weekly limit usage   (same as plan_usage)
+  statusline            One line for Claude Code's status bar; also keeps the
+                        plan-limit readings \`limits\` reports. Reads Claude Code's
+                        status-line JSON on stdin.
   export                One row per stored turn, as CSV or JSON Lines
   import <file>         Merge JSON Lines from another machine (idempotent)
   prune                 Remove records older than a date (dry run without --yes)
@@ -58,6 +62,7 @@ List options (sessions, models, projects, clients):
   --all-stores          Read every detected data store, not only the one the client itself uses
   --full                Ignore saved sync cursors and re-read everything
   --json                Emit JSON instead of text
+  --no-color            statusline only: no ANSI colour (NO_COLOR=1 does the same)
 
 Scripting options:
   --field <path>        Print ONE value from the JSON result and nothing else, so a shell
@@ -107,7 +112,12 @@ Examples:
   ai-usage prune --before 2026-01-01 --yes && ai-usage vacuum
   ai-usage stats --today --field overall.cost.estimated
   ai-usage stats --today --field overall.cost.estimated --fail-over 25   # exit 1 if over
+  ai-usage limits
   ai-usage verify
+
+Status line: add this to ~/.claude/settings.json, after \`npm i -g ai-usage-mcp\`:
+  "statusLine": { "type": "command", "command": "ai-usage statusline" }
+Claude Code passes it your plan-limit usage; \`ai-usage limits\` reports what it kept.
 
 Notes:
   \`status\` also checks npm for a newer version, at most once a day. It sends no

@@ -45,10 +45,12 @@ $ ai-usage verify
 RESULT: every client reconciles exactly against at least one independent read of its source.
 ```
 
-Also: `counterfactual_cost` (these exact tokens at another model's rates), budgets with run
-rate and forecast, project × day breakdowns, and CSV/JSON export. It supports **Claude Code**
-and **OpenCode**, and exposes eleven MCP tools plus resources, prompts and a debug CLI that prints
-the same text the tools return.
+Also: **your Pro/Max plan limits** — the 5-hour and weekly percentages Claude Code reports,
+kept by [a status line](#plan-limits-and-the-status-line) and projected to the time you would
+hit 100% — plus `counterfactual_cost` (these exact tokens at another model's rates), budgets
+with run rate and forecast, project × day breakdowns, and CSV/JSON export. It supports
+**Claude Code** and **OpenCode**, and exposes twelve MCP tools plus resources, prompts and a
+debug CLI that prints the same text the tools return.
 
 **It never fabricates a number.** If a source does not record something, it is reported as
 unavailable — not as zero.
@@ -402,6 +404,7 @@ Break my last 7 days down day by day.
 | `usage_breakdown`     | Two or more dimensions at once -- project × day, model × day, client × day |
 | `counterfactual_cost` | These tokens at another model's list rates, beside what they actually cost |
 | `cache_health`        | One session's cache breaks: when the cached prefix was lost, why, and cost |
+| `plan_usage`          | Pro/Max 5-hour and weekly limit usage, when each resets, and the pace      |
 
 ### Start here: `usage_report`
 
@@ -432,6 +435,61 @@ rebuilds** are turns where the cached prefix was lost and the whole context was 
 and the git branch they ran on. Neither kind of waste is claimed as wholly avoidable, and the
 shares are a guide to where usage went, not exact limit consumption: Anthropic does not publish
 how subscription limits weight each token type.
+
+### Plan limits and the status line
+
+On a Pro or Max plan, the number that decides your day is how much of the 5-hour and weekly
+limits is left, and Claude Code writes it to no file. It does pass it to a configured
+**status line**, so ai-usage can be yours:
+
+```bash
+npm install -g ai-usage-mcp
+```
+
+Then add this to `~/.claude/settings.json` (keep the keys already there):
+
+```json
+{
+  "statusLine": { "type": "command", "command": "ai-usage statusline" }
+}
+```
+
+It renders like this (sample data):
+
+```text
+5h 23.5% ↻14:20 · wk 41% ↻Thu 09:00 · today $38.10 API-eq · cache 96% 2 breaks +$1.10 API-eq
+```
+
+Each segment: the 5-hour and weekly limits as Claude Code reported them, with the reset time
+(yellow past 70%, red past 90%, and a red `100% by 13:55` when the current pace runs out before
+the reset); today's API-equivalent cost across clients; and the prompt-cache hit rate and
+breaks for the session on screen. It keeps the database fresh itself (an incremental sync, at
+most every 30 seconds), and an unreadable payload or a failed sync never blanks the line.
+`--no-color` or `NO_COLOR=1` drops the colour.
+
+<sub>A global install keeps it fast: a status line runs on every assistant message, and
+`npx -y -p ai-usage-mcp ai-usage statusline` also works but adds about half a second to each
+run, and several seconds on a cold npm cache.</sub>
+
+Every reading is kept, so `plan_usage` (or `ai-usage limits`) can answer "how close am I, and
+will I run out before it resets?" from inside a conversation (sample data):
+
+```text
+5-hour window
+  Used:        62%     last read Mon, Oct 12 13:05
+  Resets:      Mon, Oct 12 14:20
+  Pace:        +24.0%/hour, averaged over 6 readings from Mon, Oct 12 11:35 to 13:05
+               -> 100% at Mon, Oct 12 14:40, after the reset -- on pace to stay under.
+  This machine's Claude Code turns since Mon, Oct 12 09:20:
+    ...
+```
+
+The percentages are Claude Code's own, never re-derived from tokens — Anthropic does not
+publish the limits as token counts, so any conversion would be made up. Until a reading
+arrives they are reported as **unavailable, not 0%**, and after a reset with no new reading,
+as unknown. The limits are shared by everything on your account (claude.ai, the desktop app,
+other machines); the token figures beside them cover only this machine's Claude Code turns.
+An API key has no such limits, and its payload carries none.
 
 Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
@@ -677,8 +735,8 @@ budget with no stated basis is a budget against nothing in particular:
   usage is not counted on this basis.
 - `estimated` — API-equivalent list price. On a Claude Pro/Max subscription your marginal cost
   per request is **$0**, so this is a shadow price for comparing workloads, not a bill. The
-  figure to watch on a subscription is usage against your plan limits, which this tool cannot
-  see. The output says so every time.
+  figure to watch on a subscription is usage against your plan limits — see
+  [the status line](#plan-limits-and-the-status-line). The output says so every time.
 
 **Calendar periods only** (`month`, `week`). A projection needs a period end to aim at, which a
 rolling window has not got.
@@ -1193,7 +1251,8 @@ ai-usage sync --all-stores
 ### Claude Code cost seems enormous
 
 Read it as API-equivalent list price, not as money you spent — see the cost section above.
-On a Pro/Max subscription the marginal cost per request is $0.
+On a Pro/Max subscription the marginal cost per request is $0; what you are spending is your
+plan limits, which [`ai-usage limits`](#plan-limits-and-the-status-line) reports.
 
 ### `claude: command not found`
 

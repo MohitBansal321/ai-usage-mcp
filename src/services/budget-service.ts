@@ -183,8 +183,9 @@ export class BudgetService {
         'Budgeting against the ESTIMATED basis. That is an API-equivalent list price: on a ' +
           'Claude Pro or Max subscription the marginal cost per request is $0, so this is a ' +
           'shadow price for comparing workloads, not money you will be billed. If you are on a ' +
-          'subscription, the figure to watch is usage against your plan limits, which this ' +
-          'tool cannot see.',
+          'subscription, the figure to watch is usage against your plan limits: see ' +
+          '`ai-usage limits`, which reports it once `ai-usage statusline` is your Claude Code ' +
+          'status line.',
       );
     } else {
       caveats.push(

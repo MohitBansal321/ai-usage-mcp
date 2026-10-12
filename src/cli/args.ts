@@ -46,6 +46,8 @@ export interface ParsedArgs {
   allStores: boolean;
   full: boolean;
   json: boolean;
+  /** statusline only: no ANSI colour. `NO_COLOR` in the environment does the same. */
+  noColor: boolean;
   help: boolean;
 }
 
@@ -156,6 +158,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     allStores: false,
     full: false,
     json: false,
+    noColor: false,
     help: false,
     compare: false,
     yes: false,
@@ -316,6 +319,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--json':
         args.json = true;
+        break;
+      case '--no-color':
+        args.noColor = true;
         break;
       case '-h':
       case '--help':
