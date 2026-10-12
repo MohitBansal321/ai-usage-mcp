@@ -11,6 +11,7 @@ import { registerClientUsage } from './tools/client-usage.js';
 import { registerCounterfactualCost } from './tools/counterfactual-cost.js';
 import { registerDailyUsage } from './tools/daily-usage.js';
 import { registerModelUsage } from './tools/model-usage.js';
+import { registerPlanUsage } from './tools/plan-usage.js';
 import { registerProjectUsage } from './tools/project-usage.js';
 import { registerRecentSessions } from './tools/recent-sessions.js';
 import { registerSessionUsage } from './tools/session-usage.js';
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
   registerCounterfactualCost(server, ctx);
   registerCacheHealth(server, ctx);
   registerUsageReport(server, ctx);
+  registerPlanUsage(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server);

@@ -7,6 +7,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-12
+
+On a Pro or Max plan, the number that decides your day is how much of the 5-hour and weekly
+limits is left. Until now the README said this tool could not see it: Claude Code writes it to
+no file. It does pass it to a configured status line, and ai-usage can now be that status line.
+
+### Added
+
+- **`ai-usage statusline` -- a Claude Code status line.** Set
+  `"statusLine": { "type": "command", "command": "ai-usage statusline" }` in
+  `~/.claude/settings.json` and every assistant message shows the 5-hour and weekly limit
+  usage with their reset times, today's API-equivalent cost, and the prompt-cache hit rate and
+  breaks for the session on screen. A limit turns yellow past 70% and red past 90%, and a red
+  `100% by HH:MM` appears when the current pace runs out before the reset. It keeps the
+  database fresh itself (at most one incremental sync every 30 seconds), and a bad payload or a
+  failed sync never blanks the line. `--no-color` or `NO_COLOR=1` drops the colour.
+- **`plan_usage` (and `ai-usage limits`): usage against your plan limits.** Every reading the
+  status line receives is kept, so an agent can answer "how close am I, and will I run out
+  before it resets?": the latest percentage per window, when it resets, the average pace
+  within the window with the time it would reach 100% (a projection, labelled as one), and
+  this machine's Claude Code tokens and cost since the window began. The percentages are Claude
+  Code's own and never re-derived from tokens. Before any reading they are reported as
+  unavailable, not 0%; after a reset with no new reading, as unknown.
+
+### Changed
+
+- The `budget` caveat for the estimated basis now points subscribers to `ai-usage limits`
+  instead of saying their plan usage cannot be seen.
+- Schema version 5 adds the `plan_limit_readings` table. It stores no conversation content.
+
 ## [0.12.1] - 2026-09-28
 
 ### Fixed

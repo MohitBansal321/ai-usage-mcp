@@ -293,6 +293,25 @@ describe('CLI and MCP parity', () => {
     expect(cli(['session', 'cc-1'])).toBe(await toolText('session_usage', { sessionId: 'cc-1' }));
   });
 
+  it('limits matches plan_usage, before any reading and after the status line keeps one', async () => {
+    expect(cli(['limits'])).toBe(await toolText('plan_usage', {}));
+
+    const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+    const line = execFileSync(process.execPath, [CLI, 'statusline', '--no-color'], {
+      env,
+      encoding: 'utf8',
+      input: JSON.stringify({
+        session_id: 'cc-1',
+        rate_limits: { five_hour: { used_percentage: 40, resets_at: resetsAt } },
+      }),
+    });
+    expect(line).toMatch(/^5h 40% ↻/);
+
+    const text = cli(['limits']);
+    expect(text).toContain('Used:        40%');
+    expect(text).toBe(await toolText('plan_usage', {}));
+  });
+
   it('agrees on the numbers themselves, not just the rendering', async () => {
     const cliJson = JSON.parse(
       execFileSync(process.execPath, [CLI, 'stats', '--today', '--json'], {

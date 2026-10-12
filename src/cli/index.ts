@@ -17,10 +17,12 @@ import {
   formatImport,
   formatModels,
   formatProjects,
+  formatPlanUsage,
   formatPrune,
   formatSessionDetail,
   formatSessions,
   formatStatus,
+  formatStatusLine,
   formatSummary,
   formatSyncReport,
   formatVacuum,
@@ -77,6 +79,33 @@ function emit(args: ParsedArgs, text: string, data: unknown): boolean {
 
 /** Exit 1 on a breached threshold, 0 otherwise -- the value a script branches on. */
 const THRESHOLD_EXIT = 1;
+
+/** Same knob and default as the MCP server's freshness gate. */
+const STATUSLINE_FRESHNESS_MS = Number(process.env.AI_USAGE_FRESHNESS_MS ?? 30_000);
+
+/**
+ * All of stdin, or '' when there is none to read.
+ *
+ * Claude Code writes the payload and closes the pipe at once. Run by hand from a
+ * terminal there is no pipe, and run from something that leaves stdin open
+ * without writing to it there would be nothing to wait for -- so a TTY reads
+ * nothing, and a pipe that stays silent is given up on.
+ */
+async function readStdin(timeoutMs = 1000): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    const done = () => {
+      clearTimeout(timer);
+      process.stdin.pause();
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const timer = setTimeout(done, timeoutMs);
+    process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on('end', done);
+    process.stdin.on('error', done);
+  });
+}
 
 async function run(argv: string[]): Promise<number> {
   let args: ParsedArgs;
@@ -301,6 +330,36 @@ async function run(argv: string[]): Promise<number> {
         }
         const report = service.breakdown(args.by, queryFrom(args), pageFrom(args));
         return emit(args, formatBreakdown(report), report) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'statusline': {
+        // Each step that can fail on its own is allowed to, without taking the
+        // line with it: a status line that throws shows nothing at all, which is
+        // worse than one that shows what it still can.
+        const raw = await readStdin();
+        let sessionId: string | undefined;
+        try {
+          sessionId = service.recordStatusLine(raw).sessionId;
+        } catch (err) {
+          process.stderr.write(
+            `ai-usage: could not store the plan-limit reading: ${(err as Error).message}\n`,
+          );
+        }
+        try {
+          await service.syncIfStale(STATUSLINE_FRESHNESS_MS);
+        } catch (err) {
+          process.stderr.write(`ai-usage: sync failed: ${(err as Error).message}\n`);
+        }
+        const report = service.statusLine(sessionId);
+        const color = !args.noColor && !process.env.NO_COLOR;
+        return emit(args, formatStatusLine(report, { color }), report) ? THRESHOLD_EXIT : 0;
+      }
+
+      case 'limits': {
+        const report = service.planUsage({ includeSubagents: args.includeSubagents });
+        return emit(args, formatPlanUsage(report, service.costService), report)
+          ? THRESHOLD_EXIT
+          : 0;
       }
 
       case 'report': {

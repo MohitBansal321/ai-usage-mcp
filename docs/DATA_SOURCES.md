@@ -278,6 +278,38 @@ Verified 2026-09-28 against 85 transcripts (Claude Code 2.1.2xx):
   was stored keep no branch: on the development machine 6,338 of 10,948 Claude Code turns have
   one.
 
+### 2.11 Plan-limit usage: the status-line payload — **[NOT YET VERIFIED AGAINST REAL BYTES]**
+
+Unlike every other section here, this one is taken from Claude Code's documentation
+(<https://code.claude.com/docs/en/statusline>, read 2026-10-12), not from captured data: the
+development machine had no status line configured. Re-verify it against a real payload the
+first time one is available, and update this section.
+
+No file Claude Code keeps on disk records how much of a Pro/Max plan's limits is used. A
+configured `statusLine` command receives a JSON object on **stdin** each time it runs (on each
+new assistant message, after `/compact`, on permission- or vim-mode changes, every
+`refreshInterval` seconds if set, and when a reported `resets_at` passes), debounced at 300ms.
+A run still in flight when the next one triggers is cancelled. The fields read
+(`src/collectors/claude-code/statusline.ts`):
+
+- `rate_limits.five_hour` and `rate_limits.seven_day`, each `{ used_percentage, resets_at }`.
+  `used_percentage` is **0–100**; `resets_at` is **Unix epoch seconds**. Documented as present
+  only for claude.ai Pro and Max subscribers (or behind a gateway with spend limits), and only
+  after the first API response — so it is absent for an API-key user and at the start of a
+  session, and absent means **unavailable**, never 0%.
+- `rate_limits.spend_limit` (gateway spend limits) also exists and is **not read**.
+- `session_id` (the same id the transcripts carry) and `version` (Claude Code's).
+
+Every field is treated as optional, a value outside its documented range is dropped rather than
+stored, and one malformed window does not discard the other. Each reading is stored in
+`plan_limit_readings` only when it differs from the last one for its window; a repeat moves
+that row's `last_seen_at` instead. The payload carries no timestamp, so `observed_at` is when
+ai-usage received it.
+
+The window start is taken as `resets_at` minus 5 hours or 7 days. The documentation calls both
+"rolling" windows and does not say how the reset instant moves, so readings within 5 minutes of
+the same reset are treated as one window.
+
 ---
 
 ## 3. Re-verifying

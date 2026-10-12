@@ -67,6 +67,7 @@ const EXPECTED = [
   'counterfactual_cost',
   'daily_usage',
   'model_usage',
+  'plan_usage',
   'project_usage',
   'recent_sessions',
   'session_usage',
