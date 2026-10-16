@@ -62,8 +62,8 @@ The one rule: **MCP never knows where data comes from.**
 ```text
 MCP tools (src/mcp/tools/*) ─┐
                              ├─> UsageService ─> collectors ─> Claude Code JSONL / OpenCode SQLite
-debug CLI (src/cli/index.ts) ┘        │
-                                      └─> our own SQLite (usage_records, sync_state)
+debug CLI (src/cli/main.ts) ┘         │
+                                      └─> our own SQLite (usage_records, sync_state, ...)
 ```
 
 `UsageService` ([src/services/usage-service.ts](src/services/usage-service.ts)) is the single
@@ -71,6 +71,8 @@ entry point for every frontend; it owns the DB handle, the collectors, and deleg
 `SyncService`, `AggregationService`, `CostService` and `VerifyService`. Both frontends are thin:
 they parse arguments, call one service method, and render through the same
 [formatter](src/services/formatter.ts). No business logic in a tool handler or a CLI case.
+`src/cli/index.ts` is only a small dispatcher in front of `src/cli/main.ts`, so `ai-usage hook`,
+which runs before every Claude Code prompt, starts without loading the database driver.
 
 Data flow:
 
@@ -90,7 +92,7 @@ Data flow:
   the two drivers agree on a file either one wrote. `node:sqlite` has no `.pragma()` or
   `.transaction()`, so the driver supplies both (transactions nest via savepoints, matching
   better-sqlite3).
-- **Store** — `usage_records` + `sync_state`, via append-only migrations in
+- **Store** — `usage_records`, `sync_state`, `session_titles` and `plan_limit_readings`, via append-only migrations in
   [src/db/migrations/index.ts](src/db/migrations/index.ts) (add a new `{version, name, up}`
   entry; never edit an applied one). Our DB path is deliberately homedir-based, _not_
   XDG-based — a sandboxed launcher's private `XDG_DATA_HOME` is exactly how OpenCode's own

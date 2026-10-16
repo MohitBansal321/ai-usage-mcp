@@ -1,7 +1,8 @@
 # Verified data sources
 
 Ground truth for both Phase 1 collectors, established by inspecting real data on a live
-machine on **2026-08-31** (OpenCode 1.18.25, Claude Code 2.1.209–2.1.251).
+machine on **2026-08-31** (OpenCode 1.18.25, Claude Code 2.1.209–2.1.251). OpenCode **2.x**
+changed where turns are stored; §1.6 records that, verified on 2.0.30 on **2026-10-16**.
 
 This file supersedes `PROJECT_CONTEXT.md` §5 where they disagree. Every correction below was
 found by reading the actual bytes, and each one would have produced wrong numbers if the
@@ -64,7 +65,8 @@ The `session` rollup is short by 545,977 input tokens across exactly 4 sessions 
 which recorded `tokens_input = 0` despite having real messages, and one which recorded 103,724
 against an actual 474,003.
 
-**Therefore: collect at message grain.** It is corroborated, it does not lose the stale
+**Therefore: collect at message grain** (on OpenCode 2.x that grain lives in
+`session_message`, §1.6). It is corroborated, it does not lose the stale
 tokens, and it is the only grain that attributes tokens to the right model when a session
 switches models partway through.
 
@@ -95,7 +97,8 @@ session, not the number of active days (which was 41).
 Some sessions have `model = NULL`; those turns are reported as `(unknown)`, never guessed.
 
 Per-message detail lives in `message.data` (the spec marked this **[assumed]**; it is now
-verified, and `session_message` is a **different, empty table** — 0 rows):
+verified. On OpenCode 1.x `session_message` is a **different, empty table** — 0 rows; from
+OpenCode 2.x it is where turns are written instead, see §1.6):
 
 ```json
 {
