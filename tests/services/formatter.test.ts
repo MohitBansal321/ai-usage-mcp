@@ -303,6 +303,19 @@ describe('formatStatus', () => {
     collectors: [],
     pricing: { version: '2026-06-24', provenance: 'built-in', mode: 'builtin' as const },
     syncState: [],
+    claudeIntegrations: {
+      settingsPath: '/home/u/.claude/settings.json',
+      found: false,
+      statusLine: false,
+      hook: false,
+    },
+  };
+  const claudeCollector = {
+    name: 'claude-code',
+    client: 'claude-code' as const,
+    available: true,
+    stores: [],
+    records: 12,
   };
 
   it('points at the update command when a newer release exists', () => {
@@ -342,5 +355,76 @@ describe('formatStatus', () => {
       "Community:     1 model(s) the built-in tables lack, from LiteLLM's price list fetched 2026-09-26: claude-future-9",
     );
     expect(formatStatus(status, null)).not.toContain('Community:');
+  });
+
+  it('says what the newest release adds, when it published a highlight', () => {
+    const text = formatStatus(status, {
+      current: '0.1.0',
+      latest: '0.2.0',
+      isOutdated: true,
+      highlight: 'a live context-size warning',
+    });
+    expect(text).toContain('  New in 0.2.0: a live context-size warning');
+  });
+
+  it('shows the settings entry for each Claude Code integration that is missing', () => {
+    const text = formatStatus({ ...status, collectors: [claudeCollector] }, null);
+    expect(text).toContain('Claude Code integrations (/home/u/.claude/settings.json):');
+    expect(text).toContain('  Status line:  not found');
+    expect(text).toContain('  Prompt hook:  not found');
+    expect(text).toContain('"command": "ai-usage statusline"');
+    expect(text).toContain('"command": "ai-usage hook"');
+    expect(text).toContain('it must be on your PATH: npm i -g ai-usage-mcp');
+
+    const hookOnly = formatStatus(
+      {
+        ...status,
+        collectors: [claudeCollector],
+        claudeIntegrations: { ...status.claudeIntegrations, found: true, hook: true },
+      },
+      null,
+    );
+    expect(hookOnly).toContain('  Prompt hook:  on');
+    expect(hookOnly).not.toContain('"command": "ai-usage hook"');
+    expect(hookOnly).toContain('"command": "ai-usage statusline"');
+  });
+
+  it('prints no setup hints once both integrations are on', () => {
+    const text = formatStatus(
+      {
+        ...status,
+        collectors: [claudeCollector],
+        claudeIntegrations: {
+          ...status.claudeIntegrations,
+          found: true,
+          statusLine: true,
+          hook: true,
+        },
+      },
+      null,
+    );
+    expect(text).toContain('  Status line:  on');
+    expect(text).not.toContain('To turn on what is missing');
+  });
+
+  it('says nothing about Claude Code integrations on a machine without Claude Code', () => {
+    expect(formatStatus(status, null)).not.toContain('Claude Code integrations');
+  });
+
+  it('reports a settings file it could not parse instead of guessing', () => {
+    const text = formatStatus(
+      {
+        ...status,
+        collectors: [claudeCollector],
+        claudeIntegrations: {
+          ...status.claudeIntegrations,
+          found: true,
+          error: 'Unexpected token',
+        },
+      },
+      null,
+    );
+    expect(text).toContain('  Could not read it: Unexpected token');
+    expect(text).not.toContain('Status line:');
   });
 });

@@ -765,6 +765,7 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
       out.push(`          record id, so \`--all-stores\` merges them without double counting.`);
     }
   }
+  out.push(...describeClaudeIntegrations(status));
   if (status.totalRecords === 0) {
     out.push('');
     out.push('No records stored yet. Run `ai-usage sync`.');
@@ -775,8 +776,53 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
       `Update available: ${update.current} installed, ${update.latest} latest -- ` +
         updateCommand(update.installKind),
     );
+    if (update.highlight) out.push(`  New in ${update.latest}: ${update.highlight}`);
   }
   return out.join('\n');
+}
+
+/**
+ * The status line and the prompt hook, and the entry that turns on whichever is
+ * missing. Updating the package cannot add a `settings.json` entry, so this is
+ * how someone who upgraded finds out a feature exists at all.
+ *
+ * Silent for a machine without Claude Code: an OpenCode-only user has nothing to
+ * turn on, and a list of missing Claude Code settings would read as a fault.
+ */
+function describeClaudeIntegrations(status: StatusReport): string[] {
+  const it = status.claudeIntegrations;
+  const usesClaude = status.collectors.some((c) => c.client === 'claude-code' && c.available);
+  if (!usesClaude && !it.statusLine && !it.hook && !it.error) return [];
+
+  const out = ['', `Claude Code integrations (${it.settingsPath}):`];
+  if (it.error) {
+    out.push(`  Could not read it: ${it.error}`);
+    return out;
+  }
+  const state = (on: boolean) => (on ? 'on' : 'not found');
+  out.push(
+    `  Status line:  ${state(it.statusLine)} -- plan limits, today's cost, cache and context size`,
+  );
+  out.push(
+    `  Prompt hook:  ${state(it.hook)} -- asks Claude to suggest /compact when context is large`,
+  );
+  if (it.statusLine && it.hook) return out;
+
+  out.push('  To turn on what is missing, add to that file (keep the keys already there):');
+  if (!it.statusLine) {
+    out.push('    "statusLine": { "type": "command", "command": "ai-usage statusline" }');
+  }
+  if (!it.hook) {
+    out.push(
+      '    "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "ai-usage hook", "timeout": 10 }] }] }',
+    );
+  }
+  // Claude Code merges project settings too, and those are not read here.
+  // Most people run only the MCP server, through npx, so `ai-usage` is not on
+  // their PATH and the entries above would fail without this.
+  out.push('  Both run the `ai-usage` command, so it must be on your PATH: npm i -g ai-usage-mcp');
+  out.push("  An entry in a project's .claude/settings.json is not checked.");
+  return out;
 }
 
 /**

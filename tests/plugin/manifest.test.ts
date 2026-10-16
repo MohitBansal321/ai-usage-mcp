@@ -50,6 +50,24 @@ describe('Claude Code plugin manifest', () => {
     expect(server.packages[0]?.version).toBe(pkg.version);
   });
 
+  /**
+   * `releaseHighlight` is what an outdated install's update notice says the new
+   * release adds (see `parseLatestManifest`). Its `version` must be the release's
+   * own: a highlight that survives a version bump would announce the previous
+   * release's news. The reader drops such a highlight anyway, so this only turns
+   * a silent omission into a failing check on the machine that made it.
+   */
+  it('carries a release highlight only for the version being released', () => {
+    const { releaseHighlight } = readJson<{ releaseHighlight?: { version: string; text: string } }>(
+      'package.json',
+    );
+    if (releaseHighlight === undefined) return;
+    expect(releaseHighlight.version).toBe(pkg.version);
+    expect(releaseHighlight.text.trim().length).toBeGreaterThan(0);
+    expect(releaseHighlight.text.length).toBeLessThanOrEqual(160);
+    expect(releaseHighlight.text).not.toMatch(/\n/);
+  });
+
   it('uses a kebab-case name, since the name namespaces every command', () => {
     expect(plugin.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });

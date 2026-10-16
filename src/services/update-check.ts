@@ -30,17 +30,38 @@ export interface UpdateInfo {
   isOutdated: boolean;
   /** Absent when the caller did not care how the build was installed. */
   installKind?: InstallKind;
+  /** One line on what `latest` adds, when that release published one. */
+  highlight?: string;
+}
+
+/** What the registry says about the newest release. */
+export interface LatestRelease {
+  version: string;
+  highlight?: string;
 }
 
 interface CacheFile {
   checkedAt: number;
   latest: string;
+  highlight?: string;
 }
+
+/**
+ * The longest highlight shown. It shares one line with the version and the
+ * update command, in a notice that is supposed to be one line.
+ */
+const MAX_HIGHLIGHT = 160;
+/** Line breaks, escape sequences and the rest: nothing a one-line notice should carry. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]+/g;
 
 export interface UpdateCheckOptions {
   current: string;
-  /** Injected in tests; defaults to the real registry lookup. */
-  fetchLatest?: () => Promise<string | null>;
+  /**
+   * Injected in tests; defaults to the real registry lookup. A bare version
+   * string is a release with no highlight.
+   */
+  fetchLatest?: () => Promise<LatestRelease | string | null>;
   cachePath?: string;
   now?: number;
   env?: NodeJS.ProcessEnv;
@@ -59,21 +80,25 @@ function optedOut(env: NodeJS.ProcessEnv): boolean {
   return env.AI_USAGE_NO_UPDATE_CHECK === '1' || Boolean(env.CI);
 }
 
-function readCache(path: string, now: number): string | null {
+function readCache(path: string, now: number): LatestRelease | null {
   try {
     const cache = JSON.parse(readFileSync(path, 'utf8')) as Partial<CacheFile>;
     if (typeof cache.latest !== 'string' || typeof cache.checkedAt !== 'number') return null;
-    return now - cache.checkedAt < CACHE_TTL_MS ? cache.latest : null;
+    if (now - cache.checkedAt >= CACHE_TTL_MS) return null;
+    // A cache written before highlights existed simply has none.
+    const highlight = cleanHighlight(cache.highlight);
+    return highlight ? { version: cache.latest, highlight } : { version: cache.latest };
   } catch {
     // No cache yet, or a corrupted one. Either way: fetch.
     return null;
   }
 }
 
-function writeCache(path: string, latest: string, now: number): void {
+function writeCache(path: string, release: LatestRelease, now: number): void {
   try {
     mkdirSync(dirname(path), { recursive: true });
-    const cache: CacheFile = { checkedAt: now, latest };
+    const cache: CacheFile = { checkedAt: now, latest: release.version };
+    if (release.highlight) cache.highlight = release.highlight;
     writeFileSync(path, `${JSON.stringify(cache, null, 2)}\n`);
   } catch {
     // A read-only or unwritable config directory must not break `status`; the
@@ -100,7 +125,7 @@ function writeCache(path: string, latest: string, now: number): void {
  * The retry below is deliberately not the fix -- two attempts against a 406
  * both fail. It only covers genuinely transient trouble.
  */
-export async function fetchLatestFromRegistry(): Promise<string | null> {
+export async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
   // One deadline for all attempts, so a retry can never double the wait.
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -109,10 +134,7 @@ export async function fetchLatestFromRegistry(): Promise<string | null> {
         signal: deadline,
         headers: { accept: 'application/json' },
       });
-      if (res.ok) {
-        const body = (await res.json()) as { version?: unknown };
-        return typeof body.version === 'string' ? body.version : null;
-      }
+      if (res.ok) return parseLatestManifest(await res.json());
       // A 4xx/5xx may be this edge, this moment: worth one more try.
     } catch {
       // Offline, DNS failure, timeout, malformed JSON -- all the same answer.
@@ -120,6 +142,37 @@ export async function fetchLatestFromRegistry(): Promise<string | null> {
     if (deadline.aborted) break;
   }
   return null;
+}
+
+/**
+ * The version, and the release's highlight when it carries one.
+ *
+ * `/latest` returns the published `package.json` whole, custom fields included,
+ * so a release can say what it adds without a second request: a top-level
+ * `releaseHighlight: { version, text }`. The `version` inside it must match the
+ * release's own -- a highlight left over from an earlier release, because the
+ * release commit forgot to replace it, is dropped rather than shown as news.
+ */
+export function parseLatestManifest(body: unknown): LatestRelease | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const { version, releaseHighlight } = body as { version?: unknown; releaseHighlight?: unknown };
+  if (typeof version !== 'string') return null;
+  if (typeof releaseHighlight !== 'object' || releaseHighlight === null) return { version };
+  const h = releaseHighlight as { version?: unknown; text?: unknown };
+  const text = h.version === version ? cleanHighlight(h.text) : undefined;
+  return text ? { version, highlight: text } : { version };
+}
+
+/**
+ * One line of plain text, or nothing. It is read by a model before a person, so
+ * control characters and line breaks are stripped -- a highlight cannot open a
+ * second line that looks like it came from somewhere else.
+ */
+function cleanHighlight(text: unknown): string | undefined {
+  if (typeof text !== 'string') return undefined;
+  const line = text.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim();
+  if (!line) return undefined;
+  return line.length > MAX_HIGHLIGHT ? `${line.slice(0, MAX_HIGHLIGHT - 3).trimEnd()}...` : line;
 }
 
 /**
@@ -226,14 +279,23 @@ export function updateCommand(kind?: InstallKind): string {
  * say is doing prompt injection against its own users.
  */
 export function formatUpdateNotice(info: UpdateInfo): string {
+  const news = info.highlight ? ` (new: ${info.highlight})` : '';
   return (
     `[ai-usage] Server notice: ai-usage-mcp ${info.current} is running; ` +
-    `${info.latest} is the latest release. To update: ${updateCommand(info.installKind)}`
+    `${info.latest} is the latest release${news}. To update: ${updateCommand(info.installKind)}`
   );
 }
 
-function toUpdateInfo(current: string, latest: string, kind: InstallKind): UpdateInfo {
-  return { current, latest, isOutdated: isNewer(latest, current), installKind: kind };
+function toUpdateInfo(current: string, latest: LatestRelease, kind: InstallKind): UpdateInfo {
+  const info: UpdateInfo = {
+    current,
+    latest: latest.version,
+    isOutdated: isNewer(latest.version, current),
+    installKind: kind,
+  };
+  // News about a release the user already has is not news.
+  if (info.isOutdated && latest.highlight) info.highlight = latest.highlight;
+  return info;
 }
 
 /**
@@ -257,8 +319,9 @@ export async function checkForUpdate(options: UpdateCheckOptions): Promise<Updat
 
   let latest = readCache(cachePath, now);
   if (latest === null) {
-    latest = await (options.fetchLatest ?? fetchLatestFromRegistry)();
-    if (latest === null) return null;
+    const fetched = await (options.fetchLatest ?? fetchLatestFromRegistry)();
+    if (fetched === null) return null;
+    latest = typeof fetched === 'string' ? { version: fetched } : fetched;
     writeCache(cachePath, latest, now);
   }
 
