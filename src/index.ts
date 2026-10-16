@@ -87,6 +87,11 @@ export { OpenCodeCollector } from './collectors/opencode/collector.js';
 export { ClaudeCodeCollector } from './collectors/claude-code/collector.js';
 export { discoverOpenCodeStores } from './collectors/opencode/stores.js';
 export { discoverClaudeRoots, listTranscripts } from './collectors/claude-code/transcripts.js';
+export {
+  claudeSettingsPath,
+  readClaudeIntegrations,
+  type ClaudeIntegrations,
+} from './collectors/claude-code/settings.js';
 export { openDatabase, resolveDatabasePath } from './db/database.js';
 export {
   UsageRepository,

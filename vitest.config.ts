@@ -7,8 +7,12 @@ export default defineConfig({
     // Hermetic by default: no test may download the community price list, or
     // read the copy a real server cached under the developer's config dir. The
     // tests of that feature turn it back on explicitly. Inherited by every
-    // spawned CLI and server that is handed `...process.env`.
-    env: { AI_USAGE_NO_PRICING_REFRESH: '1' },
+    // spawned CLI and server that is handed `...process.env`. Likewise no status
+    // report reads the developer's own Claude Code settings.json.
+    env: {
+      AI_USAGE_NO_PRICING_REFRESH: '1',
+      AI_USAGE_CLAUDE_SETTINGS: '/nonexistent/ai-usage-test/claude-settings.json',
+    },
     testTimeout: 60_000,
     hookTimeout: 60_000,
     coverage: {

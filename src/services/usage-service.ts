@@ -13,6 +13,10 @@ import {
   type UsageFilter,
 } from '../db/repositories/usage-repository.js';
 import { ClaudeCodeCollector } from '../collectors/claude-code/collector.js';
+import {
+  readClaudeIntegrations,
+  type ClaudeIntegrations,
+} from '../collectors/claude-code/settings.js';
 import { OpenCodeCollector } from '../collectors/opencode/collector.js';
 import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record.js';
 import {
@@ -102,6 +106,8 @@ export interface StatusReport {
     community?: CommunityPricingState;
   };
   syncState: SyncState[];
+  /** Whether the Claude Code status line and prompt hook are switched on. */
+  claudeIntegrations: ClaudeIntegrations;
 }
 
 /**
@@ -223,6 +229,7 @@ export class UsageService {
       collectors,
       pricing,
       syncState: this.syncRepo.all(),
+      claudeIntegrations: readClaudeIntegrations(),
     };
   }
 

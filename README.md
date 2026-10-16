@@ -345,7 +345,11 @@ ai-usage --version
 
 ```text
 Update available: 0.1.0 installed, 0.2.0 latest -- npm i -g ai-usage-mcp@latest
+  New in 0.2.0: a live context-size warning for Claude Code sessions
 ```
+
+The second line is there when that release published a highlight. The MCP server's notice
+carries it too.
 
 **The MCP server says so too**, because most people never run the CLI. When the server finds a
 newer release it says it **once per process**, through whichever channel comes first: a line
@@ -538,6 +542,20 @@ A flag overrides the environment, which overrides the defaults of 150k and 250k:
 Use the same limits on both entries, or the line and the hook will disagree about when to
 compact. `--no-color` or `NO_COLOR=1` drops the status line's colour.
 
+**Not sure what is switched on?** `ai-usage status` reads `~/.claude/settings.json` and
+reports each integration as `on` or `not found`, with the entry to add for whichever is
+missing:
+
+```text
+Claude Code integrations (/home/you/.claude/settings.json):
+  Status line:  on -- plan limits, today's cost, cache and context size
+  Prompt hook:  not found -- asks Claude to suggest /compact when context is large
+  To turn on what is missing, add to that file (keep the keys already there):
+    "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "ai-usage hook", "timeout": 10 }] }] }
+  Both run the `ai-usage` command, so it must be on your PATH: npm i -g ai-usage-mcp
+  An entry in a project's .claude/settings.json is not checked.
+```
+
 **What it measures.** The size is the last real assistant turn in the session's transcript:
 fresh input plus cache reads plus cache writes, the same input side that `usage_report` counts
 as context carry. Subagent and placeholder turns are skipped. Right after `/compact` no turn
@@ -604,7 +622,7 @@ Same service layer, different frontend — so the two can never disagree.
 
 ```bash
 ai-usage report      # start here: verdict, where usage went, what to change (last 7 days)
-ai-usage status      # collectors, data stores, db path, record counts, last sync
+ai-usage status      # collectors, data stores, db path, record counts, last sync, hooks on/off
 ai-usage sync        # run the collectors
 ai-usage stats       # totals   (--today, --days N, --since/--until)
 ai-usage models      # per-model

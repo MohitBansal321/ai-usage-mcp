@@ -111,6 +111,13 @@ races the workflow.
    in Added / Changed / Fixed order. The workflow takes the GitHub Release notes from that
    exact heading and fails if it is missing. Then fix the footer links: `[Unreleased]` compares
    `vX.Y.Z...HEAD`, and add `[X.Y.Z]` comparing the previous tag to `vX.Y.Z`.
+   Then set `releaseHighlight` in `package.json` to one line on what the release adds, for
+   example `{ "version": "X.Y.Z", "text": "status shows which Claude Code hooks are on" }`
+   (at most 160 characters). An outdated install's update notice quotes it, from both `status`
+   and the MCP server. That is the only way someone on an older version learns why to update,
+   so name the feature, not the version. The reader drops a highlight whose `version` is not
+   the release's own, and `tests/plugin/manifest.test.ts` fails on one. Remove the field if
+   the release has nothing worth announcing.
 3. **`npm run check`, open a PR, let CI go green, merge.** Pick the version by what is in the
    section: any new feature is a minor bump, a fix on its own is a patch.
 4. **Tag the merge commit on an up-to-date `main`, with an _annotated_ tag, and push it:**

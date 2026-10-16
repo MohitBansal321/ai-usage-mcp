@@ -416,6 +416,37 @@ The hook payload (`UserPromptSubmit`) and the status-line payload (§2.11) both 
 payload it is taken from Claude Code's documentation, not from captured bytes, and it is
 optional: without it the size is unknown.
 
+### 2.13 User settings: is the status line or hook on? — **[verified 2026-10-16]**
+
+`ai-usage status` reads Claude Code's user settings file to say whether `ai-usage statusline`
+and `ai-usage hook` are configured, because updating the package cannot add those entries. The
+file is the first `settings.json` that exists in `$CLAUDE_CONFIG_DIR`, `~/.claude`, then
+`~/.config/claude`, the same candidates as transcript discovery. Observed shape:
+
+```json
+{
+  "statusLine": { "type": "command", "command": "node .../ctx-watch.mjs statusline" },
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "..." }] }],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node .../ctx-watch.mjs hook", "timeout": 10 }] }
+    ]
+  }
+}
+```
+
+- `statusLine` is one object, and `command` is a shell command string.
+- `hooks` is keyed by event. Each event holds an array of matcher groups, and each group holds
+  `hooks[]` of `{ type, command, timeout? }`. The `UserPromptSubmit` groups observed had no
+  `matcher` key.
+- Only the hook under `UserPromptSubmit` counts. The same command under another event never
+  runs before a prompt.
+
+Claude Code also merges a project's `.claude/settings.json` and `.claude/settings.local.json`.
+Those are not read, so an entry there is reported as "not found" in the user file and never as
+"not installed". A file that does not parse is reported as unreadable, never as having no
+entries.
+
 ---
 
 ## 3. Re-verifying

@@ -8,6 +8,7 @@ import {
   fetchLatestFromRegistry,
   formatUpdateNotice,
   isNewer,
+  parseLatestManifest,
   readCachedUpdate,
   updateCommand,
 } from '../../src/services/update-check.js';
@@ -347,7 +348,7 @@ describe('fetchLatestFromRegistry', () => {
 
   it('returns the published version', async () => {
     stubFetch(ok('0.5.0'));
-    await expect(fetchLatestFromRegistry()).resolves.toBe('0.5.0');
+    await expect(fetchLatestFromRegistry()).resolves.toEqual({ version: '0.5.0' });
   });
 
   it('does not ask for the abbreviated type that makes /latest answer 406', async () => {
@@ -362,7 +363,7 @@ describe('fetchLatestFromRegistry', () => {
   it('retries a transient 406 rather than reporting no update', async () => {
     const { fetchMock } = stubFetch(new Response('', { status: 406 }), ok('0.5.0'));
 
-    await expect(fetchLatestFromRegistry()).resolves.toBe('0.5.0');
+    await expect(fetchLatestFromRegistry()).resolves.toEqual({ version: '0.5.0' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -411,5 +412,87 @@ describe('fetchLatestFromRegistry', () => {
       isOutdated: true,
       installKind: 'npx',
     });
+  });
+});
+
+describe('release highlights', () => {
+  it('reads a highlight that belongs to the release it ships in', () => {
+    expect(
+      parseLatestManifest({
+        version: '0.15.0',
+        releaseHighlight: { version: '0.15.0', text: 'status shows which hooks are on' },
+      }),
+    ).toEqual({ version: '0.15.0', highlight: 'status shows which hooks are on' });
+  });
+
+  it('drops a highlight left over from an earlier release', () => {
+    expect(
+      parseLatestManifest({
+        version: '0.16.0',
+        releaseHighlight: { version: '0.15.0', text: 'old news' },
+      }),
+    ).toEqual({ version: '0.16.0' });
+  });
+
+  it('flattens a highlight to one bounded line of plain text', () => {
+    const parsed = parseLatestManifest({
+      version: '1.0.0',
+      releaseHighlight: { version: '1.0.0', text: `first\n\u001b[31msecond\t ${'x'.repeat(300)}` },
+    });
+    for (const control of ['\n', '\u001b', '\t']) expect(parsed?.highlight).not.toContain(control);
+    expect(parsed?.highlight?.startsWith('first [31msecond x')).toBe(true);
+    expect(parsed?.highlight?.length).toBeLessThanOrEqual(160);
+    expect(parsed?.highlight?.endsWith('...')).toBe(true);
+  });
+
+  it('ignores a malformed highlight, and a manifest with no version', () => {
+    expect(parseLatestManifest({ version: '1.0.0', releaseHighlight: 'text' })).toEqual({
+      version: '1.0.0',
+    });
+    expect(
+      parseLatestManifest({ version: '1.0.0', releaseHighlight: { version: '1.0.0', text: '  ' } }),
+    ).toEqual({ version: '1.0.0' });
+    expect(parseLatestManifest({ name: 'ai-usage-mcp' })).toBeNull();
+    expect(parseLatestManifest(null)).toBeNull();
+  });
+
+  it('caches the highlight with the version, and serves it from the cache', async () => {
+    const path = cachePath();
+    const release = { version: '0.2.0', highlight: 'a live context-size warning' };
+    const fetched = await checkForUpdate({
+      current: '0.1.0',
+      fetchLatest: vi.fn(() => Promise.resolve(release)),
+      cachePath: path,
+      env: noEnv,
+      installKind: 'global',
+    });
+    expect(fetched?.highlight).toBe('a live context-size warning');
+
+    const cached = readCachedUpdate({ current: '0.1.0', cachePath: path, env: noEnv });
+    expect(cached?.highlight).toBe('a live context-size warning');
+  });
+
+  it('does not announce a highlight for a release already installed', async () => {
+    const info = await checkForUpdate({
+      current: '0.2.0',
+      fetchLatest: vi.fn(() => Promise.resolve({ version: '0.2.0', highlight: 'news' })),
+      cachePath: cachePath(),
+      env: noEnv,
+      installKind: 'global',
+    });
+    expect(info?.isOutdated).toBe(false);
+    expect(info?.highlight).toBeUndefined();
+  });
+
+  it('puts the highlight in the one-line notice', () => {
+    const notice = formatUpdateNotice({
+      current: '0.1.0',
+      latest: '0.2.0',
+      isOutdated: true,
+      installKind: 'global',
+      highlight: 'a live context-size warning',
+    });
+    expect(notice).toContain('0.2.0 is the latest release (new: a live context-size warning).');
+    expect(notice).not.toContain('\n');
   });
 });

@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`ai-usage status` says whether the Claude Code status line and prompt hook are on.**
+  Updating the package cannot add an entry to Claude Code's `settings.json`, so anyone who
+  upgraded got the 0.14.0 context warning as code they never switched on, and nothing told
+  them. `status` now reads the user settings file. For each integration it says `on` or
+  `not found`, and it prints the exact entry to add for whichever is missing. It says nothing
+  on a machine without Claude Code. A project's own `.claude/settings.json` is not read, and
+  the report says so.
+- **The update notice says what the new release adds.** When a release publishes a one-line
+  `releaseHighlight` in its `package.json`, an outdated install shows it next to the version,
+  both in `ai-usage status` (`New in X.Y.Z: ...`) and in the MCP server's one-time notice. It
+  comes in the same registry response the version check already fetches, so it costs no extra
+  request. A highlight whose version does not match the release is dropped, so stale news is
+  never shown.
+
 ## [0.14.0] - 2026-10-16
 
 Two things in this release. Claude Code sessions now warn you while their context is still
