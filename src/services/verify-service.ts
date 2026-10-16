@@ -166,61 +166,113 @@ export class VerifyService {
     for (const store of targets) {
       const db = openSqlite(store.path, { readonly: true });
       try {
-        for (const row of db
-          .prepare('SELECT session_id, data FROM message')
-          .iterate() as IterableIterator<{ session_id: string; data: string }>) {
-          sourceSessions.add(row.session_id);
-          let d: any;
-          try {
-            d = JSON.parse(row.data);
-          } catch {
-            continue;
+        const tables = new Set(
+          (
+            db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+              name: string;
+            }[]
+          ).map((r) => r.name),
+        );
+        // Ids already counted from `message`. OpenCode 2.x writes the same turn to
+        // `session_message` under the same id, and new turns only there.
+        const counted = new Set<string>();
+
+        if (tables.has('message')) {
+          for (const row of db
+            .prepare('SELECT id, session_id, data FROM message')
+            .iterate() as IterableIterator<{ id: string; session_id: string; data: string }>) {
+            sourceSessions.add(row.session_id);
+            let d: any;
+            try {
+              d = JSON.parse(row.data);
+            } catch {
+              continue;
+            }
+            if (d?.role !== 'assistant' || !d?.tokens) continue;
+            counted.add(row.id);
+            const created = typeof d?.time?.created === 'number' ? d.time.created : undefined;
+            if (created !== undefined && created >= cutoffMs) continue;
+            accumulate(message, d.tokens, num(d.cost));
           }
-          if (d?.role !== 'assistant' || !d?.tokens) continue;
-          const created = typeof d?.time?.created === 'number' ? d.time.created : undefined;
-          if (created !== undefined && created >= cutoffMs) continue;
-          accumulate(message, d.tokens, num(d.cost));
         }
         // `part` rows carry no timestamp of their own, so the cutoff is applied
         // through the message they belong to.
-        for (const row of db
-          .prepare(
-            `SELECT p.data AS data, m.data AS message_data
-               FROM part p JOIN message m ON m.id = p.message_id`,
-          )
-          .iterate() as IterableIterator<{ data: string; message_data: string }>) {
-          let d: any;
-          try {
-            d = JSON.parse(row.data);
-          } catch {
-            continue;
+        if (tables.has('message') && tables.has('part')) {
+          for (const row of db
+            .prepare(
+              `SELECT p.data AS data, m.data AS message_data
+                 FROM part p JOIN message m ON m.id = p.message_id`,
+            )
+            .iterate() as IterableIterator<{ data: string; message_data: string }>) {
+            let d: any;
+            try {
+              d = JSON.parse(row.data);
+            } catch {
+              continue;
+            }
+            if (d?.type !== 'step-finish' || !d?.tokens) continue;
+            let md: any;
+            try {
+              md = JSON.parse(row.message_data);
+            } catch {
+              md = undefined;
+            }
+            const created = typeof md?.time?.created === 'number' ? md.time.created : undefined;
+            if (created !== undefined && created >= cutoffMs) continue;
+            accumulate(part, d.tokens, num(d.cost));
           }
-          if (d?.type !== 'step-finish' || !d?.tokens) continue;
-          let md: any;
-          try {
-            md = JSON.parse(row.message_data);
-          } catch {
-            md = undefined;
-          }
-          const created = typeof md?.time?.created === 'number' ? md.time.created : undefined;
-          if (created !== undefined && created >= cutoffMs) continue;
-          accumulate(part, d.tokens, num(d.cost));
         }
-        const s = db
-          .prepare(
-            `SELECT COUNT(*) AS n, SUM(tokens_input) AS i, SUM(tokens_output) AS o,
-                    SUM(tokens_reasoning) AS r, SUM(tokens_cache_read) AS cr,
-                    SUM(tokens_cache_write) AS cw, SUM(cost) AS c
-               FROM session`,
-          )
-          .get() as Record<string, number | null>;
-        session.records += s.n ?? 0;
-        session.inputTokens += s.i ?? 0;
-        session.outputTokens += s.o ?? 0;
-        session.reasoningTokens += s.r ?? 0;
-        session.cacheReadTokens += s.cr ?? 0;
-        session.cacheWriteTokens += s.cw ?? 0;
-        session.cost += s.c ?? 0;
+        // OpenCode 2.x turns that exist only in `session_message`. They have no
+        // `part` rows to corroborate them, so they enter the part grain from the
+        // same payload -- that grain is independent only for the older history.
+        if (tables.has('session_message')) {
+          for (const row of db
+            .prepare("SELECT id, session_id, data FROM session_message WHERE type = 'assistant'")
+            .iterate() as IterableIterator<{ id: string; session_id: string; data: string }>) {
+            sourceSessions.add(row.session_id);
+            if (counted.has(row.id)) continue;
+            let d: any;
+            try {
+              d = JSON.parse(row.data);
+            } catch {
+              continue;
+            }
+            if (!d?.tokens) continue;
+            const created = typeof d?.time?.created === 'number' ? d.time.created : undefined;
+            if (created !== undefined && created >= cutoffMs) continue;
+            accumulate(message, d.tokens, num(d.cost));
+            accumulate(part, d.tokens, num(d.cost));
+          }
+        }
+        // The rollup lives in `session_v2` on OpenCode 2.x; a session can be in both
+        // tables, and the newer row is the one OpenCode keeps current.
+        const rollupColumns =
+          'id, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, cost';
+        const rollupSources = [
+          tables.has('session_v2') ? `SELECT ${rollupColumns} FROM session_v2` : undefined,
+          tables.has('session')
+            ? `SELECT ${rollupColumns} FROM session${
+                tables.has('session_v2') ? ' WHERE id NOT IN (SELECT id FROM session_v2)' : ''
+              }`
+            : undefined,
+        ].filter((q): q is string => q !== undefined);
+        if (rollupSources.length > 0) {
+          const s = db
+            .prepare(
+              `SELECT COUNT(*) AS n, SUM(tokens_input) AS i, SUM(tokens_output) AS o,
+                      SUM(tokens_reasoning) AS r, SUM(tokens_cache_read) AS cr,
+                      SUM(tokens_cache_write) AS cw, SUM(cost) AS c
+                 FROM (${rollupSources.join(' UNION ALL ')})`,
+            )
+            .get() as Record<string, number | null>;
+          session.records += s.n ?? 0;
+          session.inputTokens += s.i ?? 0;
+          session.outputTokens += s.o ?? 0;
+          session.reasoningTokens += s.r ?? 0;
+          session.cacheReadTokens += s.cr ?? 0;
+          session.cacheWriteTokens += s.cw ?? 0;
+          session.cost += s.c ?? 0;
+        }
       } finally {
         db.close();
       }

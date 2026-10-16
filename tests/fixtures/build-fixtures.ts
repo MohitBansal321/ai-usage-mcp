@@ -34,6 +34,31 @@ export function buildOpenCodeDb(
     }[];
     parts?: { id: string; messageId: string; sessionId: string; data: Record<string, unknown> }[];
     projects?: { id: string; worktree: string }[];
+    /**
+     * OpenCode 2.x: turns live in `session_message` (the role is its `type`, the
+     * payload nests the model) and sessions in `session_v2`. Both tables are only
+     * created when given, so a legacy fixture stays exactly what it was.
+     */
+    sessionsV2?: {
+      id: string;
+      parentId?: string | null;
+      title?: string;
+      directory?: string;
+      version?: string;
+      projectId?: string;
+      tokensInput?: number;
+      cost?: number;
+    }[];
+    sessionMessages?: {
+      id: string;
+      sessionId: string;
+      type?: string;
+      timeCreated: number;
+      timeUpdated?: number;
+      data: Record<string, unknown>;
+    }[];
+    /** Drop the frozen legacy tables, as a database that has fully moved on would. */
+    withoutLegacyMessages?: boolean;
   },
 ): string {
   const path = join(dir, 'opencode.db');
@@ -105,6 +130,58 @@ export function buildOpenCodeDb(
   for (const p of options.parts ?? []) {
     insertPart.run(p.id, p.messageId, p.sessionId, JSON.stringify(p.data));
   }
+
+  if (options.sessionsV2 || options.sessionMessages) {
+    db.exec(`
+      CREATE TABLE session_v2 (
+        id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, slug TEXT, directory TEXT,
+        title TEXT, version TEXT, time_created INTEGER, time_updated INTEGER,
+        model TEXT, cost REAL DEFAULT 0, tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
+        tokens_reasoning INTEGER DEFAULT 0, tokens_cache_read INTEGER DEFAULT 0, tokens_cache_write INTEGER DEFAULT 0
+      );
+      CREATE TABLE session_message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const insertV2 = db.prepare(
+      `INSERT INTO session_v2 (id, project_id, parent_id, slug, directory, title, version,
+                               time_created, time_updated, cost, tokens_input)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    );
+    for (const s of options.sessionsV2 ?? []) {
+      insertV2.run(
+        s.id,
+        s.projectId ?? projects[0]!.id,
+        s.parentId ?? null,
+        'slug',
+        s.directory ?? '/work/project-one',
+        s.title ?? 'title',
+        s.version ?? '2.0.30',
+        1_700_000_000_000,
+        1_700_000_000_000,
+        s.cost ?? 0,
+        s.tokensInput ?? 0,
+      );
+    }
+    const insertSessionMessage = db.prepare(
+      `INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+       VALUES (?,?,?,?,?,?,?)`,
+    );
+    let seq = 0;
+    for (const m of options.sessionMessages ?? []) {
+      insertSessionMessage.run(
+        m.id,
+        m.sessionId,
+        m.type ?? 'assistant',
+        ++seq,
+        m.timeCreated,
+        m.timeUpdated ?? m.timeCreated,
+        JSON.stringify(m.data),
+      );
+    }
+  }
+  if (options.withoutLegacyMessages) db.exec('DROP TABLE message; DROP TABLE part;');
 
   db.close();
   return path;

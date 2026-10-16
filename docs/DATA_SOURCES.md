@@ -145,6 +145,60 @@ read-only connection cannot mutate the file, so a running OpenCode is not distur
 The collector therefore opens read-only directly and falls back to the snapshot copy
 (`.db` + `-wal` + `-shm`) only if that fails.
 
+### 1.6 OpenCode 2.x moved turns to `session_message` — **[CORRECTION, verified 2026-10-16]**
+
+Verified against OpenCode **2.0.30**. From 2.x, new turns are no longer written to `message`
+(or `part`), and new sessions no longer to `session`. The old tables stay in the database,
+**frozen at the moment of the upgrade**, so a collector that only reads them reports a clean
+sync, a plausible total and a newest record that never advances. This is exactly how a user's
+usage silently stopped on the day they upgraded (issue #105).
+
+| Legacy (≤ 1.x)                     | 2.x                                             |
+| ---------------------------------- | ----------------------------------------------- |
+| `message` (+ `part`)               | `session_message` (`part` is no longer written) |
+| `session`                          | `session_v2` (same columns we use, plus more)   |
+| `message.data.role`                | `session_message.type` (`assistant`, `user`, …) |
+| `data.modelID` / `data.providerID` | `data.model.{id, providerID}`                   |
+
+`session_message.type` is not only `assistant`: the live store also holds `user`, `system`,
+`compaction`, `idle`, `model-switched` and `synthetic` rows. Only `assistant` rows carry usage.
+
+An assistant row's `data`:
+
+```json
+{
+  "time": { "created": 1792141540889, "streamed": 1792141551882, "completed": 1792141551894 },
+  "agent": "build",
+  "model": { "id": "…", "providerID": "openrouter", "variant": "high" },
+  "content": [ { "type": "reasoning", … }, { "type": "text", … } ],
+  "finish": "stop",
+  "cost": 0,
+  "tokens": { "input": 709, "output": 89, "reasoning": 40, "cache": { "read": 148480, "write": 0 } }
+}
+```
+
+What was verified on a database that straddles the switch (5,906 turns present in both tables):
+
+- **Same id, same numbers.** `session_message.id` equals `message.id`, and all 5,906 overlapping
+  turns matched on input, output, reasoning, cache read, cost, model and `time.created`. Our
+  record id (`opencode:msg:<id>`) therefore dedupes across the two tables with no extra logic.
+- **Same token semantics.** `reasoning` is still a sibling of `output`.
+- **No `part` rows for new turns.** `part` stops at the same moment as `message`, so the
+  part-grain corroboration in `verify` only covers the older history. Turns that exist only in
+  `session_message` enter that grain from the same payload; the message grain is still read by
+  separate code.
+- **`tokens` can be absent** on an assistant row (5 of 6,337 here). That is no usage, not zero.
+- **No `path.root` in the payload**, so the project comes from the session's `directory`
+  (then the project's `worktree`) rather than from the turn.
+- Some sessions exist only in `session_v2` (6 of 203 here), so turns must not be inner-joined
+  to the legacy `session` table or they are dropped.
+
+The collector therefore reads whichever of `message` / `session_message` and `session` /
+`session_v2` are present, keeps one resume cursor per table (`message.time_updated` and
+`session_message.time_updated`), takes session facts from `session_v2` before `session`, and
+prefers the `message` reading when a turn is in both so it keeps the project it was first
+attributed to. A turn that straddles the switch is never counted twice.
+
 ---
 
 ## 2. Claude Code

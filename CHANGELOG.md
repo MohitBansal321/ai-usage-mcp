@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenCode usage no longer stops at the day you upgrade to OpenCode 2.x.** From 2.x, OpenCode
+  writes new turns to `session_message` and new sessions to `session_v2`, and leaves `message`
+  and `session` frozen. We only read the old tables, so sync reported success while every turn
+  after the upgrade went missing and the newest stored record never advanced (issue #105). The
+  collector now reads whichever tables are present, with a resume cursor for each, and a turn
+  that appears in both is counted once. Existing installs pick the missing turns up on the next
+  sync, with no `--full` needed. `ai-usage verify` reads both tables too.
+- A turn whose session row is missing from the session tables is now kept, with the project
+  unknown, instead of being dropped.
+
 ### Added
 
 - **A live context-size warning.** Every turn re-sends the whole conversation, so a long
