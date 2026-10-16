@@ -7,17 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+## [0.14.0] - 2026-10-16
 
-- **OpenCode usage no longer stops at the day you upgrade to OpenCode 2.x.** From 2.x, OpenCode
-  writes new turns to `session_message` and new sessions to `session_v2`, and leaves `message`
-  and `session` frozen. We only read the old tables, so sync reported success while every turn
-  after the upgrade went missing and the newest stored record never advanced (issue #105). The
-  collector now reads whichever tables are present, with a resume cursor for each, and a turn
-  that appears in both is counted once. Existing installs pick the missing turns up on the next
-  sync, with no `--full` needed. `ai-usage verify` reads both tables too.
-- A turn whose session row is missing from the session tables is now kept, with the project
-  unknown, instead of being dropped.
+Two things in this release. Claude Code sessions now warn you while their context is still
+growing expensive, and OpenCode usage no longer goes quiet after you upgrade to OpenCode 2.x.
 
 ### Added
 
@@ -40,6 +33,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The CLI entry point is now a small dispatcher in front of `main.ts`, so the hook, which runs
   before every prompt, starts without loading the database driver and every service.
+
+### Fixed
+
+- **OpenCode usage no longer stops at the day you upgrade to OpenCode 2.x.** From 2.x, OpenCode
+  writes new turns to `session_message` and new sessions to `session_v2`, and leaves `message`
+  and `session` frozen. We only read the old tables, so sync reported success while every turn
+  after the upgrade went missing and the newest stored record never advanced (issue #105). The
+  collector now reads whichever tables are present, with a resume cursor for each, and a turn
+  that appears in both is counted once. Existing installs pick the missing turns up on the next
+  sync, with no `--full` needed. `ai-usage verify` reads both tables too.
+- A turn whose session row is missing from the session tables is now kept, with the project
+  unknown, instead of being dropped.
 
 ## [0.13.0] - 2026-10-12
 
@@ -980,7 +985,9 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.11.1...v0.11.2
