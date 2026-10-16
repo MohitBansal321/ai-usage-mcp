@@ -10,7 +10,7 @@ re-derive these formats by guessing.
 ## What this project is
 
 A local-first MCP server that reports **real** token usage and cost across coding agents
-(Phase 1: Claude Code + OpenCode). Local SQLite, five MCP tools, a debug CLI. Nothing leaves
+(Phase 1: Claude Code + OpenCode). Local SQLite, twelve MCP tools, a debug CLI. Nothing leaves
 the machine.
 
 ## Non-negotiable rules
@@ -43,7 +43,9 @@ the machine.
    `~/.local/share/opencode`, because a sandboxed launcher splits these into two stores.
    `opencode stats` is also **not a reliable oracle**: its headline block reads a stale
    `session` rollup while its model block reads message grain, so it disagrees with itself.
-   Verify against the `message` and `part` tables, which corroborate each other exactly.
+   Verify against the `message` and `part` tables, which corroborate each other exactly
+   (OpenCode 2.x writes turns to `session_message` instead, with no `part` rows; see
+   `docs/DATA_SOURCES.md` §1.6).
 5. **Open live databases read-only.** Prefer a direct read-only connection (~15ms even at
    879MB); fall back to copying `.db` + `-wal` + `-shm` only if that fails. Never copy a
    ~1GB file on every sync.

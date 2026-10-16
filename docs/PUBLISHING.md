@@ -49,22 +49,25 @@ npm pack --dry-run            # review exactly what will ship
 ```
 
 `npm pack --dry-run` should list `dist/`, `docs/`, `README.md`, `LICENSE`, `package.json` —
-about 75 kB, 100 files. It must **not** contain `src/`, `tests/`, `node_modules/`, or any
+(about 215 kB packed and roughly 150 files at 0.14.0; the numbers drift, what matters is what
+is absent). It must **not** contain `src/`, `tests/`, `node_modules/`, or any
 `.db` file. That is enforced by the `files` array in `package.json`.
 
-A `prepublishOnly` hook runs `npm run build && npm test` automatically, so a publish cannot
-succeed with a failing build or a failing test.
+A `prepublishOnly` hook runs `npm run check` (typecheck, lint, format, build and the whole test
+suite) automatically, so a publish cannot succeed with anything failing.
 
 ---
 
-## Publish
+## First publish (done once, by hand)
+
+Only the very first release was published this way. Every later one is tag-driven, see
+[Later releases](#later-releases).
 
 ```bash
 npm publish
 ```
 
-Unscoped packages are public by default. That single command runs the build, runs all 63
-tests, then uploads.
+Unscoped packages are public by default. That single command runs `npm run check`, then uploads.
 
 If you ever switch to a scoped name (`@your-org/ai-usage-mcp`), the first publish needs
 `npm publish --access public`, or it goes out private and nobody can install it.
@@ -97,14 +100,49 @@ claude mcp list
 
 ## Later releases
 
-```bash
-npm version patch        # or minor / major -- commits and tags if this is a git repo
-npm publish
-```
+**A release is a pushed `v*` tag, and nothing else.** Pushing to `main` runs CI only.
+`.github/workflows/release.yml` does the publishing; do not run `npm publish` by hand, or it
+races the workflow.
+
+1. **Branch** off `main` and bump the version in every file that carries it
+   (`package.json` and `package-lock.json`, `server.json` twice, `.claude-plugin/plugin.json`),
+   as in [Version agreement](#version-agreement) below.
+2. **Update `CHANGELOG.md`.** Move the `Unreleased` entries under `## [X.Y.Z] - YYYY-MM-DD`,
+   in Added / Changed / Fixed order. The workflow takes the GitHub Release notes from that
+   exact heading and fails if it is missing. Then fix the footer links: `[Unreleased]` compares
+   `vX.Y.Z...HEAD`, and add `[X.Y.Z]` comparing the previous tag to `vX.Y.Z`.
+3. **`npm run check`, open a PR, let CI go green, merge.** Pick the version by what is in the
+   section: any new feature is a minor bump, a fix on its own is a patch.
+4. **Tag the merge commit on an up-to-date `main`, with an _annotated_ tag, and push it:**
+
+   ```bash
+   git checkout main && git pull --ff-only
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+5. **Watch it:** `gh run list --workflow release.yml`, then `gh run watch <id>`.
+
+**The tag must be annotated.** `git push --follow-tags` silently skips a lightweight tag, so a
+release can look done (tag exists locally, `main` pushed) while nothing happens. If a release
+seems not to fire, check `git cat-file -t vX.Y.Z` (want `tag`, not `commit`) and
+`git ls-remote --tags origin vX.Y.Z` before looking at the workflow.
+
+What the workflow does, in order: `npm run check`; checks that the tag, `package.json`,
+`server.json` and the plugin manifest all agree; publishes to npm with provenance (skipped if
+that version is already on the registry); creates the GitHub Release from the changelog
+section; then publishes to the MCP registry.
+
+**npm trusted publishing is configured on npmjs.com**, not in this repo: the package is bound
+to `MohitBansal321/ai-usage-mcp`, workflow filename `release.yml`, environment `release`. No
+`NPM_TOKEN` is used, and that binding is what produces the provenance badge. Renaming the
+workflow file or changing its `environment:` silently breaks publishing until the npmjs.com
+binding is updated to match. GitHub runs the workflow as it exists at the tagged commit, so a
+workflow change never applies retroactively to an older tag.
 
 The version the MCP server advertises is read from `package.json` at runtime, so there is no
 constant in `src/` to keep in sync. `server.json` and `.claude-plugin/plugin.json` **are** two
-further places the version lives — see [Version agreement](#version-agreement) below.
+further places the version lives.
 
 ---
 
@@ -152,7 +190,7 @@ tag-vs-package.json check, and `tests/plugin/manifest.test.ts` asserts the plugi
 `npm run check` — so a forgotten bump is caught locally, before you tag. A version bump is:
 
 ```bash
-npm version patch --no-git-tag-version          # package.json
+npm version X.Y.Z --no-git-tag-version          # package.json and package-lock.json
 # then mirror it into server.json and the plugin manifest
 node -e '
   const fs=require("fs");

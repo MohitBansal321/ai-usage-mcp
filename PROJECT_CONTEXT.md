@@ -117,7 +117,9 @@ tools are two thin frontends over the same service.
 > - **Claude Code's transcript layout is not flat** — three path shapes, and a flat glob finds
 >   only 47 of 196 files.
 > - **`isSidechain` is never set** (0 of 21,574 lines); subagent turns are identified by path.
-> - **`session_message` is empty**; per-message detail lives in `message.data`.
+> - **`session_message` is empty** (on OpenCode 1.x); per-message detail lives in
+>   `message.data`. **OpenCode 2.x writes turns to `session_message` instead and freezes
+>   `message`** — see `docs/DATA_SOURCES.md` §1.6.
 > - **Copying the 879MB database per sync is unnecessary** — a direct read-only open takes
 >   ~15ms and returns identical numbers.
 > - **`reasoning` is a sibling of `output` in OpenCode but a subset of it in Claude Code.**
@@ -176,6 +178,8 @@ Other useful tables:
 - `project`: `id, worktree, vcs, name, time_created, …` → maps sessions to a project path.
 - `session_message`: `id, session_id, type, time_created, time_updated, data (JSON), seq`
   → **[assumed]** per-message model/token detail lives in `data`; verify before depending on it.
+  _Superseded: verified on OpenCode 2.x, where this is the table turns are written to. See
+  `docs/DATA_SOURCES.md` §1.6._
 - `part`: `id, message_id, session_id, time_created, time_updated, data (JSON)`.
 
 Open a **read-only copy** (`file:…?mode=ro`, and copy the `-wal`/`-shm` alongside) so a

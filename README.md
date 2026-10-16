@@ -326,7 +326,7 @@ npx -y -p ai-usage-mcp ai-usage stats --today
 > skipped optional dependency, not a failed install — `ai-usage status` will show
 > `SQLite driver: node:sqlite` and everything works.
 
-Verified against Claude Code **2.1.251** and OpenCode **1.18.25**.
+Verified against Claude Code **2.1.251** and OpenCode **1.18.25** and **2.0.30**.
 
 ### Updating
 
@@ -1190,7 +1190,8 @@ badly wrong numbers if taken at face value. What this tool does about them:
 - **OpenCode's `session` rollup columns can be stale.** They are a cached aggregate; on the
   development machine they had lost 545,977 input tokens across 4 sessions. This tool reads
   the `message` grain instead, which is corroborated byte-for-byte by the independent
-  `part` table.
+  `part` table. OpenCode 2.x writes that grain to `session_message` instead (and no longer
+  writes `part` rows), so newer turns have no second table to corroborate them.
 - **Reasoning tokens mean different things per client.** In Claude Code, thinking tokens are
   _inside_ `output_tokens`; in OpenCode, `reasoning` is a _sibling_ of `output`. Totals are
   computed per client accordingly, so reasoning is never double-counted.
@@ -1401,7 +1402,7 @@ npm run typecheck      # tsc, covering src and tests
 npm run lint           # eslint (type-aware)
 npm run format         # prettier --write
 npm run build          # emit dist/
-npm test               # 81 tests: collectors, services, formatter, MCP integration, parity
+npm test               # collectors, services, formatter, MCP integration, parity, packaging
 npm run test:coverage  # with coverage report
 ```
 
