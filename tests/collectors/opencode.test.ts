@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { realpathSync, rmSync } from 'node:fs';
 import { OpenCodeCollector } from '../../src/collectors/opencode/collector.js';
 import { buildOpenCodeDb, tempDir } from '../fixtures/build-fixtures.js';
 
@@ -29,6 +29,36 @@ function assistant(options: {
   };
   if (options.modelID !== undefined) data.modelID = options.modelID;
   if (options.providerID !== undefined) data.providerID = options.providerID;
+  return data;
+}
+
+/** An assistant turn as OpenCode 2.x writes it into `session_message.data`. */
+function v2Assistant(options: {
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cacheRead?: number;
+  cost?: number;
+  modelID?: string;
+  providerID?: string;
+  created: number;
+  withTokens?: boolean;
+}) {
+  const data: Record<string, unknown> = {
+    time: { created: options.created, completed: options.created + 5 },
+    agent: 'build',
+    model: { id: options.modelID ?? 'v2-model', providerID: options.providerID ?? 'openrouter' },
+    content: [{ type: 'text', text: 'never stored' }],
+    cost: options.cost ?? 0,
+  };
+  if (options.withTokens !== false) {
+    data.tokens = {
+      input: options.input ?? 0,
+      output: options.output ?? 0,
+      reasoning: options.reasoning ?? 0,
+      cache: { read: options.cacheRead ?? 0, write: 0 },
+    };
+  }
   return data;
 }
 
@@ -270,5 +300,239 @@ describe('OpenCodeCollector', () => {
     const availability = await new OpenCodeCollector().isAvailable();
     expect(availability.available).toBe(false);
     expect(availability.reason).toContain('No OpenCode database found');
+  });
+
+  describe('OpenCode 2.x schema (session_message / session_v2)', () => {
+    it('collects turns that exist only in session_message, with session facts from session_v2', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [],
+        messages: [],
+        sessionsV2: [
+          { id: 'ses-new', directory: '/work/v2-project', version: '2.0.30', title: 'Fresh title' },
+          { id: 'ses-child', parentId: 'ses-new', directory: '/work/v2-project' },
+        ],
+        sessionMessages: [
+          {
+            id: 'msg-new',
+            sessionId: 'ses-new',
+            timeCreated: 1_792_000_000_000,
+            data: v2Assistant({
+              input: 700,
+              output: 80,
+              reasoning: 40,
+              cacheRead: 148_480,
+              cost: 0.5,
+              modelID: 'thinkingmachines/inkling:free',
+              providerID: 'openrouter',
+              created: 1_792_000_000_000,
+            }),
+          },
+          {
+            id: 'msg-sub',
+            sessionId: 'ses-child',
+            timeCreated: 1_792_000_000_001,
+            data: v2Assistant({ input: 1, created: 1_792_000_000_001 }),
+          },
+          // Not assistant turns: no usage record.
+          {
+            id: 'msg-user',
+            sessionId: 'ses-new',
+            type: 'user',
+            timeCreated: 1_792_000_000_002,
+            data: { time: { created: 1_792_000_000_002 } },
+          },
+          {
+            id: 'msg-idle',
+            sessionId: 'ses-new',
+            type: 'idle',
+            timeCreated: 1_792_000_000_003,
+            data: {},
+          },
+        ],
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+
+      const result = await new OpenCodeCollector().collect({});
+      expect(result.records).toHaveLength(2);
+
+      const main = result.records.find((r) => r.id === 'opencode:msg:msg-new')!;
+      expect(main.model).toBe('thinkingmachines/inkling:free');
+      expect(main.provider).toBe('openrouter');
+      expect(main.inputTokens).toBe(700);
+      expect(main.outputTokens).toBe(80);
+      expect(main.reasoningTokens).toBe(40);
+      expect(main.cacheReadTokens).toBe(148_480);
+      expect(main.totalTokens).toBe(700 + 80 + 40 + 148_480);
+      expect(main.cost).toBe(0.5);
+      expect(main.costBasis).toBe('reported');
+      expect(main.projectPath).toBe('/work/v2-project');
+      expect(main.sourceVersion).toBe('2.0.30');
+      expect(main.turnKind).toBe('main');
+      expect(main.source).toBe('opencode.db:session_message');
+      expect(result.records.find((r) => r.id === 'opencode:msg:msg-sub')!.turnKind).toBe(
+        'subagent',
+      );
+      expect(result.sessionTitles).toContainEqual({ sessionId: 'ses-new', title: 'Fresh title' });
+    });
+
+    it('skips an assistant turn that recorded no tokens rather than counting it as zero', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [],
+        messages: [],
+        sessionsV2: [{ id: 'ses-1' }],
+        sessionMessages: [
+          {
+            id: 'aborted',
+            sessionId: 'ses-1',
+            timeCreated: 1_792_000_000_000,
+            data: v2Assistant({ created: 1_792_000_000_000, withTokens: false }),
+          },
+        ],
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+
+      expect((await new OpenCodeCollector().collect({})).records).toHaveLength(0);
+    });
+
+    it('does not double count a turn present in both tables, and keeps the legacy attribution', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [{ id: 'ses-1', directory: '/work/session-dir' }],
+        messages: [
+          {
+            id: 'both',
+            sessionId: 'ses-1',
+            timeCreated: 1_000,
+            data: assistant({
+              input: 10,
+              modelID: 'm',
+              root: '/work/payload-root',
+              created: 1_000,
+            }),
+          },
+        ],
+        sessionsV2: [{ id: 'ses-1', directory: '/work/session-dir' }],
+        sessionMessages: [
+          {
+            id: 'both',
+            sessionId: 'ses-1',
+            timeCreated: 1_000,
+            data: v2Assistant({ input: 10, modelID: 'm', created: 1_000 }),
+          },
+          {
+            id: 'only-v2',
+            sessionId: 'ses-1',
+            timeCreated: 2_000,
+            data: v2Assistant({ input: 5, modelID: 'm', created: 2_000 }),
+          },
+        ],
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+
+      const records = (await new OpenCodeCollector().collect({})).records;
+      expect(records.map((r) => r.id).sort()).toEqual([
+        'opencode:msg:both',
+        'opencode:msg:only-v2',
+      ]);
+      const both = records.find((r) => r.id === 'opencode:msg:both')!;
+      expect(both.source).toBe('opencode.db:message');
+      expect(both.projectPath).toBe('/work/payload-root');
+      expect(records.reduce((n, r) => n + r.inputTokens, 0)).toBe(15);
+    });
+
+    it('works when the legacy tables are gone entirely', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [],
+        messages: [],
+        sessionsV2: [{ id: 'ses-1' }],
+        sessionMessages: [
+          {
+            id: 'm1',
+            sessionId: 'ses-1',
+            timeCreated: 1_000,
+            data: v2Assistant({ input: 3, created: 1_000 }),
+          },
+        ],
+        withoutLegacyMessages: true,
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+
+      const result = await new OpenCodeCollector().collect({});
+      expect(result.records).toHaveLength(1);
+    });
+
+    it('keeps a turn whose session row is missing from every session table', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [],
+        messages: [],
+        sessionsV2: [{ id: 'other' }],
+        sessionMessages: [
+          {
+            id: 'orphan',
+            sessionId: 'ses-gone',
+            timeCreated: 1_000,
+            data: v2Assistant({ input: 4, created: 1_000 }),
+          },
+        ],
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+
+      const records = (await new OpenCodeCollector().collect({})).records;
+      expect(records).toHaveLength(1);
+      expect(records[0]!.turnKind).toBe('main');
+      expect(records[0]!.projectPath).toBeUndefined();
+    });
+
+    it('resumes each table from its own cursor, and reads session_message from the start under an old cursor', async () => {
+      const dbPath = buildOpenCodeDb(dir, {
+        sessions: [{ id: 'ses-1' }],
+        messages: [
+          {
+            id: 'legacy',
+            sessionId: 'ses-1',
+            timeCreated: 1_000,
+            data: assistant({ input: 1, created: 1_000 }),
+          },
+        ],
+        sessionsV2: [{ id: 'ses-1' }],
+        sessionMessages: [
+          {
+            id: 'v2-a',
+            sessionId: 'ses-1',
+            timeCreated: 5_000,
+            data: v2Assistant({ input: 2, created: 5_000 }),
+          },
+          {
+            id: 'v2-b',
+            sessionId: 'ses-1',
+            timeCreated: 6_000,
+            data: v2Assistant({ input: 3, created: 6_000 }),
+          },
+        ],
+      });
+      process.env.AI_USAGE_OPENCODE_DB = dbPath;
+      // The cursor is keyed by canonical path (macOS temp dirs sit behind a symlink).
+      const storeKey = realpathSync(dbPath);
+      const collector = new OpenCodeCollector();
+
+      const first = await collector.collect({});
+      expect(first.records).toHaveLength(3);
+      expect(first.cursor).toEqual({
+        stores: { [storeKey]: 1_000 },
+        sessionMessages: { [storeKey]: 6_000 },
+      });
+
+      // A cursor written before 2.x support has no sessionMessages watermark; it
+      // must not hide the newer table.
+      const old = await collector.collect({ cursor: { stores: { [storeKey]: 1_000 } } });
+      expect(old.records.map((r) => r.id)).toContain('opencode:msg:v2-a');
+      expect(old.records.map((r) => r.id)).toContain('opencode:msg:v2-b');
+
+      // A current cursor resumes at the boundary, not from the start.
+      const next = await collector.collect({ cursor: first.cursor });
+      expect(next.records.map((r) => r.id).sort()).toEqual([
+        'opencode:msg:legacy',
+        'opencode:msg:v2-b',
+      ]);
+    });
   });
 });

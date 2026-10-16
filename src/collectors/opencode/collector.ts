@@ -31,13 +31,27 @@ interface OpenCodeMessageData {
   providerID?: string;
   path?: { cwd?: string; root?: string };
   time?: { created?: number; completed?: number };
-  tokens?: {
-    total?: number;
-    input?: number;
-    output?: number;
-    reasoning?: number;
-    cache?: { read?: number; write?: number };
-  };
+  tokens?: OpenCodeTokens;
+}
+
+/**
+ * Shape of the JSON blob in `session_message.data` -- where OpenCode 2.x writes
+ * turns instead of `message`. The role is the row's `type` column, not a field
+ * here, and the model is nested rather than flat.
+ */
+interface OpenCodeSessionMessageData {
+  cost?: number;
+  model?: { id?: string; providerID?: string };
+  time?: { created?: number; completed?: number };
+  tokens?: OpenCodeTokens;
+}
+
+interface OpenCodeTokens {
+  total?: number;
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cache?: { read?: number; write?: number };
 }
 
 interface MessageRow {
@@ -52,9 +66,27 @@ interface MessageRow {
   worktree: string | null;
 }
 
+/** One assistant turn, read out of either table and reduced to what a record needs. */
+interface Turn {
+  model: string | undefined;
+  provider: string | undefined;
+  /** Epoch ms from the payload; the row's own `time_created` is the fallback. */
+  created: number | undefined;
+  /** Working directory recorded in the payload itself (legacy `message` only). */
+  root: string | undefined;
+  cost: number | undefined;
+  tokens: OpenCodeTokens;
+}
+
 export interface OpenCodeCursor {
   /** Per store path: the highest `message.time_updated` already ingested. */
   stores: Record<string, number>;
+  /**
+   * Per store path: the highest `session_message.time_updated` already ingested.
+   * Absent in cursors written before OpenCode 2.x support, which reads as 0 and
+   * so reads the table once from the start.
+   */
+  sessionMessages?: Record<string, number>;
 }
 
 function isOpenCodeCursor(value: unknown): value is OpenCodeCursor {
@@ -127,16 +159,26 @@ export class OpenCodeCollector implements UsageCollector {
     }
 
     const prior = isOpenCodeCursor(options.cursor) ? options.cursor : { stores: {} };
-    const cursor: OpenCodeCursor = { stores: { ...prior.stores } };
+    const cursor: OpenCodeCursor = {
+      stores: { ...prior.stores },
+      sessionMessages: { ...prior.sessionMessages },
+    };
     const records: UsageRecord[] = [];
     const sessionTitles: SessionTitle[] = [];
 
     for (const store of targets) {
-      const since = prior.stores[store.path] ?? 0;
+      const since = {
+        message: prior.stores[store.path] ?? 0,
+        sessionMessage: prior.sessionMessages?.[store.path] ?? 0,
+      };
       const result = this.collectStore(store, since, options, notes);
       records.push(...result.records);
       sessionTitles.push(...result.titles);
-      cursor.stores[store.path] = Math.max(since, result.maxTimeUpdated);
+      cursor.stores[store.path] = Math.max(since.message, result.maxMessageUpdated);
+      cursor.sessionMessages![store.path] = Math.max(
+        since.sessionMessage,
+        result.maxSessionMessageUpdated,
+      );
     }
 
     return {
@@ -150,106 +192,212 @@ export class OpenCodeCollector implements UsageCollector {
 
   private collectStore(
     store: StoreInfo,
-    sinceTimeUpdated: number,
+    since: { message: number; sessionMessage: number },
     options: CollectOptions,
     notes: string[],
-  ): { records: UsageRecord[]; maxTimeUpdated: number; titles: SessionTitle[] } {
+  ): {
+    records: UsageRecord[];
+    maxMessageUpdated: number;
+    maxSessionMessageUpdated: number;
+    titles: SessionTitle[];
+  } {
     const opened = openReadOnly(store.path, notes);
     const records: UsageRecord[] = [];
     const titles: SessionTitle[] = [];
-    let maxTimeUpdated = sinceTimeUpdated;
+    let maxMessageUpdated = since.message;
+    let maxSessionMessageUpdated = since.sessionMessage;
     let unknownModel = 0;
 
+    // OpenCode 2.x moved new turns from `message` to `session_message` and new
+    // sessions from `session` to `session_v2`, leaving the old tables frozen. An
+    // install can hold either or both, so read whatever is present.
+    const tables = listTables(opened.db);
+    const sessionTables = SESSION_TABLES.filter((t) => tables.has(t));
+    const sessionColumn = (column: string): string => {
+      const candidates = sessionTables.map((_, i) => `s${i}.${column}`);
+      // COALESCE needs two arguments; a legacy-only install has one session table.
+      return candidates.length > 1
+        ? `COALESCE(${candidates.join(', ')})`
+        : (candidates[0] ?? 'NULL');
+    };
+    const sessionJoins = sessionTables
+      .map((t, i) => `LEFT JOIN ${t} s${i} ON s${i}.id = m.session_id`)
+      .join('\n');
+    const projectJoin = tables.has('project')
+      ? `LEFT JOIN project p ON p.id = ${sessionColumn('project_id')}`
+      : '';
+    const select = `SELECT m.id, m.session_id, m.time_created, m.time_updated, m.data,
+                  ${sessionColumn('parent_id')} AS parent_id,
+                  ${sessionColumn('directory')} AS directory,
+                  ${sessionColumn('version')} AS client_version,
+                  ${projectJoin ? 'p.worktree' : 'NULL'} AS worktree`;
+
+    const seen = new Set<string>();
+    const ingest = (row: MessageRow, source: string, turn: Turn | undefined): void => {
+      // Only assistant turns consume tokens. A missing `tokens` object means the
+      // turn produced no usage record -- not that usage was zero.
+      if (!turn) return;
+
+      const timestamp = msToIso(turn.created) ?? msToIso(row.time_created) ?? undefined;
+      if (!timestamp) {
+        notes.push(`Skipped OpenCode message ${row.id}: no usable timestamp.`);
+        return;
+      }
+      if (!isWithin(timestamp, options.since, options.until)) return;
+
+      const t = turn.tokens;
+      const inputTokens = num(t.input);
+      const outputTokens = num(t.output);
+      const reasoningTokens = num(t.reasoning);
+      const cacheReadTokens = num(t.cache?.read);
+      const cacheWriteTokens = num(t.cache?.write);
+
+      const model = turn.model ?? UNKNOWN_MODEL;
+      const provider = turn.provider ?? UNKNOWN_PROVIDER;
+      if (model === UNKNOWN_MODEL) unknownModel++;
+
+      const projectPath = turn.root ?? row.directory ?? row.worktree ?? undefined;
+
+      const record: UsageRecord = {
+        id: `opencode:msg:${row.id}`,
+        client: 'opencode',
+        provider,
+        model,
+        sessionId: row.session_id,
+        timestamp,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        reasoningTokens,
+        // OpenCode treats `reasoning` as a sibling of `output`, not a subset of
+        // it (verified: tokens.total === input + output + reasoning + cache.read),
+        // so reasoning IS part of our total here. Claude Code is the opposite.
+        totalTokens:
+          inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens,
+        // OpenCode reports cost directly. A reported 0 (free model) is a real
+        // zero, not missing data, so the basis stays 'reported'.
+        cost: num(turn.cost),
+        costBasis: 'reported',
+        currency: 'USD',
+        turnKind: row.parent_id ? 'subagent' : 'main',
+        source: `opencode.db:${source}`,
+      };
+      if (projectPath) record.projectPath = normaliseProjectPath(projectPath);
+      if (row.client_version) record.sourceVersion = row.client_version;
+
+      if (seen.has(record.id)) return;
+      seen.add(record.id);
+      records.push(record);
+    };
+
     try {
-      const rows = opened.db
-        .prepare(
-          `SELECT m.id, m.session_id, m.time_created, m.time_updated, m.data,
-                  s.parent_id, s.directory, s.version AS client_version,
-                  p.worktree
-             FROM message m
-             JOIN session s ON s.id = m.session_id
-             LEFT JOIN project p ON p.id = s.project_id
-            WHERE m.time_updated >= ?
-            ORDER BY m.time_updated ASC`,
-        )
-        .iterate(sinceTimeUpdated) as IterableIterator<MessageRow>;
+      if (tables.has('message')) {
+        const rows = opened.db
+          .prepare(
+            `${select}
+               FROM message m
+               ${sessionJoins}
+               ${projectJoin}
+              WHERE m.time_updated >= ?
+              ORDER BY m.time_updated ASC`,
+          )
+          .iterate(since.message) as IterableIterator<MessageRow>;
 
-      for (const row of rows) {
-        if (row.time_updated > maxTimeUpdated) maxTimeUpdated = row.time_updated;
+        for (const row of rows) {
+          if (row.time_updated > maxMessageUpdated) maxMessageUpdated = row.time_updated;
 
-        let data: OpenCodeMessageData;
-        try {
-          data = JSON.parse(row.data) as OpenCodeMessageData;
-        } catch {
-          notes.push(`Skipped OpenCode message ${row.id}: message.data is not valid JSON.`);
-          continue;
+          let data: OpenCodeMessageData;
+          try {
+            data = JSON.parse(row.data) as OpenCodeMessageData;
+          } catch {
+            notes.push(`Skipped OpenCode message ${row.id}: message.data is not valid JSON.`);
+            continue;
+          }
+          ingest(
+            row,
+            'message',
+            data.role === 'assistant' && data.tokens
+              ? {
+                  model: data.modelID,
+                  provider: data.providerID,
+                  created: data.time?.created,
+                  root: data.path?.root,
+                  cost: data.cost,
+                  tokens: data.tokens,
+                }
+              : undefined,
+          );
         }
-
-        // Only assistant turns consume tokens. A missing `tokens` object means the
-        // turn produced no usage record -- not that usage was zero.
-        if (data.role !== 'assistant' || !data.tokens) continue;
-
-        const timestamp = msToIso(data.time?.created) ?? msToIso(row.time_created) ?? undefined;
-        if (!timestamp) {
-          notes.push(`Skipped OpenCode message ${row.id}: no usable timestamp.`);
-          continue;
-        }
-        if (!isWithin(timestamp, options.since, options.until)) continue;
-
-        const t = data.tokens;
-        const inputTokens = num(t.input);
-        const outputTokens = num(t.output);
-        const reasoningTokens = num(t.reasoning);
-        const cacheReadTokens = num(t.cache?.read);
-        const cacheWriteTokens = num(t.cache?.write);
-
-        const model = data.modelID ?? UNKNOWN_MODEL;
-        const provider = data.providerID ?? UNKNOWN_PROVIDER;
-        if (model === UNKNOWN_MODEL) unknownModel++;
-
-        const projectPath = data.path?.root ?? row.directory ?? row.worktree ?? undefined;
-
-        const record: UsageRecord = {
-          id: `opencode:msg:${row.id}`,
-          client: 'opencode',
-          provider,
-          model,
-          sessionId: row.session_id,
-          timestamp,
-          inputTokens,
-          outputTokens,
-          cacheReadTokens,
-          cacheWriteTokens,
-          reasoningTokens,
-          // OpenCode treats `reasoning` as a sibling of `output`, not a subset of
-          // it (verified: tokens.total === input + output + reasoning + cache.read),
-          // so reasoning IS part of our total here. Claude Code is the opposite.
-          totalTokens:
-            inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens,
-          // OpenCode reports cost directly. A reported 0 (free model) is a real
-          // zero, not missing data, so the basis stays 'reported'.
-          cost: num(data.cost),
-          costBasis: 'reported',
-          currency: 'USD',
-          turnKind: row.parent_id ? 'subagent' : 'main',
-          source: 'opencode.db:message',
-        };
-        if (projectPath) record.projectPath = normaliseProjectPath(projectPath);
-        if (row.client_version) record.sourceVersion = row.client_version;
-
-        records.push(record);
       }
 
-      // Titles are read whole every sync: the session table is small (hundreds of
+      if (tables.has('session_message')) {
+        // The same turn can sit in both tables while a database straddles the
+        // switch, under the same id. `message` wins: it is the older, corroborated
+        // reading and it carries the payload's own working directory, so a turn
+        // keeps the project it was first attributed to.
+        const alreadyInMessage = tables.has('message')
+          ? `AND NOT EXISTS (SELECT 1 FROM message lm
+                              WHERE lm.id = m.id AND json_extract(lm.data, '$.tokens') IS NOT NULL)`
+          : '';
+        const rows = opened.db
+          .prepare(
+            `${select}
+               FROM session_message m
+               ${sessionJoins}
+               ${projectJoin}
+              WHERE m.type = 'assistant' AND m.time_updated >= ?
+                ${alreadyInMessage}
+              ORDER BY m.time_updated ASC`,
+          )
+          .iterate(since.sessionMessage) as IterableIterator<MessageRow>;
+
+        for (const row of rows) {
+          if (row.time_updated > maxSessionMessageUpdated) {
+            maxSessionMessageUpdated = row.time_updated;
+          }
+
+          let data: OpenCodeSessionMessageData;
+          try {
+            data = JSON.parse(row.data) as OpenCodeSessionMessageData;
+          } catch {
+            notes.push(
+              `Skipped OpenCode message ${row.id}: session_message.data is not valid JSON.`,
+            );
+            continue;
+          }
+          ingest(
+            row,
+            'session_message',
+            data.tokens
+              ? {
+                  model: data.model?.id,
+                  provider: data.model?.providerID,
+                  created: data.time?.created,
+                  root: undefined,
+                  cost: data.cost,
+                  tokens: data.tokens,
+                }
+              : undefined,
+          );
+        }
+      }
+
+      // Titles are read whole every sync: the session tables are small (hundreds of
       // rows), and a title changes without its messages changing, so the message
       // cursor cannot say which ones are stale. OpenCode names an untitled session
-      // "New session - <timestamp>"; that is a placeholder, not a title.
-      for (const s of opened.db
-        .prepare('SELECT id, title FROM session WHERE title IS NOT NULL')
-        .iterate() as IterableIterator<{ id: string; title: string }>) {
-        const title = s.title.trim();
-        if (title && !DEFAULT_TITLE.test(title)) titles.push({ sessionId: s.id, title });
+      // "New session - <timestamp>"; that is a placeholder, not a title. Tables are
+      // read oldest-schema first so a session present in both takes the newer title.
+      const byId = new Map<string, string>();
+      for (const table of [...sessionTables].reverse()) {
+        for (const s of opened.db
+          .prepare(`SELECT id, title FROM ${table} WHERE title IS NOT NULL`)
+          .iterate() as IterableIterator<{ id: string; title: string }>) {
+          const title = s.title.trim();
+          if (title && !DEFAULT_TITLE.test(title)) byId.set(s.id, title);
+        }
       }
+      for (const [sessionId, title] of byId) titles.push({ sessionId, title });
     } finally {
       opened.close();
     }
@@ -259,8 +407,18 @@ export class OpenCodeCollector implements UsageCollector {
         `${unknownModel} OpenCode message(s) record no model id; reported as "${UNKNOWN_MODEL}".`,
       );
     }
-    return { records, maxTimeUpdated, titles };
+    return { records, maxMessageUpdated, maxSessionMessageUpdated, titles };
   }
+}
+
+/** Newest schema first: a session present in both tables takes its row from `session_v2`. */
+const SESSION_TABLES = ['session_v2', 'session'] as const;
+
+function listTables(db: SqliteDatabase): Set<string> {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+    name: string;
+  }[];
+  return new Set(rows.map((r) => r.name));
 }
 
 interface OpenedDb {
