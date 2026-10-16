@@ -1,3 +1,4 @@
+import type { ContextReading } from './context-service.js';
 import {
   PLAN_LIMIT_WINDOWS,
   WINDOW_MS,
@@ -113,6 +114,8 @@ export interface StatusLineReport {
     breakCount: number;
     estimatedExtraCost?: number;
   };
+  /** The session's context size, when it is known. Absent otherwise -- never 0. */
+  context?: ContextReading;
 }
 
 export class PlanLimitService {

@@ -310,6 +310,55 @@ The window start is taken as `resets_at` minus 5 hours or 7 days. The documentat
 "rolling" windows and does not say how the reset instant moves, so readings within 5 minutes of
 the same reset are treated as one window.
 
+### 2.12 Context size: the live gauge — **[verified 2026-10-16]**
+
+Verified against all 242 transcripts under `~/.claude/projects` (Claude Code 2.1.2xx–2.1.281,
+37,578 assistant lines carrying `usage`). The reader is
+`src/collectors/claude-code/context-size.ts`; the hook payload is parsed in `hook-input.ts`.
+
+How many tokens the next message will re-read is the **input side of the last real main-chain
+assistant turn**: `message.usage.input_tokens + cache_read_input_tokens +
+cache_creation_input_tokens`. All three fields were present on every one of the 37,578 lines.
+`output_tokens` is not part of it. This is a gauge of the moment: it is read from the file on
+demand and never stored.
+
+Which entries are not the real context:
+
+- **Sidechain turns.** `isSidechain` is now written on every line: `false` on all 32,749
+  assistant lines of main transcripts, `true` on all 4,880 under `subagents/`. **This
+  contradicts §2.2**, which found it set on 0 of 21,574 lines in older versions. The collector
+  still classifies by path, which is right for both. The context reader, which is handed one
+  main transcript, skips `isSidechain === true` as well.
+- **`<synthetic>` turns**: 36 lines, every one with all-zero usage.
+- **All-zero usage** on any line (36 of 37,578, all of them the synthetic ones) is a
+  placeholder or replay (§2.3), not an empty context.
+
+Compaction writes a boundary line, not an assistant turn:
+
+```json
+{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","isMeta":false,
+ "compactMetadata":{"trigger":"manual","preTokens":84380,"postTokens":10079,"durationMs":42074, ...},
+ "sessionId":"…","timestamp":"…"}
+```
+
+(14 boundaries in the 242 transcripts; `trigger` was `manual` in the one examined.) **No new
+assistant turn follows it until the next reply**, so the last usage still describes the
+PRE-compact context: in the transcript examined, the last turn before the boundary read
+82,888 tokens (2 + 81,217 + 1,669) against `preTokens` of 84,380 and `postTokens` of 10,079.
+3 of the 242 transcripts ended on a boundary with no later assistant usage. A boundary after
+the last usage therefore means the size is **unknown**, not the old number.
+`compactMetadata.postTokens` is the size right after the compact, but it is an estimate of the
+summary and not what a turn measured, so it is not used.
+
+Transcripts are large (55 MB at the largest), so the reader looks at the **tail only**: 256 KB
+first, growing ×4 until a decisive line is found or the whole file has been read. The first line
+of a window that starts mid-file is cut and is discarded.
+
+The hook payload (`UserPromptSubmit`) and the status-line payload (§2.11) both carry
+`transcript_path`, the absolute path of the session's main transcript. Like the rest of that
+payload it is taken from Claude Code's documentation, not from captured bytes, and it is
+optional: without it the size is unknown.
+
 ---
 
 ## 3. Re-verifying

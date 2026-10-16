@@ -491,6 +491,64 @@ as unknown. The limits are shared by everything on your account (claude.ai, the 
 other machines); the token figures beside them cover only this machine's Claude Code turns.
 An API key has no such limits, and its payload carries none.
 
+### Get warned before context gets expensive
+
+Every message re-sends the whole conversation, so a session at 400k tokens of context re-reads
+400k tokens to answer "ok, thanks". `ai-usage report` finds that waste afterwards (the
+"re-reading context above 100k tokens" line in [`usage_report`](#start-here-usage_report)).
+Claude Code's own auto-compact only fires when the window is almost full, which is far too
+late to save anything. This warns while it is happening.
+
+Add both entries to `~/.claude/settings.json` (keep the keys already there):
+
+```json
+{
+  "statusLine": { "type": "command", "command": "ai-usage statusline" },
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "ai-usage hook", "timeout": 10 }] }
+    ]
+  }
+}
+```
+
+**The status line** gains a last segment, the size of the context the next message will
+re-read:
+
+```text
+... · cache 96% · ctx 77k        green: under 150k
+... · cache 96% · ctx 180k       yellow: 150k or more, worth watching
+... · cache 96% · ctx 260k · compact now      red: 250k or more
+```
+
+**The hook** runs before each prompt. Below 250k it prints nothing. At or above it, it tells
+Claude the size and that every turn re-sends all of it, and asks Claude to briefly suggest
+`/compact` (or `/clear`, for an unrelated task) before starting the new work, and shows you
+a one-line `systemMessage` saying the same. It never blocks or edits your prompt: it always
+exits 0, so even a broken setting cannot eat what you typed.
+
+**Changing the limits.** Both commands take `--ctx-warn` and `--ctx-limit`, as `150k`, `1.5m`
+or a plain count, and read `AI_USAGE_CTX_WARN` and `AI_USAGE_CTX_LIMIT` when no flag is given.
+A flag overrides the environment, which overrides the defaults of 150k and 250k:
+
+```json
+{ "type": "command", "command": "ai-usage hook --ctx-limit 200k", "timeout": 10 }
+```
+
+Use the same limits on both entries, or the line and the hook will disagree about when to
+compact. `--no-color` or `NO_COLOR=1` drops the status line's colour.
+
+**What it measures.** The size is the last real assistant turn in the session's transcript:
+fresh input plus cache reads plus cache writes, the same input side that `usage_report` counts
+as context carry. Subagent and placeholder turns are skipped. Right after `/compact` no turn
+has measured the new, smaller context yet, so the segment is **left out until the next reply**
+rather than showing the old size. It is left out too when the transcript cannot be read.
+
+**What it does not do.** It warns; it never compacts or clears anything by itself. It reads
+only the last few hundred kilobytes of one transcript, takes the token counts from it, and
+stores nothing. The hook opens no database and syncs nothing, so it adds only a few tens of
+milliseconds to a prompt.
+
 Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
 
 An argument a tool does not declare is **rejected by name**, not ignored. Before 0.9.0,
@@ -557,6 +615,7 @@ ai-usage session ID  # one session in detail
 ai-usage daily       # per-day breakdown
 ai-usage counterfactual  # these tokens on another model (--target-models a,b)
 ai-usage verify      # re-read the sources and diff them against the local database
+ai-usage hook        # Claude Code UserPromptSubmit hook: warns when context is large
 ```
 
 Add `--json` to any command for machine-readable output.

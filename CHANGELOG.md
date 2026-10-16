@@ -7,6 +7,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A live context-size warning.** Every turn re-sends the whole conversation, so a long
+  session quietly re-reads hundreds of thousands of tokens per message, and Claude Code's own
+  auto-compact only fires when the window is nearly full. `ai-usage statusline` now ends with
+  the session's context size -- `ctx 77k` in green, yellow from 150k, and a red
+  `ctx 260k · compact now` from 250k -- read from the tail of the session's transcript.
+  Nothing is shown while the size is unknown, which includes the moment right after `/compact`,
+  before a new turn has measured the smaller context.
+- **`ai-usage hook`, for Claude Code's `UserPromptSubmit` hook.** At or above the compact
+  limit it tells Claude the size and that every turn re-sends it, and asks Claude to suggest
+  `/compact` (or `/clear`) before new work; below it, it prints nothing. It opens no database
+  and always exits 0, so it can never block a prompt.
+- `--ctx-warn` and `--ctx-limit` (`150k`, `1.5m` or a plain count), or `AI_USAGE_CTX_WARN` and
+  `AI_USAGE_CTX_LIMIT`, change the 150k and 250k defaults. The README has the `settings.json`
+  to add.
+
+### Changed
+
+- The CLI entry point is now a small dispatcher in front of `main.ts`, so the hook, which runs
+  before every prompt, starts without loading the database driver and every service.
+
 ## [0.13.0] - 2026-10-12
 
 On a Pro or Max plan, the number that decides your day is how much of the 5-hour and weekly

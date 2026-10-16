@@ -59,6 +59,18 @@ export {
   type PlanLimitWindow,
   type StatusLineInput,
 } from './collectors/claude-code/statusline.js';
+export { readContextSize } from './collectors/claude-code/context-size.js';
+export { parseHookTranscriptPath } from './collectors/claude-code/hook-input.js';
+export {
+  ContextService,
+  DEFAULT_CONTEXT_LIMITS,
+  contextLevel,
+  parseTokenCount,
+  resolveContextLimits,
+  type ContextLevel,
+  type ContextLimits,
+  type ContextReading,
+} from './services/context-service.js';
 export {
   PlanLimitRepository,
   type StoredPlanLimitReading,
