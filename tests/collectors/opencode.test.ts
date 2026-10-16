@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { realpathSync, rmSync } from 'node:fs';
 import { OpenCodeCollector } from '../../src/collectors/opencode/collector.js';
 import { buildOpenCodeDb, tempDir } from '../fixtures/build-fixtures.js';
 
@@ -510,18 +510,20 @@ describe('OpenCodeCollector', () => {
         ],
       });
       process.env.AI_USAGE_OPENCODE_DB = dbPath;
+      // The cursor is keyed by canonical path (macOS temp dirs sit behind a symlink).
+      const storeKey = realpathSync(dbPath);
       const collector = new OpenCodeCollector();
 
       const first = await collector.collect({});
       expect(first.records).toHaveLength(3);
       expect(first.cursor).toEqual({
-        stores: { [dbPath]: 1_000 },
-        sessionMessages: { [dbPath]: 6_000 },
+        stores: { [storeKey]: 1_000 },
+        sessionMessages: { [storeKey]: 6_000 },
       });
 
       // A cursor written before 2.x support has no sessionMessages watermark; it
       // must not hide the newer table.
-      const old = await collector.collect({ cursor: { stores: { [dbPath]: 1_000 } } });
+      const old = await collector.collect({ cursor: { stores: { [storeKey]: 1_000 } } });
       expect(old.records.map((r) => r.id)).toContain('opencode:msg:v2-a');
       expect(old.records.map((r) => r.id)).toContain('opencode:msg:v2-b');
 
