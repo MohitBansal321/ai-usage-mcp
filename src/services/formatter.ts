@@ -12,6 +12,7 @@ import type {
   SummaryReport,
   UnmatchedScope,
 } from './aggregation-service.js';
+import type { ContextReading } from './context-service.js';
 import type { CostService } from './cost-service.js';
 import type { Comparison, Delta } from './comparison.js';
 import type { BudgetReport, Projection } from './budget-service.js';
@@ -1226,7 +1227,13 @@ export function formatPlanUsage(report: PlanUsageReport, costService: CostServic
   return out.join('\n');
 }
 
-const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', dim: '\x1b[2m', reset: '\x1b[0m' };
+const ANSI = {
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  dim: '\x1b[2m',
+  reset: '\x1b[0m',
+};
 
 /**
  * One line for Claude Code's status bar.
@@ -1282,5 +1289,46 @@ export function formatStatusLine(
     if (s.hitRate !== undefined || s.breakCount > 0) segments.push(text);
   }
 
+  if (report.context) {
+    const { tokens, level } = report.context;
+    const size = `ctx ${contextSize(tokens)}`;
+    if (level === 'compact') segments.push(paint(ANSI.red, `${size} \u00b7 compact now`));
+    else segments.push(paint(level === 'warn' ? ANSI.yellow : ANSI.green, size));
+  }
+
   return segments.join(' \u00b7 ');
+}
+
+/** `77k`, `1.2M`: a status line has no room for the exact count. */
+function contextSize(n: number): string {
+  if (n < 1_000) return String(n);
+  const k = Math.round(n / 1_000);
+  if (k < 1_000) return `${k}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * What the UserPromptSubmit hook prints, or undefined when it should stay quiet
+ * (below the compact limit; the hook warns only when compacting is advised, and
+ * the yellow band is for the status line).
+ *
+ * `additionalContext` is read by Claude, so it says what the size costs and what
+ * to do about it; `systemMessage` is the one line the user sees.
+ */
+export function formatContextHook(reading: ContextReading | undefined): string | undefined {
+  if (!reading || reading.level !== 'compact') return undefined;
+  const size = contextSize(reading.tokens);
+  const limit = contextSize(reading.compactAt);
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext:
+        `ai-usage context watch: this session's context is about ${size} tokens, at or above ` +
+        `the ${limit} compact limit. Every turn re-sends the whole conversation, so each ` +
+        `further message re-reads all ${size} tokens. Before starting new work, briefly ` +
+        `suggest to the user that they run /compact (or /clear if the next task is unrelated ` +
+        `to this conversation), then continue with their request.`,
+    },
+    systemMessage: `ai-usage: context is ${size} tokens (limit ${limit}). Consider /compact before continuing.`,
+  });
 }

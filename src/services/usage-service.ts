@@ -26,6 +26,7 @@ import {
   type SessionDetail,
   type SummaryReport,
 } from './aggregation-service.js';
+import { ContextService, type ContextLimits, type ContextReading } from './context-service.js';
 import { CostService } from './cost-service.js';
 import { ExportService, type ExportOptions, type ExportResult } from './export-service.js';
 import { LifecycleService } from './lifecycle-service.js';
@@ -125,6 +126,7 @@ export class UsageService {
   private readonly lifecycleService: LifecycleService;
   private readonly repriceService: RepriceService;
   private readonly planLimitService: PlanLimitService;
+  private readonly contextService = new ContextService();
   private readonly collectors: UsageCollector[];
 
   private constructor(
@@ -409,10 +411,17 @@ export class UsageService {
    * unreadable is no data. Returns the session being rendered, and how many new
    * readings were stored.
    */
-  recordStatusLine(raw: string, now = new Date()): { sessionId?: string; written: number } {
+  recordStatusLine(
+    raw: string,
+    now = new Date(),
+  ): { sessionId?: string; transcriptPath?: string; written: number } {
     const input = parseStatusLineInput(raw);
     const written = this.planLimitService.record(input, now);
-    return { ...(input.sessionId ? { sessionId: input.sessionId } : {}), written };
+    return {
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.transcriptPath ? { transcriptPath: input.transcriptPath } : {}),
+      written,
+    };
   }
 
   /**
@@ -427,10 +436,15 @@ export class UsageService {
 
   /**
    * What a status line shows: current plan-limit readings, today's totals, and
-   * the cache in the session being rendered. Reads only -- record the payload
-   * with `recordStatusLine` first.
+   * the cache in the session being rendered, and -- given its transcript and the
+   * limits -- how large that session's context is. Reads only -- record the
+   * payload with `recordStatusLine` first.
    */
-  statusLine(sessionId: string | undefined, now = new Date()): StatusLineReport {
+  statusLine(
+    sessionId: string | undefined,
+    now = new Date(),
+    context?: { transcriptPath: string | undefined; limits: ContextLimits },
+  ): StatusLineReport {
     const { filter } = this.filterFor({});
     const limits: StatusLineReport['limits'] = [];
     for (const w of this.planLimitService.report(filter, now).windows) {
@@ -460,7 +474,20 @@ export class UsageService {
         };
       }
     }
+    const reading = context && this.contextSize(context.transcriptPath, context.limits);
+    if (reading) report.context = reading;
     return report;
+  }
+
+  /**
+   * The session's context size against the limits, read from its transcript, or
+   * undefined when unknown. Touches no database and never throws.
+   */
+  contextSize(
+    transcriptPath: string | undefined,
+    limits: ContextLimits,
+  ): ContextReading | undefined {
+    return this.contextService.read(transcriptPath, limits);
   }
 
   /**

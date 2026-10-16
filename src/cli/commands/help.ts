@@ -20,7 +20,11 @@ Commands:
   limits                Pro/Max 5-hour and weekly limit usage   (same as plan_usage)
   statusline            One line for Claude Code's status bar; also keeps the
                         plan-limit readings \`limits\` reports. Reads Claude Code's
-                        status-line JSON on stdin.
+                        status-line JSON on stdin. Ends with the session's context
+                        size (ctx 77k), yellow from --ctx-warn, red from --ctx-limit.
+  hook                  Claude Code UserPromptSubmit hook: warns Claude and you when the
+                        session's context is at or above --ctx-limit, silent otherwise.
+                        Reads the hook JSON on stdin, opens no database, always exits 0.
   export                One row per stored turn, as CSV or JSON Lines
   import <file>         Merge JSON Lines from another machine (idempotent)
   prune                 Remove records older than a date (dry run without --yes)
@@ -63,6 +67,10 @@ List options (sessions, models, projects, clients):
   --full                Ignore saved sync cursors and re-read everything
   --json                Emit JSON instead of text
   --no-color            statusline only: no ANSI colour (NO_COLOR=1 does the same)
+  --ctx-warn <n>        statusline, hook: context size where \`ctx\` turns yellow. Takes 150k,
+                        1.5m or 150000. Default 150k; AI_USAGE_CTX_WARN sets it too.
+  --ctx-limit <n>       statusline, hook: context size where compacting is advised (red, and
+                        the hook speaks up). Default 250k; AI_USAGE_CTX_LIMIT sets it too.
 
 Scripting options:
   --field <path>        Print ONE value from the JSON result and nothing else, so a shell
@@ -118,6 +126,11 @@ Examples:
 Status line: add this to ~/.claude/settings.json, after \`npm i -g ai-usage-mcp\`:
   "statusLine": { "type": "command", "command": "ai-usage statusline" }
 Claude Code passes it your plan-limit usage; \`ai-usage limits\` reports what it kept.
+
+Context warning: every turn re-sends the whole conversation, so a long session gets costly.
+Add this beside statusLine to be told before it does (the status line shows \`ctx 77k\`):
+  "hooks": { "UserPromptSubmit": [ { "hooks": [
+    { "type": "command", "command": "ai-usage hook", "timeout": 10 } ] } ] }
 
 Notes:
   \`status\` also checks npm for a newer version, at most once a day. It sends no

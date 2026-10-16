@@ -32,6 +32,8 @@ export interface PlanLimitReading {
 
 export interface StatusLineInput {
   sessionId?: string;
+  /** The session's transcript, from which the context size is read. */
+  transcriptPath?: string;
   /** Claude Code's version, kept beside each reading so odd data can be traced. */
   version?: string;
   /** Empty when the payload carried none -- an API-key user, or no response yet. */
@@ -46,6 +48,7 @@ const windowSchema = z.object({
 const payload = z.object({
   session_id: z.string().min(1).optional().catch(undefined),
   version: z.string().min(1).optional().catch(undefined),
+  transcript_path: z.string().min(1).optional().catch(undefined),
   rate_limits: z
     .object({
       // `.catch` per window: one malformed window must not throw away the other.
@@ -73,6 +76,7 @@ export function parseStatusLineInput(raw: string): StatusLineInput {
 
   const input: StatusLineInput = { readings: [] };
   if (parsed.data.session_id) input.sessionId = parsed.data.session_id;
+  if (parsed.data.transcript_path) input.transcriptPath = parsed.data.transcript_path;
   if (parsed.data.version) input.version = parsed.data.version;
   for (const name of PLAN_LIMIT_WINDOWS) {
     const w = parsed.data.rate_limits?.[name];

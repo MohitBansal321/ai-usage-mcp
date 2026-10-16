@@ -1,3 +1,4 @@
+import { parseTokenCount } from '../services/context-service.js';
 import { EXPORT_FORMATS, type ExportFormat } from '../services/export-service.js';
 import {
   BUDGET_BASES,
@@ -48,6 +49,10 @@ export interface ParsedArgs {
   json: boolean;
   /** statusline only: no ANSI colour. `NO_COLOR` in the environment does the same. */
   noColor: boolean;
+  /** statusline and hook: context size, in tokens, from which the size turns yellow. */
+  ctxWarn?: number;
+  /** statusline and hook: context size, in tokens, from which compacting is advised. */
+  ctxLimit?: number;
   help: boolean;
 }
 
@@ -129,6 +134,14 @@ function toPositiveInt(flag: string, raw: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0)
     throw new ArgError(`${flag} expects a positive integer, got "${raw}".`);
+  return n;
+}
+
+/** `150k`, `1.5m` or `150000`, as a token count. */
+function toTokenCount(flag: string, raw: string): number {
+  const n = parseTokenCount(raw);
+  if (n === undefined)
+    throw new ArgError(`${flag} expects a token count such as 150k, 1.5m or 150000, got "${raw}".`);
   return n;
 }
 
@@ -323,6 +336,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--no-color':
         args.noColor = true;
         break;
+      case '--ctx-warn':
+        args.ctxWarn = toTokenCount('--ctx-warn', requireValue('--ctx-warn', rest.shift()));
+        break;
+      case '--ctx-limit':
+        args.ctxLimit = toTokenCount('--ctx-limit', requireValue('--ctx-limit', rest.shift()));
+        break;
       case '-h':
       case '--help':
         args.help = true;
@@ -348,6 +367,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         'There is no default: reported and estimated cost are separate figures that are never ' +
         'summed, so a default would silently ignore every record priced the other way. ' +
         'Example: ai-usage stats --today --field overall.cost.estimated --fail-over 25',
+    );
+
+  // Both given, so a contradiction is the caller's to fix. (One given against a
+  // default or the environment is reconciled quietly by `resolveContextLimits`.)
+  if (args.ctxWarn !== undefined && args.ctxLimit !== undefined && args.ctxWarn > args.ctxLimit)
+    throw new ArgError(
+      `--ctx-warn must not exceed --ctx-limit, got ${args.ctxWarn} and ${args.ctxLimit}.`,
     );
 
   // Checked here rather than per-flag, because the ordering is only knowable
