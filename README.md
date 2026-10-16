@@ -1433,11 +1433,13 @@ Issues and pull requests are welcome. Two expectations specific to this project:
    [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) in the same change. Both source formats are
    internal and unversioned, so that file is the only record of what was actually observed.
 
-`npm run check` runs everything CI runs.
+`npm run check` runs everything CI runs. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the
+layout and the pull request checklist.
 
 ## Links
 
 - [CHANGELOG.md](CHANGELOG.md) — release history
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, layout and how to send a change
 - [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) — verified on-disk formats, and the documented
   assumptions that proved wrong
 - [docs/PUBLISHING.md](docs/PUBLISHING.md) — release process

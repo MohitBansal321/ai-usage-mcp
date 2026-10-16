@@ -42,6 +42,18 @@ body:
       required: true
 
   - type: input
+    id: client-version
+    attributes:
+      label: Client and its version
+      description: >
+        Which agent wrote the data, and its version (`claude --version`, `opencode --version`).
+        Both store their data in internal formats that change between versions, so this is
+        often the whole story.
+      placeholder: OpenCode 2.0.30, Claude Code 2.1.251
+    validations:
+      required: true
+
+  - type: input
     id: env
     attributes:
       label: OS and Node version
