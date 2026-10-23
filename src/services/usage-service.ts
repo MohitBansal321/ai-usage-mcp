@@ -289,6 +289,11 @@ export class UsageService {
     return repriced.records > 0 ? { ...report, repriced } : report;
   }
 
+  /** Whether any collector has ever synced into this database. */
+  hasSynced(): boolean {
+    return this.syncRepo.all().some((s) => s.lastSyncAt !== undefined);
+  }
+
   /**
    * Syncs only when the newest sync of any collector is older than `maxAgeMs`.
    *

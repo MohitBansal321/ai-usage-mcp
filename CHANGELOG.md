@@ -26,6 +26,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   how an argument is used, which takes `tools/list` from 29,005 to 25,177 characters (about
   7,250 to 6,300 tokens). No tool, argument or default changed.
 
+### Fixed
+
+- **The first CLI command on a new machine answered "0 turns".** The CLI never syncs on its
+  own, so `npx -p ai-usage-mcp ai-usage report`, the no-install route the README offers, always
+  met an empty database and reported no usage on a machine full of it. A command that reads
+  stored usage now syncs once first when nothing has ever been synced, and says so on stderr.
+  Every later run, and stdout on that first run, is unchanged.
+
 ## [0.15.0] - 2026-10-23
 
 Two things in this release. `ai-usage status` now tells you when the status line and prompt

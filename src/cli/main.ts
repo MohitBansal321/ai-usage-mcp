@@ -81,6 +81,28 @@ function emit(args: ParsedArgs, text: string, data: unknown): boolean {
 /** Exit 1 on a breached threshold, 0 otherwise -- the value a script branches on. */
 const THRESHOLD_EXIT = 1;
 
+/**
+ * Commands that only read the local database. The CLI otherwise never syncs on
+ * its own, so on a database no sync has ever filled -- the first
+ * `npx -p ai-usage-mcp ai-usage report` anyone runs -- these answered "0 turns"
+ * about a machine full of usage. They sync once first instead.
+ */
+const READS_STORED_USAGE = new Set([
+  'stats',
+  'models',
+  'clients',
+  'projects',
+  'sessions',
+  'session',
+  'budget',
+  'export',
+  'breakdown',
+  'limits',
+  'report',
+  'daily',
+  'counterfactual',
+]);
+
 /** Same knob and default as the MCP server's freshness gate. */
 const STATUSLINE_FRESHNESS_MS = Number(process.env.AI_USAGE_FRESHNESS_MS ?? 30_000);
 
@@ -108,6 +130,15 @@ async function run(argv: string[]): Promise<number> {
 
   const service = UsageService.open();
   try {
+    if (READS_STORED_USAGE.has(args.command) && !service.hasSynced()) {
+      // stderr, so stdout stays exactly what the same command prints on any
+      // later run, and what the MCP tools return.
+      process.stderr.write(
+        'ai-usage: first run -- reading your Claude Code and OpenCode history into the ' +
+          'local database.\nLater commands read what is stored; `ai-usage sync` refreshes it.\n',
+      );
+      await service.sync();
+    }
     switch (args.command) {
       case 'status': {
         // The registry check runs alongside the local status work rather than
