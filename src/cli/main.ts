@@ -134,7 +134,7 @@ async function run(argv: string[]): Promise<number> {
       // stderr, so stdout stays exactly what the same command prints on any
       // later run, and what the MCP tools return.
       process.stderr.write(
-        'ai-usage: first run -- reading your Claude Code and OpenCode history into the ' +
+        "ai-usage: first run -- reading your coding agents' history into the " +
           'local database.\nLater commands read what is stored; `ai-usage sync` refreshes it.\n',
       );
       await service.sync();
