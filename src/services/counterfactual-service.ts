@@ -97,7 +97,7 @@ export class CounterfactualService {
    * @param models Target models. Defaults to every model the pricing table knows.
    */
   counterfactual(filter: UsageFilter, label: string, models?: string[]): CounterfactualReport {
-    const groups = this.repo.repriceGroups(filter);
+    const groups = this.repo.repriceGroups(filter, this.costService.longContextThresholds());
     const overall = this.repo.totals(filter);
 
     const requested = models?.length ? models : this.costService.pricedModels();
@@ -129,6 +129,7 @@ export class CounterfactualService {
           // The premium only applies where the target model offers fast mode;
           // CostService falls back to standard rates when it does not.
           ...(group.speed ? { speed: group.speed } : {}),
+          promptTokens: group.maxPromptTokens,
         });
         if (estimate.costBasis !== 'estimated' || estimate.estimatedCost === undefined) {
           unpricedGroups += 1;
@@ -196,6 +197,7 @@ export class CounterfactualService {
         cacheWrite5mTokens: group.cacheWrite5mTokens,
         cacheWrite1hTokens: group.cacheWrite1hTokens,
         ...speed,
+        promptTokens: group.maxPromptTokens,
       });
       // Every cache token folded into input, and no cache tokens left to price:
       // without a cache those bytes are ordinary input, at the ordinary rate.
@@ -204,6 +206,7 @@ export class CounterfactualService {
         inputTokens: group.inputTokens + group.cacheReadTokens + group.cacheWriteTokens,
         outputTokens: billableOutput,
         ...speed,
+        promptTokens: group.maxPromptTokens,
       });
       if (withCache.estimatedCost === undefined || withoutCache.estimatedCost === undefined) {
         continue;
@@ -250,8 +253,8 @@ export class CounterfactualService {
 
     if (groups.some((g) => g.speed === 'fast')) {
       caveats.push(
-        'Some turns ran in fast mode, which bills at premium rates and is offered on Opus 5 ' +
-          'and Opus 4.8 only. Scenarios for a model without fast rates price those turns at ' +
+        'Some turns ran in fast mode, which bills at premium rates and is offered on Opus 5.5, ' +
+          'Opus 5 and Opus 4.8 only. Scenarios for a model without fast rates price those turns at ' +
           'standard rates, so they compare cost without comparing latency.',
       );
     }

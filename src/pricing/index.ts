@@ -20,6 +20,7 @@ export type {
   PricingTable,
   ModelPrice,
   CacheMultipliers,
+  LongContextPrice,
   PricingOverride,
   PricingMode,
 } from './types.js';
@@ -133,6 +134,25 @@ function readModelPrice(path: string, model: string, value: unknown): ModelPrice
 
   const cache = readCacheMultipliers(path, `models["${model}"].cache`, value.cache);
   if (cache) price.cache = cache;
+
+  if (value.longContext !== undefined) {
+    const where = `models["${model}"].longContext`;
+    if (!isRecord(value.longContext)) fail(path, `${where} must be an object.`);
+    const long = value.longContext;
+    const above = long.aboveTokens;
+    if (typeof above !== 'number' || !Number.isInteger(above) || above <= 0)
+      fail(path, `${where}.aboveTokens must be a whole number of tokens > 0.`);
+    for (const key of ['input', 'output'] as const) {
+      const n = long[key];
+      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0)
+        fail(path, `${where}.${key} must be a number >= 0 (USD per 1,000,000 tokens).`);
+    }
+    price.longContext = {
+      aboveTokens: above,
+      input: long.input as number,
+      output: long.output as number,
+    };
+  }
   return price;
 }
 

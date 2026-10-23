@@ -329,8 +329,16 @@ Verified 2026-09-28 against 85 transcripts (Claude Code 2.1.2xx):
   locally for display only and left out of `export`.
 - **`gitBranch`** is a top-level field on ordinary transcript lines, including subagent
   transcripts (1,516 of 2,089 lines in the largest transcript; the rest are metadata lines). It
-  can change mid-session, so it is stored per turn. `HEAD` means a detached checkout and is
-  stored as recorded.
+  can change mid-session, so it is stored per turn, as recorded.
+- **`HEAD` does not mean a detached checkout** (corrected 2026-10-23; this doc used to say it
+  did). Claude Code writes `HEAD` whenever it cannot name a branch, and it reads the branch of
+  the directory the session was **started** in, not the line's `cwd`. On the development
+  machine, all 98 sessions started in a directory that is not a git repo carry only `HEAD`,
+  including lines whose `cwd` had moved into a subdirectory that is a repo on `main`. A repo
+  created mid-way shows the switch: in one project every line is `HEAD` until the repo's
+  initial commit (2026-10-14 11:07Z) and `main` after it. A genuine detached checkout also
+  writes `HEAD`, and the stored value cannot tell the cases apart, so it is displayed as
+  `no branch`. It was 82,309 of about 110,000 branch-bearing lines on that machine.
 - Transcripts deleted by `cleanupPeriodDays` cannot be re-read, so turns collected before this
   was stored keep no branch: on the development machine 6,338 of 10,948 Claude Code turns have
   one.

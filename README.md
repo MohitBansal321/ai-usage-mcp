@@ -1024,7 +1024,7 @@ reads exactly like free:
 ```text
 opencode  --  6,841 records, 280 sessions
   Cost (reported by client, exact): $0.48  [6,841 records]
-  No estimate attempted for 6,813 record(s) -- no price in table builtin-2026-09-26 for
+  No estimate attempted for 6,813 record(s) -- no price in table builtin-2026-10-23 for
   that model: big-pickle, gpt-5.5, z-ai/glm-5.2 and 16 more. Any $0 above covers only what
   was reported, not those records.
 ```
@@ -1042,8 +1042,8 @@ Reported and estimated costs are shown on separate lines and must not be added t
 
 Cache tokens are priced properly rather than lumped in with input:
 
-- cache **read** bills at 0.1× the input rate on most models, 0.05× on Opus 5.5 and 0.025× on
-  Fable 5.1 / Mythos 5.1
+- cache **read** bills at 0.1× the input rate on most models, 0.05× on Opus 5.5 / Sonnet 5.5
+  and 0.025× on Fable 5.1 / Mythos 5.1
 - cache **write** bills at 1.25× (5-minute TTL) or **2×** (1-hour TTL)
 
 The two cache-write TTLs are tracked separately because both occur heavily in practice — on
@@ -1055,10 +1055,14 @@ TTL, so averaging the rates would have understated cost substantially.
 Pricing is versioned data (`src/pricing/tables/`), one file per provider, each keeping its
 own capture date:
 
-| Table                  | Models                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------- |
-| `anthropic-2026-09-26` | Fable 5.1 / 5, Mythos 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6, Sonnet 5 / 4.6, Haiku 4.5 |
-| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                                          |
+| Table                  | Models                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `anthropic-2026-10-23` | Fable 5.1 / 5, Mythos 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6, Sonnet 5.5 / 5 / 4.6, Haiku 5.5 / 4.5 |
+| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                                                      |
+
+Haiku 5.5 has two rate cards: a request whose prompt (input, cache reads and cache writes
+together) is over 100,000 tokens pays 5× the short-prompt rates. Each stored turn is one
+request, so each is priced on its own prompt.
 
 They are composed into one table, reported by `ai-usage status` as `builtin-<date>` with
 every provider's provenance behind it. Two tables may not price the same model id — that
@@ -1083,7 +1087,8 @@ not have yet:
 - **It takes a model only if every rate is there** -- input, output, cache read, both
   cache-write TTLs. A missing rate is not borrowed from a default, because newer models are
   exactly where the defaults go wrong (Opus 5.5 reads cache at 0.05×, not 0.1×). A model
-  with a long-context price tier, which the table cannot express, is left unpriced.
+  with a long-context price tier is left unpriced: what LiteLLM counts as the prompt for its
+  tier is not documented, and a built-in table or your override states it explicitly.
 - **It is labelled.** Estimates it contributes to cite a table version like
   `builtin-2026-09-26+litellm-2026-10-02`, and `ai-usage status` lists the models it priced:
 
@@ -1149,6 +1154,11 @@ way to add a missing provider was to lose every price you already had.)
       // Optional: cache rates for THIS model, when the provider's differ from the
       // table default. DeepSeek's cache-hit rate is 0.02x its input rate, not 0.1x.
       "cache": { "read": 0.0333, "write5m": 1.0, "write1h": 1.0 },
+
+      // Optional: a second rate card for a request whose prompt (input + cache
+      // read + cache write) is OVER aboveTokens. The cache multipliers apply to
+      // whichever input rate the request gets. Fast-mode rates ignore it.
+      "longContext": { "aboveTokens": 200000, "input": 1.32, "output": 3.96 },
     },
   },
 }

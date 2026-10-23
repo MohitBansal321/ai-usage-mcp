@@ -7,6 +7,7 @@ export {
 export {
   CostService,
   billableOutputTokens,
+  promptTokensOf,
   ESTIMATED_CLIENTS,
   REASONING_PLACEMENT,
 } from './services/cost-service.js';

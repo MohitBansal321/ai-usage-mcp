@@ -64,6 +64,25 @@ export interface EstimateInput {
   cacheWrite1hTokens?: number;
   /** `usage.speed` from the transcript: 'fast' bills at premium rates. */
   speed?: string;
+  /**
+   * The whole prompt of the ONE request being priced -- see {@link promptTokensOf}.
+   * It picks a model's long-context rate card, so a model that has one cannot be
+   * priced without it: summed tokens from many requests would land every group
+   * in the long tier.
+   */
+  promptTokens?: number;
+}
+
+/**
+ * A request's prompt length as Anthropic bills it: every input token, cache
+ * reads and cache writes included.
+ */
+export function promptTokensOf(t: {
+  inputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+}): number {
+  return t.inputTokens + (t.cacheReadTokens ?? 0) + (t.cacheWriteTokens ?? 0);
 }
 
 export interface Estimate {
@@ -150,6 +169,18 @@ export class CostService {
     return Boolean(this.loaded.table.models[model]);
   }
 
+  /**
+   * Every prompt length at which some model changes rate card, ascending. A
+   * caller pricing aggregates splits its groups at these, so that no group
+   * straddles a tier and each can be priced at its own longest prompt.
+   */
+  longContextThresholds(): number[] {
+    const above = Object.values(this.loaded.table.models)
+      .map((p) => p.longContext?.aboveTokens)
+      .filter((n): n is number => n !== undefined);
+    return [...new Set(above)].sort((a, b) => a - b);
+  }
+
   /** Every model the table can price, so a caller need not hardcode a list. */
   pricedModels(): string[] {
     return Object.keys(this.loaded.table.models).sort();
@@ -167,10 +198,28 @@ export class CostService {
       };
     }
 
-    const rates =
-      input.speed === 'fast' && price.fast
-        ? price.fast
-        : { input: price.input, output: price.output };
+    const fast = input.speed === 'fast' ? price.fast : undefined;
+    let rates = fast ?? { input: price.input, output: price.output };
+    // Fast mode is one rate across the whole context window, so a long-context
+    // card only ever replaces the standard rates.
+    const long = fast ? undefined : price.longContext;
+    let longPrompt = false;
+    if (long) {
+      if (input.promptTokens === undefined) {
+        return {
+          costBasis: 'unavailable',
+          note:
+            `Model "${input.model}" is priced by prompt length (a higher rate above ` +
+            `${long.aboveTokens.toLocaleString('en-US')} tokens), and this figure does not ` +
+            `say how long each request's prompt was. Cost reported as unavailable rather ` +
+            `than estimated.`,
+        };
+      }
+      if (input.promptTokens > long.aboveTokens) {
+        rates = { input: long.input, output: long.output };
+        longPrompt = true;
+      }
+    }
 
     const perMillion = (tokens: number, rate: number) => (tokens / 1_000_000) * rate;
     // A model may carry its own cache rates; the table default applies only to
@@ -200,7 +249,13 @@ export class CostService {
         `${unsplit} cache-write token(s) had no TTL breakdown; priced at the 5-minute rate.`,
       );
     }
-    if (input.speed === 'fast' && price.fast) notes.push('Priced at fast-mode premium rates.');
+    if (fast) notes.push('Priced at fast-mode premium rates.');
+    if (longPrompt && long) {
+      notes.push(
+        `Priced at long-context rates: the prompt was over ` +
+          `${long.aboveTokens.toLocaleString('en-US')} tokens.`,
+      );
+    }
 
     const estimate: Estimate = { costBasis: 'estimated', estimatedCost: cost };
     if (notes.length) estimate.note = notes.join(' ');

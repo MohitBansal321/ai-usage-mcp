@@ -145,6 +145,25 @@ describe('CounterfactualService', () => {
     expect(opus.estimatedCost).toBeCloseTo(75, 6);
   });
 
+  it('prices a prompt-length-tiered target per request, not on the summed group', () => {
+    // Two 60k-prompt turns: each is short, though together they pass 100k. And
+    // one 150k-prompt turn, which is long. Only the long one gets the 5x card.
+    repo.upsertMany([
+      record({ id: 'a', inputTokens: 60_000, totalTokens: 60_000 }),
+      record({ id: 'b', inputTokens: 60_000, totalTokens: 60_000 }),
+      record({ id: 'c', inputTokens: 150_000, totalTokens: 150_000 }),
+    ]);
+    const groups = repo.repriceGroups({}, costService.longContextThresholds());
+    expect(groups.map((g) => g.maxPromptTokens).sort((x, y) => x - y)).toEqual([60_000, 150_000]);
+
+    const haiku = service
+      .counterfactual({}, 'all time', ['claude-haiku-5-5'])
+      .scenarios.find((s) => s.model === 'claude-haiku-5-5')!;
+    // 120k at $0.10/M + 150k at $0.50/M.
+    expect(haiku.estimatedCost).toBeCloseTo(0.012 + 0.075, 9);
+    expect(haiku.unpricedGroups).toBe(0);
+  });
+
   it('omits an unpriced target and says so, rather than guessing a rate', () => {
     repo.upsertMany([record({ outputTokens: M })]);
     const report = service.counterfactual({}, 'all time', ['claude-sonnet-5', 'gpt-5.4']);

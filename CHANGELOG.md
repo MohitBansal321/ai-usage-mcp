@@ -22,6 +22,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comes in the same registry response the version check already fetches, so it costs no extra
   request. A highlight whose version does not match the release is dropped, so stale news is
   never shown.
+- **Prices for Claude Sonnet 5.5 and Claude Haiku 5.5.** The built-in Anthropic table is
+  re-captured as `anthropic-2026-10-23` (every earlier rate re-checked and unchanged). Haiku
+  5.5 had no price anywhere, so its turns showed no estimate; they get one on the next sync.
+  Sonnet 5.5 was priced only by the community list, which needed the daily download; it now
+  ships with the same published rates, cache reads at 0.05×.
+- **Prices that depend on prompt length.** Haiku 5.5 bills a request whose prompt is over
+  100,000 tokens (cache reads and writes included) at 5× its short-prompt rates, and in a
+  Claude Code session most of its turns are that long. Each turn is now priced on its own
+  prompt. `counterfactual_cost` splits its groups at the line instead of pricing a sum of
+  short prompts as one long one. An override can state such a tier with
+  `"longContext": { "aboveTokens", "input", "output" }`.
+
+### Fixed
+
+- **"HEAD (detached)" was wrong for most sessions.** Claude Code records the branch `HEAD`
+  whenever it cannot name one: mostly for a session started outside a git repo, or before
+  the repo's first commit, and only sometimes for a detached checkout. On the development
+  machine that covered 90% of a week's usage, all labelled detached. It now reads `no branch`
+  in `report`, `sessions` and `session`, with a note under "By branch" saying what it can
+  mean. The stored value is unchanged.
+- **No more `ExperimentalWarning: SQLite is an experimental feature` on every command.**
+  Node 22 printed it to stderr each time the CLI, status line or MCP server opened the
+  database. That one warning is now dropped while `node:sqlite` loads; every other warning
+  still prints.
 
 ## [0.14.0] - 2026-10-16
 

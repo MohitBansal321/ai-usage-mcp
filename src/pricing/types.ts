@@ -18,6 +18,23 @@ export interface ModelPrice {
    * wrongly.
    */
   cache?: CacheMultipliers;
+  /**
+   * A second rate card for a request whose prompt is longer than `aboveTokens`.
+   *
+   * Claude Haiku 5.5 bills a prompt over 100,000 tokens at 5x its short-prompt
+   * rates, and most of its turns in a Claude Code session cross that line, so a
+   * single rate would understate them fivefold. "Prompt" counts every input
+   * token, cache reads and cache writes included, and each request is priced on
+   * its own. Cache multipliers apply to whichever input rate the request gets.
+   */
+  longContext?: LongContextPrice;
+}
+
+export interface LongContextPrice {
+  /** A prompt strictly longer than this many tokens pays the rates below. */
+  aboveTokens: number;
+  input: number;
+  output: number;
 }
 
 export interface CacheMultipliers {

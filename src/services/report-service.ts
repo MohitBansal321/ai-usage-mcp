@@ -155,6 +155,7 @@ export class ReportService {
           outputTokens: 0,
           cacheReadTokens: carried,
           ...(turn.speed ? { speed: turn.speed } : {}),
+          promptTokens: context,
         }).estimatedCost;
         if (cost !== undefined) {
           carryCost += cost;

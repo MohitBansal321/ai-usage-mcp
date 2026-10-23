@@ -140,6 +140,28 @@ describe('usage report', () => {
     expect(text).toContain('feat/a');
   });
 
+  it('calls HEAD "no branch" rather than claiming a detached checkout', async () => {
+    // Claude Code writes HEAD for a session started outside a git repo, which is
+    // far more common than a detached checkout, and the value cannot tell them apart.
+    const lines: ClaudeLine[] = [];
+    for (let i = 0; i < 4; i++)
+      lines.push(turn('nogit', i, 30 * MIN - i * MIN, 20_000, 500, 'HEAD'));
+    const s = await open([{ sessionId: 'nogit', lines }]);
+    const report = s.usageReport();
+    expect(report.topBranches.map((b) => b.gitBranch)).toEqual(['HEAD']);
+
+    const text = formatUsageReport(report);
+    expect(text).not.toContain('detached)');
+    expect(text).toContain('[no branch, claude-code]');
+    expect(text).toMatch(/no branch {2}\(1 session\(s\), 4 turns\)/);
+    expect(text).toContain('started outside a git repo');
+  });
+
+  it('leaves the no-branch note out when every branch has a name', async () => {
+    const s = await open([bigSession(), smallSession()]);
+    expect(formatUsageReport(s.usageReport())).not.toContain('started outside a git repo');
+  });
+
   it('calls a period of small, cheap sessions healthy', async () => {
     const s = await open([smallSession()]);
     const report = s.usageReport();

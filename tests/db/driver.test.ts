@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { openSqlite, sqliteDriver } from '../../src/db/driver.js';
 
@@ -166,6 +168,31 @@ describe('SQLite driver', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Node warns once per process, and this one has loaded node:sqlite already,
+  // so the check runs in a fresh process against the built driver.
+  it.skipIf(!loadsNodeSqlite())(
+    'loads node:sqlite without printing its ExperimentalWarning, and keeps other warnings',
+    () => {
+      const driver = resolve('dist/db/driver.js');
+      if (!existsSync(driver))
+        throw new Error(`${driver} is missing. Run \`npm run build\` first.`);
+      const script =
+        `const { openSqlite } = await import(${JSON.stringify(pathToFileURL(driver).href)});` +
+        `openSqlite(':memory:').close();` +
+        `process.emitWarning('some other feature', 'ExperimentalWarning');`;
+      const env: NodeJS.ProcessEnv = { ...process.env, AI_USAGE_SQLITE_DRIVER: 'node:sqlite' };
+      delete env.NODE_NO_WARNINGS;
+      delete env.NODE_OPTIONS;
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+        env,
+        encoding: 'utf8',
+      });
+      expect(child.status).toBe(0);
+      expect(child.stderr).not.toContain('SQLite is an experimental feature');
+      expect(child.stderr).toContain('some other feature');
+    },
+  );
 });
 
 describe('SQLite driver fallback', () => {
