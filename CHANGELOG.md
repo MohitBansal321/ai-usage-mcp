@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-10-23
+
+Three fixes to the numbers that say whether to trust this tool. `ai-usage verify` no longer
+reports a mismatch for a session that is still writing, nor for OpenCode history held in two
+snap stores, and Codex no longer shows a 100% cache hit rate it cannot have.
+
 ### Fixed
 
 - **`ai-usage verify` reported a mismatch whenever a session was still writing.** The sync
@@ -1125,7 +1131,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.2...HEAD
+[0.16.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.14.0...v0.15.0
