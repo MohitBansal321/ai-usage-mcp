@@ -379,6 +379,14 @@ describe('CodexCollector', () => {
     },
   );
 
+  it('reports when Codex last wrote a rollout, so status can notice a format change', async () => {
+    setup([{ sessionId: CODEX_SESSION, lines: codexRealSessionLines() }]);
+    const before = Date.now() - 60_000;
+    const availability = await collector().isAvailable();
+    expect(availability.available).toBe(true);
+    expect(Date.parse(availability.lastWriteAt ?? '')).toBeGreaterThan(before);
+  });
+
   it('is unavailable, with a reason, when the home has no rollouts', async () => {
     process.env.AI_USAGE_CODEX_HOME = join(dir, 'missing');
     const missing = await collector().isAvailable();

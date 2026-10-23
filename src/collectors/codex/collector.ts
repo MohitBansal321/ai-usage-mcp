@@ -166,14 +166,16 @@ export class CodexCollector implements UsageCollector {
         stores,
       };
     }
-    if (listRollouts(primary.path).length === 0) {
+    const files = listRollouts(primary.path);
+    if (files.length === 0) {
       return {
         available: false,
         reason: `Codex home ${primary.path} contains no session rollouts. Usage unavailable for this installation.`,
         stores,
       };
     }
-    return { available: true, stores };
+    const lastWrite = files.reduce((latest, f) => Math.max(latest, f.mtimeMs), 0);
+    return { available: true, stores, lastWriteAt: new Date(lastWrite).toISOString() };
   }
 
   async collect(options: CollectOptions): Promise<CollectResult> {
