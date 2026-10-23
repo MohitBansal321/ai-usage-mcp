@@ -30,9 +30,8 @@ export function registerDailyUsage(server: McpServer, ctx: ToolContext): void {
           .enum(['hour', 'day', 'hour-of-day'])
           .optional()
           .describe(
-            'Time bucket (default day). "hour" is a finer timeline; "hour-of-day" collapses ' +
-              'every day onto one 24-slot local clock, which is what answers "when during the ' +
-              'day do I burn tokens". All are local time, matching the period filter.',
+            'Time bucket, local time (default day). "hour-of-day" folds every day onto one ' +
+              '24-slot clock: "when during the day do I burn tokens".',
           ),
       }),
     },

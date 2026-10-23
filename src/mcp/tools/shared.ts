@@ -16,29 +16,24 @@ export const periodShape = {
   today: z.boolean().optional().describe('Restrict to today, in local time.'),
   since: z.string().optional().describe('ISO 8601 start of the period (inclusive).'),
   until: z.string().optional().describe('ISO 8601 end of the period (exclusive).'),
+  // Every description here is repeated in the schema of each tool that spreads
+  // this shape, and a client sends the whole tool list with every request. Keep
+  // them to what changes how the argument is used.
   includeSubagents: z
     .boolean()
     .optional()
-    .describe(
-      'Include subagent/sidechain turns. Defaults to true, because they are real spend. ' +
-        'Set false to see only main-thread turns.',
-    ),
+    .describe('Include subagent turns. Default true: they are real spend.'),
   projectPaths: z
     .array(z.string().min(1))
     .optional()
     .describe(
-      'Restrict to any of these projects, given as the absolute working directories the turns ' +
-        'ran in. Each must match exactly; use project_usage to see the available paths. ' +
-        'A value matching no record anywhere is reported as such rather than returning an ' +
-        'empty period.',
+      'Restrict to these projects: absolute working directories, matched exactly ' +
+        '(see project_usage). A path matching nothing is reported, not answered as empty.',
     ),
   models: z
     .array(z.string().min(1))
     .optional()
-    .describe(
-      'Restrict to any of these model ids, exactly as the client recorded them. ' +
-        'Use model_usage to see the ids present.',
-    ),
+    .describe('Restrict to these model ids, as recorded (see model_usage).'),
   /**
    * The pre-0.8.0 spelling, still honoured.
    *
@@ -48,11 +43,7 @@ export const periodShape = {
    * presented as one project's usage. That is the one failure this project
    * cannot have, so the old spelling keeps working.
    */
-  projectPath: z
-    .string()
-    .min(1)
-    .optional()
-    .describe('Deprecated spelling of projectPaths, for one project. Still honoured.'),
+  projectPath: z.string().min(1).optional().describe('Deprecated: use projectPaths.'),
 };
 
 /**
@@ -63,7 +54,7 @@ export const periodShape = {
 export const clientEnum = z
   .union([z.enum(['claude-code', 'opencode']), z.array(z.enum(['claude-code', 'opencode']))])
   .optional()
-  .describe('Restrict to any of these clients. A single client id is also accepted.');
+  .describe('Restrict to these clients (a single id also works).');
 
 /** Ordering and paging, shared by every list-shaped tool. */
 export const pageShape = {
@@ -73,15 +64,17 @@ export const pageShape = {
     .int()
     .min(0)
     .optional()
-    .describe('Rows to skip, for paging. Use the `nextOffset` from the previous result.'),
+    .describe('Rows to skip; pass `nextOffset` from the previous result.'),
+  // There is deliberately no plain "cost": reported and estimated cost are
+  // separate figures that are never summed, so ordering by one sorts every row
+  // priced on the other basis as though it were $0. The result reports how many
+  // rows that ordering could not speak for.
   sort: z
     .enum(['tokens', 'reported-cost', 'estimated-cost', 'records', 'sessions', 'recent'])
     .optional()
     .describe(
-      'Row ordering, descending. There is deliberately no plain "cost": reported and ' +
-        'estimated cost are separate figures that are never summed, so ordering by one sorts ' +
-        'every row priced on the other basis as though it were $0. Pick the basis you mean; ' +
-        'the result reports how many rows that ordering could not speak for.',
+      'Descending order. Reported and estimated cost are never summed, so there is no ' +
+        'plain "cost": pick the basis you mean.',
     ),
 };
 
