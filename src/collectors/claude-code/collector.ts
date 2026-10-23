@@ -1,4 +1,3 @@
-import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type {
   CollectOptions,
@@ -9,7 +8,7 @@ import type {
 } from '../../models/usage-record.js';
 import { normaliseProjectPath, UNKNOWN_MODEL } from '../../models/usage-record.js';
 import { promptTokensOf, type CostService } from '../../services/cost-service.js';
-import { isWithin, num } from '../collector.js';
+import { ingestedSizes, isWithin, num, readUpTo } from '../collector.js';
 import {
   discoverClaudeRoots,
   listTranscripts,
@@ -105,6 +104,14 @@ function isClaudeCursor(value: unknown): value is ClaudeCursor {
     typeof (value as ClaudeCursor).files === 'object' &&
     (value as ClaudeCursor).files !== null
   );
+}
+
+/**
+ * The bytes of each transcript the last sync collected, from its cursor, or
+ * undefined when there is no cursor this reader understands.
+ */
+export function claudeIngestedSizes(cursor: unknown): Map<string, number> | undefined {
+  return isClaudeCursor(cursor) ? ingestedSizes(cursor.files) : undefined;
 }
 
 /** Model ids that are not real models and must never be priced or counted. */
@@ -273,7 +280,7 @@ export class ClaudeCodeCollector implements UsageCollector {
     let syntheticSkipped = 0;
     let malformed = 0;
 
-    const stream = createReadStream(file.path, { encoding: 'utf8' });
+    const stream = readUpTo(file.path, file.sizeBytes).setEncoding('utf8');
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
     for await (const raw of rl) {

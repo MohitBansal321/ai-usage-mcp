@@ -297,8 +297,8 @@ what has been checked, and how:
 
 "Verified" means `ai-usage verify` matched every token class exactly against an independent
 re-read of the client's own data (715 MB of Claude Code transcripts, a 251 MB `opencode.db`, and Codex's
-session rollouts). Run
-it when no session is mid-reply: a turn written while `verify` runs shows up as a small delta.
+session rollouts). It compares the same bytes the sync read, so a session still writing does not
+show up as a mismatch.
 If a client update breaks collection, `ai-usage status` warns that the client keeps writing
 but no new turns arrive.
 

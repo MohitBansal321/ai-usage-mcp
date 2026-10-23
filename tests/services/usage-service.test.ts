@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { appendFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   SOURCE_AHEAD_THRESHOLD_MS,
@@ -320,6 +320,62 @@ describe('UsageService', () => {
     expect(claude.ours.records).toBe(0);
     // OpenCode lost nothing, so nothing is set aside for it.
     expect(report.clients.find((c) => c.client === 'opencode')!.retained).toBeUndefined();
+  });
+
+  it('reconciles while a session is still writing, comparing the bytes the sync read', async () => {
+    // Claude Code appends while we read. Lines written after the sync but stamped
+    // before the cutoff were counted by verify and not by us, so `ai-usage verify`
+    // reported a mismatch for every session still running.
+    const transcript = join(
+      process.env.AI_USAGE_CLAUDE_PROJECTS!,
+      '-work-project-one',
+      'cc-sess-1.jsonl',
+    );
+    const streaming = (output: number, stopReason: string | null) =>
+      assistantLine({
+        sessionId: 'cc-sess-1',
+        requestId: 'r4',
+        messageId: 'm4',
+        input: 3,
+        output,
+        cacheRead: 20_000,
+        timestamp: new Date(Date.now() - 1000).toISOString(),
+        stopReason,
+      });
+    appendFileSync(transcript, JSON.stringify(streaming(10, null)) + '\n');
+    appendFileSync(transcript, JSON.stringify(streaming(80, 'end_turn')).slice(0, 40));
+
+    const report = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
+    const claude = report.clients.find((c) => c.client === 'claude-code')!;
+    expect(claude.grains[0]!.matches).toBe(true);
+    expect(claude.ours.records).toBe(3);
+
+    // The next sync collects the new request, and verify then counts it too.
+    appendFileSync(transcript, JSON.stringify(streaming(80, 'end_turn')).slice(40) + '\n');
+    await service.sync();
+    const after = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
+    const claudeAfter = after.clients.find((c) => c.client === 'claude-code')!;
+    expect(claudeAfter.grains[0]!.matches).toBe(true);
+    expect(claudeAfter.ours.records).toBe(4);
+    expect(claudeAfter.ours.outputTokens).toBe(claude.ours.outputTokens + 80);
+  });
+
+  it('still reads a transcript the sync never collected in full, so it shows as a mismatch', async () => {
+    writeFileSync(
+      join(process.env.AI_USAGE_CLAUDE_PROJECTS!, '-work-project-one', 'cc-sess-2.jsonl'),
+      JSON.stringify(
+        assistantLine({
+          sessionId: 'cc-sess-2',
+          requestId: 'r9',
+          messageId: 'm9',
+          output: 9,
+          timestamp: new Date(Date.now() - 1000).toISOString(),
+          stopReason: 'end_turn',
+        }),
+      ) + '\n',
+    );
+    const report = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
+    expect(report.clients.find((c) => c.client === 'claude-code')!.grains[0]!.matches).toBe(false);
   });
 
   it('shows days with no activity, not just the days that had some', () => {

@@ -43,7 +43,7 @@ export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
           cacheWriteTokens: c.cacheWriteTokens,
           reasoningTokens: c.reasoningTokens,
           totalTokens: c.totalTokens,
-          cache: cacheMetrics(c),
+          cache: cacheMetrics(c, c.key),
           cost: c.cost,
         })),
       });

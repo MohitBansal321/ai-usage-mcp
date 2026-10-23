@@ -1,9 +1,10 @@
-import { createReadStream, existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface, type Interface } from 'node:readline';
 import * as zlib from 'node:zlib';
 import type { StoreInfo } from '../../models/usage-record.js';
+import { readUpTo } from '../collector.js';
 
 export interface RolloutFile {
   path: string;
@@ -148,9 +149,12 @@ export function canReadCompressedRollouts(): boolean {
   return typeof (zlib as { createZstdDecompress?: unknown }).createZstdDecompress === 'function';
 }
 
-/** Lines of a rollout, decompressing it first when it is `.jsonl.zst`. */
-export function readRolloutLines(file: RolloutFile): Interface {
-  const raw = createReadStream(file.path);
+/**
+ * Lines of a rollout, decompressing it first when it is `.jsonl.zst`. Only its
+ * first `sizeBytes` are read, or all of it when that is undefined (see `readUpTo`).
+ */
+export function readRolloutLines(file: RolloutFile, sizeBytes: number | undefined): Interface {
+  const raw = readUpTo(file.path, sizeBytes);
   let input: NodeJS.ReadableStream & { setEncoding(e: BufferEncoding): unknown } = raw;
   if (file.compressed) {
     const decompress = zlib.createZstdDecompress();
