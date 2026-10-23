@@ -23,6 +23,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   served from cache instead (80.6% on the development machine). The overall hit rate leaves
   Codex out and names it, where its reads had been counted as hits against writes it never
   makes.
+- **`ai-usage verify --all-stores` reported OpenCode short by a whole store.** Two snap
+  revisions of one sandbox (`~/snap/code/268` and `271` on the development machine) can hold
+  identical copies of its `opencode.db`. The collector keys records by message id, so it stored
+  that history once, but verify summed every store and counted it twice: 87.7M input tokens
+  over. Verify now counts each message, and each session's rollup, once, from the last store
+  that has it, which is the copy the collector keeps.
 
 ## [0.16.1] - 2026-10-23
 

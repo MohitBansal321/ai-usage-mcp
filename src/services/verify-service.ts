@@ -182,8 +182,15 @@ export class VerifyService {
     const part = { ...ZERO, cost: 0, records: 0 };
     const session = { ...ZERO, cost: 0, records: 0 };
     const sourceSessions = new Set<string>();
+    // With --all-stores the same message can be in several stores: two snap
+    // revisions of one sandbox hold identical copies. The collector keys records by
+    // message id, and the upsert keeps the copy from the last store it reads, so
+    // each message is counted once here too, from the last store that has it.
+    // Walking the stores backwards, an id a later store claimed is skipped.
+    const claimed = new Set<string>();
+    const claimedSessions = new Set<string>();
 
-    for (const store of targets) {
+    for (const store of [...targets].reverse()) {
       const db = openSqlite(store.path, { readonly: true });
       try {
         const tables = new Set(
@@ -202,6 +209,7 @@ export class VerifyService {
             .prepare('SELECT id, session_id, data FROM message')
             .iterate() as IterableIterator<{ id: string; session_id: string; data: string }>) {
             sourceSessions.add(row.session_id);
+            if (claimed.has(row.id)) continue;
             let d: any;
             try {
               d = JSON.parse(row.data);
@@ -220,10 +228,15 @@ export class VerifyService {
         if (tables.has('message') && tables.has('part')) {
           for (const row of db
             .prepare(
-              `SELECT p.data AS data, m.data AS message_data
+              `SELECT p.data AS data, m.id AS message_id, m.data AS message_data
                  FROM part p JOIN message m ON m.id = p.message_id`,
             )
-            .iterate() as IterableIterator<{ data: string; message_data: string }>) {
+            .iterate() as IterableIterator<{
+            data: string;
+            message_id: string;
+            message_data: string;
+          }>) {
+            if (claimed.has(row.message_id)) continue;
             let d: any;
             try {
               d = JSON.parse(row.data);
@@ -250,7 +263,7 @@ export class VerifyService {
             .prepare("SELECT id, session_id, data FROM session_message WHERE type = 'assistant'")
             .iterate() as IterableIterator<{ id: string; session_id: string; data: string }>) {
             sourceSessions.add(row.session_id);
-            if (counted.has(row.id)) continue;
+            if (counted.has(row.id) || claimed.has(row.id)) continue;
             let d: any;
             try {
               d = JSON.parse(row.data);
@@ -258,6 +271,7 @@ export class VerifyService {
               continue;
             }
             if (!d?.tokens) continue;
+            counted.add(row.id);
             const created = typeof d?.time?.created === 'number' ? d.time.created : undefined;
             if (created !== undefined && created >= cutoffMs) continue;
             accumulate(message, d.tokens, num(d.cost));
@@ -276,23 +290,25 @@ export class VerifyService {
               }`
             : undefined,
         ].filter((q): q is string => q !== undefined);
+        const sessionsHere: string[] = [];
         if (rollupSources.length > 0) {
-          const s = db
-            .prepare(
-              `SELECT COUNT(*) AS n, SUM(tokens_input) AS i, SUM(tokens_output) AS o,
-                      SUM(tokens_reasoning) AS r, SUM(tokens_cache_read) AS cr,
-                      SUM(tokens_cache_write) AS cw, SUM(cost) AS c
-                 FROM (${rollupSources.join(' UNION ALL ')})`,
-            )
-            .get() as Record<string, number | null>;
-          session.records += s.n ?? 0;
-          session.inputTokens += s.i ?? 0;
-          session.outputTokens += s.o ?? 0;
-          session.reasoningTokens += s.r ?? 0;
-          session.cacheReadTokens += s.cr ?? 0;
-          session.cacheWriteTokens += s.cw ?? 0;
-          session.cost += s.c ?? 0;
+          for (const s of db
+            .prepare(`SELECT * FROM (${rollupSources.join(' UNION ALL ')})`)
+            .iterate() as IterableIterator<Record<string, string | number | null>>) {
+            const id = String(s.id);
+            if (claimedSessions.has(id)) continue;
+            sessionsHere.push(id);
+            session.records += 1;
+            session.inputTokens += num(s.tokens_input);
+            session.outputTokens += num(s.tokens_output);
+            session.reasoningTokens += num(s.tokens_reasoning);
+            session.cacheReadTokens += num(s.tokens_cache_read);
+            session.cacheWriteTokens += num(s.tokens_cache_write);
+            session.cost += num(s.cost);
+          }
         }
+        for (const id of counted) claimed.add(id);
+        for (const id of sessionsHere) claimedSessions.add(id);
       } finally {
         db.close();
       }
