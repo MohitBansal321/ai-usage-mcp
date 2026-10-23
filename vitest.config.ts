@@ -8,10 +8,13 @@ export default defineConfig({
     // read the copy a real server cached under the developer's config dir. The
     // tests of that feature turn it back on explicitly. Inherited by every
     // spawned CLI and server that is handed `...process.env`. Likewise no status
-    // report reads the developer's own Claude Code settings.json.
+    // report reads the developer's own Claude Code settings.json, and no sync or
+    // verify reads their own ~/.codex: a Codex test points this at a fixture and
+    // restores it afterwards rather than deleting it.
     env: {
       AI_USAGE_NO_PRICING_REFRESH: '1',
       AI_USAGE_CLAUDE_SETTINGS: '/nonexistent/ai-usage-test/claude-settings.json',
+      AI_USAGE_CODEX_HOME: '/nonexistent/ai-usage-test/codex-home',
     },
     testTimeout: 60_000,
     hookTimeout: 60_000,

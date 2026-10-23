@@ -3,7 +3,7 @@
 ## Other MCP clients
 
 **The client you ask from does not have to be a client you measure.** This server reports on the
-Claude Code and OpenCode data already on your disk no matter who asks for it — so if you spend
+Claude Code, OpenCode and Codex CLI data already on your disk no matter who asks for it — so if you spend
 your day in Cursor but your tokens go through Claude Code, ask Cursor and you still get the real
 numbers.
 

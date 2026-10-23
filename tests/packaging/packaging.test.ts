@@ -40,6 +40,7 @@ describe('packaging (the CI job `npm run check` used to miss)', () => {
       AI_USAGE_DB: join(dir, 'usage.db'),
       AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
       AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+      AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
       AI_USAGE_NO_UPDATE_CHECK: '1',
     };
   });

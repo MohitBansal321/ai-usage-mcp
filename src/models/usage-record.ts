@@ -7,7 +7,17 @@
  * never as 0.
  */
 
-export type ClientId = 'claude-code' | 'opencode';
+/**
+ * Every client a collector exists for. The one list the CLI, the MCP schemas and
+ * `import` validate against, so adding a client cannot leave one of them behind.
+ */
+export const CLIENT_IDS = ['claude-code', 'opencode', 'codex'] as const;
+
+export type ClientId = (typeof CLIENT_IDS)[number];
+
+export function isClientId(value: unknown): value is ClientId {
+  return typeof value === 'string' && (CLIENT_IDS as readonly string[]).includes(value);
+}
 
 /**
  * `reported`    -- the source told us the cost. Trust it.
@@ -54,6 +64,7 @@ export interface UsageRecord {
    * whether reasoning tokens are a subset of output tokens:
    *   - Claude Code: `thinking_tokens` is a *detail of* `output_tokens`  -> not added.
    *   - OpenCode:    `reasoning` is a *sibling of* `output`              -> added.
+   *   - Codex:       `reasoning_output_tokens` is a *detail of* output   -> not added.
    * See docs/DATA_SOURCES.md. Never recompute this generically.
    */
   totalTokens: number;

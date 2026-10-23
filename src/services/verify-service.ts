@@ -4,7 +4,15 @@ import { createInterface } from 'node:readline';
 import type { UsageRepository } from '../db/repositories/usage-repository.js';
 import { discoverOpenCodeStores } from '../collectors/opencode/stores.js';
 import { discoverClaudeRoots, listTranscripts } from '../collectors/claude-code/transcripts.js';
+import {
+  canReadCompressedRollouts,
+  discoverCodexHomes,
+  listRollouts,
+  readRolloutLines,
+  sessionIdFromFileName,
+} from '../collectors/codex/rollouts.js';
 import { num } from '../collectors/collector.js';
+import type { ClientId } from '../models/usage-record.js';
 
 export interface TokenSnapshot {
   inputTokens: number;
@@ -31,7 +39,7 @@ export interface GrainComparison {
 }
 
 export interface ClientVerification {
-  client: 'opencode' | 'claude-code';
+  client: ClientId;
   /** What we stored for the sessions the source still holds -- the compared figure. */
   ours: TokenSnapshot;
   /**
@@ -109,6 +117,7 @@ export class VerifyService {
     const clients = [
       this.verifyOpenCode(options.allStores === true, cutoff),
       await this.verifyClaudeCode(options.allStores === true, cutoff),
+      await this.verifyCodex(options.allStores === true, cutoff),
     ];
     return {
       clients,
@@ -121,7 +130,7 @@ export class VerifyService {
 
   /** Splits what we stored into sessions the source still holds and the rest. */
   private oursFor(
-    client: 'opencode' | 'claude-code',
+    client: ClientId,
     cutoff: Date,
     sourceSessions: ReadonlySet<string>,
   ): Pick<ClientVerification, 'ours' | 'retained'> {
@@ -412,6 +421,171 @@ export class VerifyService {
 
     return {
       client: 'claude-code',
+      ours,
+      ...(retained ? { retained } : {}),
+      grains,
+      available: true,
+    };
+  }
+
+  /**
+   * Independent re-aggregation of the Codex rollouts.
+   *
+   * The collector sums each request's `last_token_usage`, skipping events that
+   * repeat the running total. This reads the other number Codex writes: the
+   * running total itself, `total_token_usage`, taking its last value before the
+   * cutoff in each session. If the dedupe dropped a request or kept a repeat,
+   * the two disagree. A running total that ever goes DOWN is treated as Codex
+   * starting a new count, and the run before it is kept rather than lost.
+   *
+   * Rollouts from 0.162 on also carry a `token_usage_record` per request, keyed
+   * by `response_id`: a third reading of the same requests, compared against
+   * the sessions that have them.
+   */
+  private async verifyCodex(allStores: boolean, cutoff: Date): Promise<ClientVerification> {
+    const cutoffMs = cutoff.getTime();
+    const homes = discoverCodexHomes().filter((s) => s.exists);
+    const targets = allStores ? homes : homes.filter((s) => s.primary);
+
+    if (targets.length === 0) {
+      return {
+        client: 'codex',
+        ours: this.oursFor('codex', cutoff, new Set()).ours,
+        grains: [],
+        available: false,
+        reason: 'No Codex CLI home found to verify against.',
+      };
+    }
+
+    const running = { ...ZERO, records: 0 };
+    const responses = { ...ZERO, records: 0 };
+    const naive = { ...ZERO, records: 0 };
+    const sourceSessions = new Set<string>();
+    const responseSessions = new Set<string>();
+    const skipped: string[] = [];
+
+    // Codex's own fields, mapped onto ours: cached and cache-write input are
+    // inside `input_tokens`, reasoning is inside `output_tokens`.
+    const add = (target: TokenSnapshot, u: any) => {
+      target.inputTokens +=
+        num(u?.input_tokens) - num(u?.cached_input_tokens) - num(u?.cache_write_input_tokens);
+      target.cacheReadTokens += num(u?.cached_input_tokens);
+      target.cacheWriteTokens += num(u?.cache_write_input_tokens);
+      target.outputTokens += num(u?.output_tokens);
+      target.reasoningTokens += num(u?.reasoning_output_tokens);
+    };
+    const fields = [
+      'input_tokens',
+      'cached_input_tokens',
+      'cache_write_input_tokens',
+      'output_tokens',
+      'reasoning_output_tokens',
+    ];
+
+    for (const home of targets) {
+      for (const file of listRollouts(home.path)) {
+        if (file.compressed && !canReadCompressedRollouts()) {
+          skipped.push(file.path);
+          continue;
+        }
+        let session = sessionIdFromFileName(file.path);
+        let current: any;
+        const totals = new Set<number>();
+        const seenResponses = new Set<string>();
+        for await (const raw of readRolloutLines(file)) {
+          const line = raw.trim();
+          if (!line) continue;
+          let o: any;
+          try {
+            o = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (o?.type === 'session_meta') {
+            session = o.payload?.id ?? o.payload?.session_id ?? session;
+            continue;
+          }
+          const ts = typeof o?.timestamp === 'string' ? Date.parse(o.timestamp) : NaN;
+          if (!Number.isNaN(ts) && ts >= cutoffMs) continue;
+
+          if (o?.type === 'token_usage_record' && o.payload?.usage) {
+            const id = o.payload.response_id;
+            if (typeof id === 'string' && seenResponses.has(id)) continue;
+            if (typeof id === 'string') seenResponses.add(id);
+            add(responses, o.payload.usage);
+            responses.records = (responses.records ?? 0) + 1;
+            continue;
+          }
+          if (o?.type !== 'event_msg' || o.payload?.type !== 'token_count') continue;
+          const info = o.payload.info;
+          if (!info) continue;
+
+          // Naive sum, kept only to quantify how bad double counting would be.
+          if (info.last_token_usage) {
+            add(naive, info.last_token_usage);
+            naive.records = (naive.records ?? 0) + 1;
+          }
+
+          const total = info.total_token_usage;
+          if (!total) continue;
+          if (current && fields.some((f) => num(total[f]) < num(current[f]))) {
+            add(running, current);
+            totals.clear();
+          }
+          current = total;
+          totals.add(num(total.total_tokens));
+        }
+        if (current) add(running, current);
+        running.records = (running.records ?? 0) + totals.size;
+        if (session) {
+          sourceSessions.add(session);
+          if (seenResponses.size > 0) responseSessions.add(session);
+        }
+      }
+    }
+
+    const { ours, retained } = this.oursFor('codex', cutoff, sourceSessions);
+    const grains: GrainComparison[] = [
+      compare('codex rollouts, final running total per session (independent rule)', running, ours),
+    ];
+    if (responseSessions.size > 0) {
+      const oursWithResponses = this.oursFor('codex', cutoff, responseSessions).ours;
+      const grain = compare(
+        'codex token_usage_record lines, one per response_id (independent corroboration)',
+        responses,
+        oursWithResponses,
+      );
+      if (responseSessions.size < sourceSessions.size) {
+        grain.note =
+          `Covers the ${responseSessions.size} of ${sourceSessions.size} session(s) whose rollouts ` +
+          'carry token_usage_record lines (written from Codex CLI 0.162 on), compared against ' +
+          'what we stored for those sessions only.';
+      }
+      grains.push(grain);
+    }
+    grains.push({
+      label: 'codex rollouts, naive sum of every token_count (NOT used -- shows the double count)',
+      snapshot: naive,
+      delta: diff(naive, ours),
+      matches: false,
+      gating: false,
+      note:
+        'Informational only. Every token_count event summed without dedupe. Codex repeats the ' +
+        'event with an unchanged running total (after a request, at the start of a turn, after a ' +
+        'compaction), and this figure is inflated by every such repeat. It is shown to ' +
+        'demonstrate what the dedupe prevents.',
+    });
+    if (skipped.length > 0) {
+      const first = grains[0];
+      if (first) {
+        first.note =
+          `${skipped.length} compressed rollout(s) could not be read on this Node (zstd needs ` +
+          '22.15 or later); their sessions count as retained, not compared.';
+      }
+    }
+
+    return {
+      client: 'codex',
       ours,
       ...(retained ? { retained } : {}),
       grains,

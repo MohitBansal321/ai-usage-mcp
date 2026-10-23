@@ -2,6 +2,7 @@ import { statSync } from 'node:fs';
 import type { SqliteDatabase } from '../db/driver.js';
 import type { UsageFilter, UsageRepository } from '../db/repositories/usage-repository.js';
 import type { UsageRecord } from '../models/usage-record.js';
+import { isClientId } from '../models/usage-record.js';
 
 /**
  * Keeping the database from growing forever, and merging two machines into one.
@@ -103,8 +104,7 @@ export function parseExportedRecord(row: unknown): { record: UsageRecord } | { r
   if (basis !== 'reported' && basis !== 'estimated' && basis !== 'unavailable')
     return { reason: `cost_basis must be reported, estimated or unavailable (got "${basis}")` };
   const client = row.client as string;
-  if (client !== 'claude-code' && client !== 'opencode')
-    return { reason: `unknown client "${client}"` };
+  if (!isClientId(client)) return { reason: `unknown client "${client}"` };
   const turnKind = (row.turn_kind as string | undefined) ?? 'main';
   if (turnKind !== 'main' && turnKind !== 'subagent')
     return { reason: `turn_kind must be main or subagent (got "${turnKind}")` };

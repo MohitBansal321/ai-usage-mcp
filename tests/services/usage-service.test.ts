@@ -295,7 +295,10 @@ describe('UsageService', () => {
   it('reconciles exactly against a fresh read of both sources', async () => {
     const report = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
     expect(report.allMatch).toBe(true);
-    for (const client of report.clients) {
+    // No Codex home in this fixture: that client is unavailable, which is not a mismatch.
+    const compared = report.clients.filter((c) => c.available);
+    expect(compared.map((c) => c.client).sort()).toEqual(['claude-code', 'opencode']);
+    for (const client of compared) {
       const gating = client.grains.filter((g) => g.gating !== false);
       expect(gating.some((g) => g.matches)).toBe(true);
     }
@@ -429,8 +432,12 @@ describe('UsageService', () => {
   it('reports status including store discovery and pricing provenance', async () => {
     const status = await service.status();
     expect(status.totalRecords).toBe(6);
-    expect(status.collectors).toHaveLength(2);
-    expect(status.collectors.every((c) => c.available)).toBe(true);
+    expect(status.collectors).toHaveLength(3);
+    const available = status.collectors.filter((c) => c.available).map((c) => c.client);
+    expect(available.sort()).toEqual(['claude-code', 'opencode']);
+    // The test environment points Codex at a home that does not exist: reported, with why.
+    const codex = status.collectors.find((c) => c.client === 'codex');
+    expect(codex?.reason).toContain('AI_USAGE_CODEX_HOME');
     // The built-in table is composed from one file per provider, each keeping its
     // own capture date, so provenance -- not the version string -- is where a
     // given provider's freshness is visible.

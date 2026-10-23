@@ -48,7 +48,7 @@ Period options (default: all time):
                         session, day, hour, hour-of-day. Crosses them in one query.
 
 Scope options (repeatable, or comma-separated; each matches ANY value given):
-  --client <name>       claude-code | opencode
+  --client <name>       claude-code | opencode | codex
   --model <id>          Restrict to these models      (--model a,b or --model a --model b)
   --project <path>      Restrict to these projects (their working directories)
   --target-models a,b   counterfactual only: models to price the selected tokens AGAINST.
@@ -141,8 +141,8 @@ Notes:
   lacks, sends no data, and \`AI_USAGE_NO_PRICING_REFRESH=1\` disables it (as does
   \`AI_USAGE_NO_UPDATE_CHECK=1\`).
 
-  Cost from OpenCode is what OpenCode reported. Cost for Claude Code is an
-  API-equivalent estimate from a versioned pricing table, because Claude Code
-  records no cost -- on a Pro/Max subscription your marginal cost per request is
-  $0. The two are never added together.
+  Cost from OpenCode is what OpenCode reported. Cost for Claude Code and Codex is
+  an API-equivalent estimate from a versioned pricing table, because neither
+  records a cost -- on a subscription your marginal cost per request is $0. The
+  two are never added together.
 `;

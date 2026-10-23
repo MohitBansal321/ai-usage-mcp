@@ -8,6 +8,7 @@ It prints the reason and every path it looked at. Point it at the right place:
 | ----------------------------- | ----------------------------------------------------------------------- |
 | `AI_USAGE_OPENCODE_DB`        | Path to `opencode.db`                                                   |
 | `AI_USAGE_CLAUDE_PROJECTS`    | Path to Claude Code's `projects/` directory                             |
+| `AI_USAGE_CODEX_HOME`         | Path to the Codex CLI home (the directory holding `sessions/`)          |
 | `AI_USAGE_DB`                 | Where to keep our database                                              |
 | `AI_USAGE_HOME`               | Relocates both the database and the config dir in one go                |
 | `AI_USAGE_PRICING_FILE`       | Pricing override file                                                   |
