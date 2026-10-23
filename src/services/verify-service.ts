@@ -1,5 +1,4 @@
 import { openSqlite } from '../db/driver.js';
-import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { UsageRepository } from '../db/repositories/usage-repository.js';
 import { discoverOpenCodeStores } from '../collectors/opencode/stores.js';
@@ -11,7 +10,9 @@ import {
   readRolloutLines,
   sessionIdFromFileName,
 } from '../collectors/codex/rollouts.js';
-import { num } from '../collectors/collector.js';
+import { num, readUpTo } from '../collectors/collector.js';
+import { claudeIngestedSizes } from '../collectors/claude-code/collector.js';
+import { codexIngestedSizes } from '../collectors/codex/collector.js';
 import type { ClientId } from '../models/usage-record.js';
 
 export interface TokenSnapshot {
@@ -108,9 +109,19 @@ function round6(n: number): number {
  * Re-derives usage straight from the source data and diffs it against what we
  * stored. Deliberately a *second, independent implementation* -- it shares no
  * reduction code with the collectors, so a bug in one will not hide in the other.
+ *
+ * What it shares is the extent of each file: a transcript or rollout the last sync
+ * collected is re-read only up to the size that sync's cursor recorded. The files
+ * are still being appended to, and a cutoff by timestamp cannot make the two reads
+ * agree, because a line stamped before the cutoff can be written after the sync.
+ * A file the cursor does not name is read whole, so one the collector never read
+ * still shows up as a mismatch.
  */
 export class VerifyService {
-  constructor(private readonly repo: UsageRepository) {}
+  constructor(
+    private readonly repo: UsageRepository,
+    private readonly cursorOf: (source: ClientId) => unknown = () => undefined,
+  ) {}
 
   async verify(options: { allStores?: boolean; cutoff?: Date } = {}): Promise<VerifyReport> {
     const cutoff = options.cutoff ?? new Date();
@@ -339,6 +350,7 @@ export class VerifyService {
     const snapshot = { ...ZERO, records: 0 };
     const naive = { ...ZERO, records: 0 };
     const sourceSessions = new Set<string>();
+    const ingested = claudeIngestedSizes(this.cursorOf('claude-code'));
 
     for (const root of targets) {
       for (const file of listTranscripts(root.path)) {
@@ -347,7 +359,7 @@ export class VerifyService {
           { chosen?: any; maxOut: number; inp: number; cr: number; cw: number; think: number }
         >();
         const rl = createInterface({
-          input: createReadStream(file.path, { encoding: 'utf8' }),
+          input: readUpTo(file.path, ingested?.get(file.path)).setEncoding('utf8'),
           crlfDelay: Infinity,
         });
         for await (const raw of rl) {
@@ -463,6 +475,7 @@ export class VerifyService {
     const sourceSessions = new Set<string>();
     const responseSessions = new Set<string>();
     const skipped: string[] = [];
+    const ingested = codexIngestedSizes(this.cursorOf('codex'));
 
     // Codex's own fields, mapped onto ours: cached and cache-write input are
     // inside `input_tokens`, reasoning is inside `output_tokens`.
@@ -492,7 +505,7 @@ export class VerifyService {
         let current: any;
         const totals = new Set<number>();
         const seenResponses = new Set<string>();
-        for await (const raw of readRolloutLines(file)) {
+        for await (const raw of readRolloutLines(file, ingested?.get(file.path))) {
           const line = raw.trim();
           if (!line) continue;
           let o: any;

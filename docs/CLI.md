@@ -121,6 +121,17 @@ A hit rate is **absent, not `0%`**, when there was no cache traffic at all — t
 statements. A genuine 0% (writes that were never read) _is_ reported, because it is the worst
 case for the write premium and exactly what you would want to see.
 
+Codex has **no hit rate**. OpenAI caches prompts by itself and bills no cache write, so Codex
+records no writes, and read / (read + write) would be 100% on every row. Codex rows show the
+share of prompt input served from cache instead, and the overall hit rate leaves Codex out and
+says so:
+
+```text
+codex  --  4 records, 1 sessions
+  Cached input:      80.59% of prompt tokens
+                     No hit rate or reads per write: this client's cache has no write step to measure reuse against.
+```
+
 `counterfactual` adds what the same tokens would have cost with **no caching at all**:
 
 ```text

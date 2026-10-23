@@ -25,8 +25,12 @@ import type {
   StatusLineReport,
 } from './plan-limit-service.js';
 import type { ImportResult, PruneResult, VacuumResult } from './lifecycle-service.js';
-import { breakEvenReadsPerWrite, cacheMetrics } from './cache-metrics.js';
-import type { TokenTotals } from '../models/usage-record.js';
+import {
+  breakEvenReadsPerWrite,
+  cacheMetrics,
+  overallCacheMetrics,
+  type CacheMetrics,
+} from './cache-metrics.js';
 import type { TimeGrain } from '../db/repositories/usage-repository.js';
 import type { CounterfactualReport } from './counterfactual-service.js';
 import type { PricingRefreshReport, StatusReport } from './usage-service.js';
@@ -145,11 +149,24 @@ export function costLines(cost: CostTotals, costService: CostService, indent = '
  * raw counts alone cannot say whether that is a cache paying for itself or a
  * write premium being burnt on sessions too short to reuse it.
  */
-export function cacheLines(row: TokenTotals, costService: CostService, indent = '  '): string[] {
-  const metrics = cacheMetrics(row);
+export function cacheLines(
+  metrics: CacheMetrics,
+  costService: CostService,
+  indent = '  ',
+): string[] {
+  if (metrics.cachedInputShare !== undefined) {
+    return [
+      `${indent}Cached input:      ${(metrics.cachedInputShare * 100).toFixed(2)}% of prompt tokens`,
+      `${indent}                   No hit rate or reads per write: this client's cache has no ` +
+        'write step to measure reuse against.',
+    ];
+  }
   if (metrics.hitRate === undefined) return [];
 
-  const lines = [`${indent}Cache hit rate:    ${(metrics.hitRate * 100).toFixed(2)}%`];
+  const left = metrics.excludedClients?.length
+    ? `  (${metrics.excludedClients.join(', ')} left out: no cache-write step)`
+    : '';
+  const lines = [`${indent}Cache hit rate:    ${(metrics.hitRate * 100).toFixed(2)}%${left}`];
   if (metrics.readsPerWrite !== undefined) {
     lines.push(
       `${indent}Reads per write:   ${metrics.readsPerWrite.toFixed(1)}  ` +
@@ -272,7 +289,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
   out.push('');
   out.push('Tokens (all clients):');
   out.push(...tokenLines(report.overall));
-  out.push(...cacheLines(report.overall, costService));
+  out.push(...cacheLines(overallCacheMetrics(report.overall, report.byClient), costService));
   out.push('');
   out.push(...costLines(report.overall.cost, costService));
   if (report.comparison) out.push(...comparisonLines(report.comparison));
@@ -284,7 +301,7 @@ export function formatSummary(report: SummaryReport, costService: CostService): 
       `  ${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`,
     );
     out.push(...tokenLines(client, '    '));
-    out.push(...cacheLines(client, costService, '    '));
+    out.push(...cacheLines(cacheMetrics(client, client.key), costService, '    '));
     out.push(...costLines(client.cost, costService, '    '));
     out.push('');
   }
@@ -517,7 +534,7 @@ export function formatClients(report: ClientReport, costService: CostService): s
   for (const client of report.clients) {
     out.push(`${client.key}  --  ${int(client.records)} records, ${int(client.sessions)} sessions`);
     out.push(...tokenLines(client, '  '));
-    out.push(...cacheLines(client, costService, '  '));
+    out.push(...cacheLines(cacheMetrics(client, client.key), costService, '  '));
     out.push(...costLines(client.cost, costService, '  '));
     out.push('');
   }
@@ -1059,12 +1076,18 @@ export function formatCacheHealth(report: CacheHealthReport, costService: CostSe
   }
 
   out.push('Overall cache metrics:');
-  out.push(
-    `  Hit rate:        ${report.hitRate !== undefined ? `${(report.hitRate * 100).toFixed(2)}%` : 'n/a (no cache traffic)'}`,
-  );
-  out.push(
-    `  Reads per write: ${report.readsPerWrite !== undefined ? report.readsPerWrite.toFixed(1) : 'n/a (no cache writes)'}`,
-  );
+  if (report.cachedInputShare !== undefined) {
+    out.push(`  Cached input:    ${(report.cachedInputShare * 100).toFixed(2)}% of prompt tokens`);
+    out.push('  Hit rate:        n/a (this client has no cache-write step)');
+    out.push('  Reads per write: n/a (this client has no cache-write step)');
+  } else {
+    out.push(
+      `  Hit rate:        ${report.hitRate !== undefined ? `${(report.hitRate * 100).toFixed(2)}%` : 'n/a (no cache traffic)'}`,
+    );
+    out.push(
+      `  Reads per write: ${report.readsPerWrite !== undefined ? report.readsPerWrite.toFixed(1) : 'n/a (no cache writes)'}`,
+    );
+  }
   out.push(`  Total cache reads:  ${tokens(report.summary.totalCacheReads)}`);
   out.push(`  Total cache writes: ${tokens(report.summary.totalCacheWrites)}`);
   out.push('');

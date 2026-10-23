@@ -11,7 +11,7 @@ import {
   UNKNOWN_PROVIDER,
 } from '../../models/usage-record.js';
 import { promptTokensOf, type CostService } from '../../services/cost-service.js';
-import { isWithin, num } from '../collector.js';
+import { ingestedSizes, isWithin, num } from '../collector.js';
 import {
   canReadCompressedRollouts,
   discoverCodexHomes,
@@ -89,6 +89,14 @@ export interface CodexCursor {
   version: typeof CODEX_CURSOR_VERSION;
   /** Per rollout path: size + mtime at the time it was fully ingested. */
   files: Record<string, { sizeBytes: number; mtimeMs: number }>;
+}
+
+/**
+ * The bytes of each rollout the last sync collected, from its cursor, or
+ * undefined when there is no cursor this reader understands.
+ */
+export function codexIngestedSizes(cursor: unknown): Map<string, number> | undefined {
+  return isCodexCursor(cursor) ? ingestedSizes(cursor.files) : undefined;
 }
 
 function isCodexCursor(value: unknown): value is CodexCursor {
@@ -299,7 +307,7 @@ export class CodexCollector implements UsageCollector {
     let malformed = 0;
     let missingLast = 0;
 
-    for await (const raw of readRolloutLines(file)) {
+    for await (const raw of readRolloutLines(file, file.sizeBytes)) {
       const line = raw.trim();
       if (!line) continue;
 

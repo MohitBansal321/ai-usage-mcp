@@ -189,7 +189,10 @@ export class UsageService {
       new CodexCollector(this.costService),
     ];
     this.syncService = new SyncService(this.usageRepo, this.syncRepo, this.collectors);
-    this.verifyService = new VerifyService(this.usageRepo);
+    this.verifyService = new VerifyService(
+      this.usageRepo,
+      (source) => this.syncRepo.get(source)?.cursor,
+    );
     this.reportService = new ReportService(this.usageRepo, this.costService);
     this.counterfactualService = new CounterfactualService(this.usageRepo, this.costService);
     this.exportService = new ExportService(this.usageRepo);

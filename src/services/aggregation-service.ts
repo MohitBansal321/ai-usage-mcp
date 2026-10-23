@@ -8,6 +8,7 @@ import type {
   UsageRepository,
 } from '../db/repositories/usage-repository.js';
 import { TURNS_MAX_LIMIT } from '../db/repositories/usage-repository.js';
+import { cachedInputShare, hasCacheWriteStep } from './cache-metrics.js';
 import type { ClientId } from '../models/usage-record.js';
 import type { CrossTabRow, GroupAxis, TimeGrain } from '../db/repositories/usage-repository.js';
 import { zeroFill, type TimeBucket } from './time-buckets.js';
@@ -148,6 +149,11 @@ export interface CacheHealthReport {
   hitRate: number | undefined;
   /** Overall reads per write for the analyzed turns. */
   readsPerWrite: number | undefined;
+  /**
+   * Set instead of `hitRate` and `readsPerWrite` for a client whose cache has no
+   * write step (Codex): cached input as a share of all prompt input.
+   */
+  cachedInputShare?: number;
   /** Detected cache break events, ordered by time. */
   breaks: CacheBreakEvent[];
   summary: {
@@ -390,6 +396,14 @@ export class AggregationService {
     const totalCacheWrites = turns.reduce((sum, t) => sum + t.cacheWriteTokens, 0);
     const totalCacheReads = turns.reduce((sum, t) => sum + t.cacheReadTokens, 0);
     const priceable = breaks.filter((b) => b.estimatedExtraCost !== undefined);
+    // A session is one client's. Without a write step, read / (read + write) is 100% always.
+    const writeStep = turns[0] === undefined || hasCacheWriteStep(turns[0].client);
+    const share = writeStep
+      ? undefined
+      : cachedInputShare({
+          inputTokens: turns.reduce((sum, t) => sum + t.inputTokens, 0),
+          cacheReadTokens: totalCacheReads,
+        });
 
     return {
       sessionId: exact,
@@ -398,10 +412,12 @@ export class AggregationService {
       truncated: turns.length === TURNS_MAX_LIMIT,
       skippedSubagentTurns,
       hitRate:
-        totalCacheWrites + totalCacheReads > 0
+        writeStep && totalCacheWrites + totalCacheReads > 0
           ? totalCacheReads / (totalCacheWrites + totalCacheReads)
           : undefined,
-      readsPerWrite: totalCacheWrites > 0 ? totalCacheReads / totalCacheWrites : undefined,
+      readsPerWrite:
+        writeStep && totalCacheWrites > 0 ? totalCacheReads / totalCacheWrites : undefined,
+      ...(share !== undefined ? { cachedInputShare: share } : {}),
       breaks,
       summary: {
         totalCacheWrites,

@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ai-usage verify` reported a mismatch whenever a session was still writing.** The sync
+  read each transcript to its end, then the cutoff was taken. Lines written between the two
+  were stamped before the cutoff, so verify counted them and the database did not. On a copy
+  of real transcripts being appended to every 3 ms, 0.16.1 failed 8 runs out of 8. A collector
+  now reads each Claude Code transcript and Codex rollout only up to the size it records in
+  its cursor, and verify re-reads exactly those bytes, with its own independent dedupe. The
+  same 8 runs all match. A file the last sync never read is still read whole, so a file the
+  collector missed still shows as a mismatch.
+- **Codex's cache hit rate was always 100%.** OpenAI caches prompts by itself and bills no
+  cache write, so Codex records none, and read / (read + write) is read / read. Codex rows in
+  `stats`, `clients`, `cache_health` and the MCP results now show the share of prompt input
+  served from cache instead (80.6% on the development machine). The overall hit rate leaves
+  Codex out and names it, where its reads had been counted as hits against writes it never
+  makes.
+
 ## [0.16.1] - 2026-10-23
 
 ### Fixed

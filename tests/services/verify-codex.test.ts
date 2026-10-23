@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { appendFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openSqlite } from '../../src/db/driver.js';
 import { UsageService } from '../../src/services/usage-service.js';
@@ -7,6 +7,7 @@ import {
   buildCodexHome,
   CODEX_SESSION,
   codexRealSessionLines,
+  codexRolloutName,
   codexSessionMeta,
   codexTokenCount,
   codexTurnContext,
@@ -74,6 +75,45 @@ describe('verify: Codex', () => {
     expect(gating[1]!.snapshot.records).toBe(4);
     expect(gating[1]!.note).toContain('1 of 2 session(s)');
     expect(report.allMatch).toBe(true);
+  });
+
+  it('reconciles while a session is still writing, comparing the bytes the sync read', async () => {
+    await service.sync();
+    // A request Codex finishes after our sync, stamped before the cutoff.
+    const rollout = join(
+      process.env.AI_USAGE_CODEX_HOME!,
+      'sessions/2026/08/12',
+      codexRolloutName(OTHER_SESSION, '2026/08/12'),
+    );
+    const c = codexUsage({ input: 500, cached: 0, output: 9, reasoning: 0 });
+    const abc = codexUsage({ input: 23100, cached: 17664, output: 400, reasoning: 98 });
+    appendFileSync(
+      rollout,
+      JSON.stringify(
+        codexTokenCount({ timestamp: '2026-08-12T06:23:00.000Z', total: abc, last: c }),
+      ) + '\n',
+    );
+
+    const report = await service.verify({ cutoff: new Date('2026-10-23T00:00:00.000Z') });
+    const codex = report.clients.find((c) => c.client === 'codex')!;
+    for (const grain of codex.grains.filter((g) => g.gating !== false))
+      expect(grain.matches, grain.label).toBe(true);
+    expect(codex.ours.records).toBe(6);
+
+    await service.sync();
+    const after = await service.verify({ cutoff: new Date('2026-10-23T00:00:00.000Z') });
+    expect(after.clients.find((c) => c.client === 'codex')!.ours.records).toBe(7);
+    expect(after.allMatch).toBe(true);
+  });
+
+  it('reports no cache hit rate for a Codex session, only the cached share of input', async () => {
+    // OpenAI bills no cache write, so read / (read + write) was 100% for every session.
+    await service.sync();
+    const health = service.cacheHealth(OTHER_SESSION);
+    if (!health || 'ambiguous' in health) throw new Error('expected a cache health report');
+    expect(health.hitRate).toBeUndefined();
+    expect(health.readsPerWrite).toBeUndefined();
+    expect(health.cachedInputShare).toBeCloseTo(17_664 / 22_600, 10);
   });
 
   it('shows what summing every token_count would have produced', async () => {

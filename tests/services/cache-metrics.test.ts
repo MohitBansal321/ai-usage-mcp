@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { emptyTokenTotals, type TokenTotals } from '../../src/models/usage-record.js';
-import { breakEvenReadsPerWrite, cacheMetrics } from '../../src/services/cache-metrics.js';
+import {
+  breakEvenReadsPerWrite,
+  cacheMetrics,
+  overallCacheMetrics,
+} from '../../src/services/cache-metrics.js';
 
 function tokens(overrides: Partial<TokenTotals> = {}): TokenTotals {
   return { ...emptyTokenTotals(), ...overrides };
@@ -77,5 +81,52 @@ describe('breakEvenReadsPerWrite', () => {
     // No amount of reuse pays for a write premium if reading saves nothing.
     expect(breakEvenReadsPerWrite({ read: 1, write5m: 1.25, write1h: 2 })).toBeUndefined();
     expect(breakEvenReadsPerWrite({ read: 1.5, write5m: 1.25, write1h: 2 })).toBeUndefined();
+  });
+});
+
+/**
+ * OpenAI caches prompts by itself and bills no cache write, so Codex records none,
+ * and read / (read + write) printed 100% for every Codex row on the development
+ * machine. These are that machine's Codex totals.
+ */
+describe('a client with no cache-write step', () => {
+  const codex = tokens({ inputTokens: 12_767, cacheReadTokens: 52_992, cacheWriteTokens: 0 });
+
+  it('reports the cached share of prompt input instead of a hit rate', () => {
+    const metrics = cacheMetrics(codex, 'codex');
+    expect(metrics.hitRate).toBeUndefined();
+    expect(metrics.readsPerWrite).toBeUndefined();
+    expect(metrics.cachedInputShare).toBeCloseTo(52_992 / 65_759, 10);
+  });
+
+  it('keeps the hit rate for a client that does write to cache', () => {
+    const claude = tokens({ cacheReadTokens: 900, cacheWriteTokens: 100 });
+    expect(cacheMetrics(claude, 'claude-code').hitRate).toBe(0.9);
+    expect(cacheMetrics(claude, 'claude-code').cachedInputShare).toBeUndefined();
+  });
+
+  it('is left out of the overall hit rate, and named as left out', () => {
+    const claude = tokens({ cacheReadTokens: 900, cacheWriteTokens: 100 });
+    const overall = tokens({
+      inputTokens: codex.inputTokens,
+      cacheReadTokens: 900 + codex.cacheReadTokens,
+      cacheWriteTokens: 100,
+    });
+    const metrics = overallCacheMetrics(overall, [
+      { key: 'claude-code', ...claude },
+      { key: 'codex', ...codex },
+    ]);
+    expect(metrics.hitRate).toBe(0.9);
+    expect(metrics.readsPerWrite).toBe(9);
+    expect(metrics.excludedClients).toEqual(['codex']);
+    // The raw counts still cover every client.
+    expect(metrics.cacheReadTokens).toBe(overall.cacheReadTokens);
+  });
+
+  it('changes nothing overall when no such client is present', () => {
+    const claude = tokens({ cacheReadTokens: 900, cacheWriteTokens: 100 });
+    expect(overallCacheMetrics(claude, [{ key: 'claude-code', ...claude }])).toEqual(
+      cacheMetrics(claude),
+    );
   });
 });

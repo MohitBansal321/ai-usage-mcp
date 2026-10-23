@@ -1,4 +1,4 @@
-import type { TokenTotals } from '../models/usage-record.js';
+import type { ClientId, TokenTotals } from '../models/usage-record.js';
 
 /**
  * The figures that make cache tokens actionable.
@@ -33,19 +33,84 @@ export interface CacheMetrics {
    * and 0 or Infinity would both be claims nobody can support.
    */
   readsPerWrite?: number;
+  /**
+   * For a client whose cache has no write step: cached input as a share of all
+   * prompt input, cacheRead / (input + cacheRead). It takes the place of
+   * `hitRate` and `readsPerWrite`, which such a client cannot have.
+   */
+  cachedInputShare?: number;
+  /** Clients present but left out of `hitRate` and `readsPerWrite`, for having no write step. */
+  excludedClients?: string[];
   cacheReadTokens: number;
   cacheWriteTokens: number;
 }
 
-export function cacheMetrics(tokens: TokenTotals): CacheMetrics {
+/**
+ * Clients whose cache has no write step. OpenAI caches a prompt by itself and
+ * bills no cache write, so Codex records none, and read / (read + write) came
+ * out as 100% on every Codex row: a figure that measured nothing.
+ */
+const NO_CACHE_WRITE_STEP: ReadonlySet<string> = new Set<ClientId>(['codex']);
+
+export function hasCacheWriteStep(client: string): boolean {
+  return !NO_CACHE_WRITE_STEP.has(client);
+}
+
+/** Cached input as a share of all prompt input, or undefined when there was none. */
+export function cachedInputShare(
+  tokens: Pick<TokenTotals, 'inputTokens' | 'cacheReadTokens'>,
+): number | undefined {
+  const prompt = tokens.inputTokens + tokens.cacheReadTokens;
+  return prompt > 0 ? tokens.cacheReadTokens / prompt : undefined;
+}
+
+/** The cache figures for one client's tokens, or for tokens of clients that all write to cache. */
+export function cacheMetrics(tokens: TokenTotals, client?: string): CacheMetrics {
   const read = tokens.cacheReadTokens;
   const write = tokens.cacheWriteTokens;
+  if (client !== undefined && !hasCacheWriteStep(client)) {
+    const share = cachedInputShare(tokens);
+    return {
+      ...(share !== undefined ? { cachedInputShare: share } : {}),
+      cacheReadTokens: read,
+      cacheWriteTokens: write,
+    };
+  }
   const traffic = read + write;
   return {
     ...(traffic > 0 ? { hitRate: read / traffic } : {}),
     ...(write > 0 ? { readsPerWrite: read / write } : {}),
     cacheReadTokens: read,
     cacheWriteTokens: write,
+  };
+}
+
+/**
+ * The cache figures across several clients. A client with no write step is left
+ * out of the hit rate and reads per write, where its reads would count as hits
+ * against writes it never makes; the raw counts still cover every client.
+ */
+export function overallCacheMetrics(
+  overall: TokenTotals,
+  byClient: (TokenTotals & { key: string })[],
+): CacheMetrics {
+  const measured = byClient.filter((c) => hasCacheWriteStep(c.key));
+  const excluded = byClient
+    .filter((c) => !hasCacheWriteStep(c.key) && c.cacheReadTokens + c.cacheWriteTokens > 0)
+    .map((c) => c.key);
+  if (excluded.length === 0) return cacheMetrics(overall);
+  const sum = (k: 'cacheReadTokens' | 'cacheWriteTokens') => measured.reduce((n, c) => n + c[k], 0);
+  const { hitRate, readsPerWrite } = cacheMetrics({
+    ...overall,
+    cacheReadTokens: sum('cacheReadTokens'),
+    cacheWriteTokens: sum('cacheWriteTokens'),
+  });
+  return {
+    ...(hitRate !== undefined ? { hitRate } : {}),
+    ...(readsPerWrite !== undefined ? { readsPerWrite } : {}),
+    excludedClients: excluded,
+    cacheReadTokens: overall.cacheReadTokens,
+    cacheWriteTokens: overall.cacheWriteTokens,
   };
 }
 
