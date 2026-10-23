@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The tool list a client loads is 13% smaller.** Every tool schema repeats the shared period,
+  scope and paging parameters, and a client that does not defer MCP tools (OpenCode, most
+  others) sends the whole list with every request. Their descriptions now say only what changes
+  how an argument is used, which takes `tools/list` from 29,005 to 25,177 characters (about
+  7,250 to 6,300 tokens). No tool, argument or default changed.
+
 ## [0.15.0] - 2026-10-23
 
 Two things in this release. `ai-usage status` now tells you when the status line and prompt

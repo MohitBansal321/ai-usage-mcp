@@ -31,11 +31,9 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
           .enum(['previous'])
           .optional()
           .describe(
-            'Also report the window of equal length immediately before this one, with the ' +
-              'delta. Requires a period of fixed length -- days, today, or since AND until ' +
-              'together. An open-ended period (since alone, until alone, or all time) has no ' +
-              'equally long window before it and is rejected rather than answered without the ' +
-              'comparison. Reported and estimated cost are deltaed separately and never summed.',
+            'Also report the equally long window just before this one, with the delta. Needs ' +
+              'a fixed-length period (days, today, or since AND until); an open-ended one is ' +
+              'rejected.',
           ),
       }),
     },
