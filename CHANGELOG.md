@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`ai-usage status` warns when a client keeps writing but no new turns arrive.** Neither
+  client versions its on-disk format, and when OpenCode 2.x began writing turns to a new table,
+  a user lost two days of usage with nothing saying so. Each collector now reports when its
+  client last wrote to its data: the newest Claude Code transcript, or `opencode.db` and its
+  `-wal`. If a sync after that write found no turn within six hours of it, `status` (and the
+  `usage://status` resource) says so and points at the issue tracker. It is worded as a prompt
+  to check. Opening a client without sending a prompt also writes, and on the development
+  machine OpenCode wrote 56 minutes after its last turn as it shut down.
+
 ### Changed
 
 - **The tool list a client loads is 13% smaller.** Every tool schema repeats the shared period,

@@ -1318,6 +1318,19 @@ It prints the reason and every path it looked at. Point it at the right place:
 | `AI_USAGE_PRICING_URL`        | Where to download the community price list from (a mirror)              |
 | `AI_USAGE_SQLITE_DRIVER`      | Force `node:sqlite` or `better-sqlite3`; unset picks the best available |
 
+### `ai-usage status` warns that a client wrote after its newest turn
+
+Neither client versions its on-disk format, so a client update can start writing turns
+somewhere this package does not read yet. OpenCode 2.x did exactly that, and its usage simply
+stopped appearing. `status` now compares when each client last wrote to its data with the
+newest turn collected from it. If a sync after that write still found nothing within six hours
+of it, `status` prints a warning.
+
+Opening a client without sending a prompt also writes to its data, so the warning asks you to
+check rather than claiming turns are missing. If you did use the client in that time, update
+ai-usage. If the warning stays, [open an issue](https://github.com/MohitBansal321/ai-usage-mcp/issues)
+with the client's version.
+
 ### Numbers look lower than `opencode stats`
 
 Expected, and `opencode stats` is the one that's off. Its headline block reads OpenCode's

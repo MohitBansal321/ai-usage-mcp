@@ -113,6 +113,24 @@ export function primaryStore(stores: StoreInfo[]): StoreInfo | undefined {
   return stores.find((s) => s.primary && s.exists) ?? stores.find((s) => s.exists);
 }
 
+/**
+ * The latest write to a database, in ms. OpenCode runs in WAL mode, so a new
+ * turn lands in `-wal` and reaches the main file only at a checkpoint: the main
+ * file's mtime alone can trail the real last write by a whole session.
+ */
+export function lastWriteMs(dbPath: string): number | undefined {
+  let latest: number | undefined;
+  for (const path of [dbPath, `${dbPath}-wal`]) {
+    try {
+      const mtime = statSync(path).mtimeMs;
+      if (latest === undefined || mtime > latest) latest = mtime;
+    } catch {
+      /* no -wal between checkpoints is normal */
+    }
+  }
+  return latest;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];

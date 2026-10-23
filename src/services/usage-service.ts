@@ -85,6 +85,45 @@ export interface CollectorStatus {
   lastSyncAt?: string;
   records: number;
   lastRecordAt?: string;
+  /** When the client last wrote to its default source, where the collector can tell. */
+  lastWriteAt?: string;
+  /** Set when a sync after the source's last write found no turn near it. */
+  sourceAhead?: SourceAhead;
+}
+
+/**
+ * A source written to well after the newest turn collected from it, by a client
+ * a sync has looked at since. The usual cause is a format change -- OpenCode 2.x
+ * moving new turns to a table we did not read hid two days of usage from a user,
+ * and nothing said so. Opening a client without sending a prompt also writes, so
+ * this is a prompt to check, never a claim that data is missing.
+ */
+export interface SourceAhead {
+  lastWriteAt: string;
+  lastRecordAt: string;
+  gapMs: number;
+}
+
+/**
+ * How far a source may run ahead of its newest turn before `status` says so.
+ * On the machine this was calibrated on, OpenCode wrote 56 minutes after its
+ * last turn as it shut down; the format change that motivated this left a gap of
+ * 39 hours and growing.
+ */
+export const SOURCE_AHEAD_THRESHOLD_MS = 6 * 60 * 60 * 1000;
+
+export function sourceAhead(
+  status: Pick<CollectorStatus, 'lastWriteAt' | 'lastRecordAt' | 'lastSyncAt'>,
+  thresholdMs = SOURCE_AHEAD_THRESHOLD_MS,
+): SourceAhead | undefined {
+  const { lastWriteAt, lastRecordAt, lastSyncAt } = status;
+  if (!lastWriteAt || !lastRecordAt || !lastSyncAt) return undefined;
+  const write = Date.parse(lastWriteAt);
+  // A write after the last sync is simply not collected yet.
+  if (write > Date.parse(lastSyncAt)) return undefined;
+  const gapMs = write - Date.parse(lastRecordAt);
+  if (!(gapMs > thresholdMs)) return undefined;
+  return { lastWriteAt, lastRecordAt, gapMs };
 }
 
 export interface StatusReport {
@@ -209,6 +248,9 @@ export class UsageService {
       if (availability.reason) status.reason = availability.reason;
       if (state?.lastSyncAt) status.lastSyncAt = state.lastSyncAt;
       if (count?.lastTimestamp) status.lastRecordAt = count.lastTimestamp;
+      if (availability.lastWriteAt) status.lastWriteAt = availability.lastWriteAt;
+      const ahead = sourceAhead(status);
+      if (ahead) status.sourceAhead = ahead;
       collectors.push(status);
     }
 

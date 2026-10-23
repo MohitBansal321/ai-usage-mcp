@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { UsageService } from '../../src/services/usage-service.js';
+import {
+  SOURCE_AHEAD_THRESHOLD_MS,
+  sourceAhead,
+  UsageService,
+} from '../../src/services/usage-service.js';
 import { ComparePeriodError } from '../../src/services/period.js';
 import {
   assistantLine,
@@ -434,5 +438,53 @@ describe('UsageService', () => {
     expect(status.pricing.mode).toBe('builtin');
     expect(status.pricing.provenance).toContain('Anthropic');
     expect(status.pricing.provenance).toContain('OpenAI');
+  });
+
+  it('reports when each client last wrote to its data', async () => {
+    const status = await service.status();
+    for (const c of status.collectors) {
+      expect(Date.parse(c.lastWriteAt ?? '')).not.toBeNaN();
+    }
+  });
+});
+
+describe('sourceAhead', () => {
+  const hour = 60 * 60 * 1000;
+  const at = (ms: number) => new Date(Date.UTC(2026, 9, 13) + ms).toISOString();
+
+  it('flags a source written long after its newest turn, synced since', () => {
+    // The OpenCode 2.x report: turns stopped on the 13th, the database kept
+    // changing, and a sync after that change found nothing new.
+    const ahead = sourceAhead({
+      lastRecordAt: at(0),
+      lastWriteAt: at(39 * hour),
+      lastSyncAt: at(39 * hour + 7 * 60 * 1000),
+    });
+    expect(ahead?.gapMs).toBe(39 * hour);
+  });
+
+  it('stays quiet for a write no sync has seen yet', () => {
+    expect(
+      sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(39 * hour), lastSyncAt: at(hour) }),
+    ).toBeUndefined();
+  });
+
+  it('stays quiet for a write shortly after the last turn, such as a client shutting down', () => {
+    expect(
+      sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(56 * 60 * 1000), lastSyncAt: at(hour) }),
+    ).toBeUndefined();
+    expect(
+      sourceAhead({
+        lastRecordAt: at(0),
+        lastWriteAt: at(SOURCE_AHEAD_THRESHOLD_MS),
+        lastSyncAt: at(SOURCE_AHEAD_THRESHOLD_MS + hour),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('says nothing without all three times', () => {
+    expect(sourceAhead({ lastWriteAt: at(39 * hour), lastSyncAt: at(40 * hour) })).toBeUndefined();
+    expect(sourceAhead({ lastRecordAt: at(0), lastSyncAt: at(40 * hour) })).toBeUndefined();
+    expect(sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(39 * hour) })).toBeUndefined();
   });
 });

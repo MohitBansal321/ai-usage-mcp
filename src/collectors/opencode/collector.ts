@@ -17,7 +17,7 @@ import {
   UNKNOWN_PROVIDER,
 } from '../../models/usage-record.js';
 import { isWithin, msToIso, num } from '../collector.js';
-import { discoverOpenCodeStores } from './stores.js';
+import { discoverOpenCodeStores, lastWriteMs, primaryStore } from './stores.js';
 
 /** OpenCode's placeholder for a session it has not titled yet. */
 const DEFAULT_TITLE = /^New session - \d{4}-\d{2}-\d{2}T/;
@@ -130,7 +130,11 @@ export class OpenCodeCollector implements UsageCollector {
         stores,
       };
     }
-    return { available: true, stores };
+    const availability: CollectorAvailability = { available: true, stores };
+    const primary = primaryStore(stores);
+    const lastWrite = primary ? lastWriteMs(primary.path) : undefined;
+    if (lastWrite !== undefined) availability.lastWriteAt = new Date(lastWrite).toISOString();
+    return availability;
   }
 
   async collect(options: CollectOptions): Promise<CollectResult> {

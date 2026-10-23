@@ -318,6 +318,26 @@ describe('formatStatus', () => {
     records: 12,
   };
 
+  it('warns when a client kept writing after the newest turn collected from it', () => {
+    const ahead = {
+      ...claudeCollector,
+      name: 'opencode',
+      client: 'opencode' as const,
+      sourceAhead: {
+        lastRecordAt: '2026-10-13T14:18:56.316Z',
+        lastWriteAt: '2026-10-15T05:07:35.206Z',
+        gapMs: 139_119_000,
+      },
+    };
+    const text = formatStatus({ ...status, collectors: [ahead] }, null);
+    expect(text).toContain('WARNING: opencode last wrote to its data 38h 38m after');
+    expect(text).toContain('2026-10-13T14:18:56.316Z');
+    expect(text).toContain('/ai-usage-mcp/issues');
+    expect(formatStatus({ ...status, collectors: [claudeCollector] }, null)).not.toContain(
+      'WARNING',
+    );
+  });
+
   it('points at the update command when a newer release exists', () => {
     const text = formatStatus(status, { current: '0.1.0', latest: '0.2.0', isOutdated: true });
     expect(text).toContain('Version:        0.1.0');

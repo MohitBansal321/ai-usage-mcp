@@ -756,6 +756,17 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
       `    Records stored: ${int(c.records)}${c.lastRecordAt ? `, newest ${c.lastRecordAt}` : ''}`,
     );
     out.push(`    Last sync:      ${c.lastSyncAt ?? 'never'}`);
+    if (c.sourceAhead) {
+      const a = c.sourceAhead;
+      out.push(
+        `    WARNING: ${c.name} last wrote to its data ${duration(Math.round(a.gapMs / 1000))} after the newest turn`,
+        `             collected from it (${a.lastRecordAt}; last write ${a.lastWriteAt}),`,
+        `             and a sync since then found nothing newer. If you used ${c.name} in`,
+        `             that time, it may be writing turns somewhere this version does not`,
+        `             read. Update ai-usage; if this persists, open an issue at`,
+        `             https://github.com/MohitBansal321/ai-usage-mcp/issues`,
+      );
+    }
     for (const store of c.stores) {
       const flags = [store.primary ? 'PRIMARY' : 'secondary', store.exists ? 'found' : 'missing'];
       out.push(

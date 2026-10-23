@@ -137,6 +137,14 @@ export interface CollectorAvailability {
   /** Why not, when unavailable -- shown verbatim to the user. */
   reason?: string;
   stores: StoreInfo[];
+  /**
+   * When the client last wrote to the source we collect by default (ISO 8601),
+   * where that is cheap to tell. Compared with the newest turn collected, it is
+   * how `status` notices a source we read but no longer understand: both formats
+   * are unversioned, and a client that starts writing turns somewhere new keeps
+   * its store fresh while our newest record stands still.
+   */
+  lastWriteAt?: string;
 }
 
 export interface UsageCollector {
