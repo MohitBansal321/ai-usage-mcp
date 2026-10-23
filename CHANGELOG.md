@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-23
+
+Codex CLI is the third client: its usage is collected, reported everywhere, and checked by
+`verify`. `ai-usage status` now warns when a client keeps writing its data but no new turns
+arrive, which is how a silent format change shows up. The first CLI command on a new machine
+syncs instead of answering "0 turns", and the README is 60% shorter.
+
 ### Added
 
 - **`ai-usage status` warns when a client keeps writing but no new turns arrive.** Neither
@@ -1084,7 +1091,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.1...v0.13.0
