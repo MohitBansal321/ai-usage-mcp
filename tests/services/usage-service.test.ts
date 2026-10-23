@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { UsageService } from '../../src/services/usage-service.js';
+import {
+  SOURCE_AHEAD_THRESHOLD_MS,
+  sourceAhead,
+  UsageService,
+} from '../../src/services/usage-service.js';
 import { ComparePeriodError } from '../../src/services/period.js';
 import {
   assistantLine,
@@ -291,7 +295,10 @@ describe('UsageService', () => {
   it('reconciles exactly against a fresh read of both sources', async () => {
     const report = await service.verify({ cutoff: new Date(Date.now() + 60_000) });
     expect(report.allMatch).toBe(true);
-    for (const client of report.clients) {
+    // No Codex home in this fixture: that client is unavailable, which is not a mismatch.
+    const compared = report.clients.filter((c) => c.available);
+    expect(compared.map((c) => c.client).sort()).toEqual(['claude-code', 'opencode']);
+    for (const client of compared) {
       const gating = client.grains.filter((g) => g.gating !== false);
       expect(gating.some((g) => g.matches)).toBe(true);
     }
@@ -425,8 +432,12 @@ describe('UsageService', () => {
   it('reports status including store discovery and pricing provenance', async () => {
     const status = await service.status();
     expect(status.totalRecords).toBe(6);
-    expect(status.collectors).toHaveLength(2);
-    expect(status.collectors.every((c) => c.available)).toBe(true);
+    expect(status.collectors).toHaveLength(3);
+    const available = status.collectors.filter((c) => c.available).map((c) => c.client);
+    expect(available.sort()).toEqual(['claude-code', 'opencode']);
+    // The test environment points Codex at a home that does not exist: reported, with why.
+    const codex = status.collectors.find((c) => c.client === 'codex');
+    expect(codex?.reason).toContain('AI_USAGE_CODEX_HOME');
     // The built-in table is composed from one file per provider, each keeping its
     // own capture date, so provenance -- not the version string -- is where a
     // given provider's freshness is visible.
@@ -434,5 +445,56 @@ describe('UsageService', () => {
     expect(status.pricing.mode).toBe('builtin');
     expect(status.pricing.provenance).toContain('Anthropic');
     expect(status.pricing.provenance).toContain('OpenAI');
+  });
+
+  it('reports when each client last wrote to its data', async () => {
+    const status = await service.status();
+    // Only an available collector has data to have written to.
+    const available = status.collectors.filter((c) => c.available);
+    expect(available.length).toBeGreaterThan(0);
+    for (const c of available) {
+      expect(Date.parse(c.lastWriteAt ?? '')).not.toBeNaN();
+    }
+  });
+});
+
+describe('sourceAhead', () => {
+  const hour = 60 * 60 * 1000;
+  const at = (ms: number) => new Date(Date.UTC(2026, 9, 13) + ms).toISOString();
+
+  it('flags a source written long after its newest turn, synced since', () => {
+    // The OpenCode 2.x report: turns stopped on the 13th, the database kept
+    // changing, and a sync after that change found nothing new.
+    const ahead = sourceAhead({
+      lastRecordAt: at(0),
+      lastWriteAt: at(39 * hour),
+      lastSyncAt: at(39 * hour + 7 * 60 * 1000),
+    });
+    expect(ahead?.gapMs).toBe(39 * hour);
+  });
+
+  it('stays quiet for a write no sync has seen yet', () => {
+    expect(
+      sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(39 * hour), lastSyncAt: at(hour) }),
+    ).toBeUndefined();
+  });
+
+  it('stays quiet for a write shortly after the last turn, such as a client shutting down', () => {
+    expect(
+      sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(56 * 60 * 1000), lastSyncAt: at(hour) }),
+    ).toBeUndefined();
+    expect(
+      sourceAhead({
+        lastRecordAt: at(0),
+        lastWriteAt: at(SOURCE_AHEAD_THRESHOLD_MS),
+        lastSyncAt: at(SOURCE_AHEAD_THRESHOLD_MS + hour),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('says nothing without all three times', () => {
+    expect(sourceAhead({ lastWriteAt: at(39 * hour), lastSyncAt: at(40 * hour) })).toBeUndefined();
+    expect(sourceAhead({ lastRecordAt: at(0), lastSyncAt: at(40 * hour) })).toBeUndefined();
+    expect(sourceAhead({ lastRecordAt: at(0), lastWriteAt: at(39 * hour) })).toBeUndefined();
   });
 });

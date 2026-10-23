@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/MohitBansal321/ai-usage-mcp/security/advisories/new
     about: Please report security problems privately, not as a public issue.
+  - name: Ask a question, or say what you use it for
+    url: https://github.com/MohitBansal321/ai-usage-mcp/discussions
+    about: Questions, ideas, and what you wish it answered. Which numbers you look at shapes what gets built next.

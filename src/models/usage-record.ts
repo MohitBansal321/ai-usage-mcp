@@ -7,7 +7,17 @@
  * never as 0.
  */
 
-export type ClientId = 'claude-code' | 'opencode';
+/**
+ * Every client a collector exists for. The one list the CLI, the MCP schemas and
+ * `import` validate against, so adding a client cannot leave one of them behind.
+ */
+export const CLIENT_IDS = ['claude-code', 'opencode', 'codex'] as const;
+
+export type ClientId = (typeof CLIENT_IDS)[number];
+
+export function isClientId(value: unknown): value is ClientId {
+  return typeof value === 'string' && (CLIENT_IDS as readonly string[]).includes(value);
+}
 
 /**
  * `reported`    -- the source told us the cost. Trust it.
@@ -54,6 +64,7 @@ export interface UsageRecord {
    * whether reasoning tokens are a subset of output tokens:
    *   - Claude Code: `thinking_tokens` is a *detail of* `output_tokens`  -> not added.
    *   - OpenCode:    `reasoning` is a *sibling of* `output`              -> added.
+   *   - Codex:       `reasoning_output_tokens` is a *detail of* output   -> not added.
    * See docs/DATA_SOURCES.md. Never recompute this generically.
    */
   totalTokens: number;
@@ -137,6 +148,14 @@ export interface CollectorAvailability {
   /** Why not, when unavailable -- shown verbatim to the user. */
   reason?: string;
   stores: StoreInfo[];
+  /**
+   * When the client last wrote to the source we collect by default (ISO 8601),
+   * where that is cheap to tell. Compared with the newest turn collected, it is
+   * how `status` notices a source we read but no longer understand: both formats
+   * are unversioned, and a client that starts writing turns somewhere new keeps
+   * its store fresh while our newest record stands still.
+   */
+  lastWriteAt?: string;
 }
 
 export interface UsageCollector {

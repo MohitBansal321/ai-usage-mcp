@@ -100,6 +100,7 @@ describe('MCP server over stdio', () => {
         AI_USAGE_DB: join(dir, 'usage.db'),
         AI_USAGE_OPENCODE_DB: openCodeDb,
         AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
+        AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
         AI_USAGE_FRESHNESS_MS: '0',
         // Hermetic: no registry lookup, so no update notice can appear in a
         // result this suite compares byte for byte.
@@ -317,6 +318,7 @@ describe('MCP server on a stale install', () => {
         // not read the real machine's usage.
         AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
         AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+        AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
         AI_USAGE_FRESHNESS_MS: '0',
         AI_USAGE_NO_UPDATE_CHECK: '0',
         CI: '',
@@ -434,6 +436,7 @@ describe('MCP server learning the price of a model released after its pricing ta
         AI_USAGE_DB: join(dir, 'usage.db'),
         AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
         AI_USAGE_CLAUDE_PROJECTS: claudeProjects,
+        AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
         AI_USAGE_FRESHNESS_MS: '0',
         AI_USAGE_NO_UPDATE_CHECK: '0',
         AI_USAGE_NO_PRICING_REFRESH: '0',

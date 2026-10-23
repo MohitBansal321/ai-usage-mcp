@@ -50,7 +50,7 @@ node dist/cli/index.js sync --full
 node dist/cli/index.js verify      # must report a zero delta after any collector change
 ```
 
-Tests never touch your real `~/.claude` or OpenCode database. They are isolated with the
+Tests never touch your real `~/.claude`, OpenCode database or `~/.codex`. They are isolated with the
 `AI_USAGE_*` environment variables, using the fixture builders in
 [tests/fixtures/build-fixtures.ts](tests/fixtures/build-fixtures.ts). Keep it that way.
 
@@ -60,7 +60,7 @@ The one rule: **MCP never knows where data comes from.**
 
 ```text
 MCP tools ─┐
-           ├─> UsageService ─> collectors ─> Claude Code JSONL / OpenCode SQLite
+           ├─> UsageService ─> collectors ─> Claude Code JSONL / OpenCode SQLite / Codex JSONL
 debug CLI ─┘        └─> our own SQLite
 ```
 
@@ -86,7 +86,7 @@ A few places that need care:
 
 ## Changing how a collector reads data
 
-Claude Code's and OpenCode's on-disk formats are internal and unversioned, and they change
+Claude Code's, OpenCode's and Codex CLI's on-disk formats are internal and unversioned, and they change
 under us. [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) is the only record of what has actually
 been observed, so:
 
@@ -104,8 +104,8 @@ report you can send. See [Reporting a bug](#reporting-a-bug).
 
 Open a [bug report](https://github.com/MohitBansal321/ai-usage-mcp/issues/new?template=bug_report.yml).
 It asks for `ai-usage status` and, if numbers look wrong, `ai-usage verify`: those two outputs
-usually identify the problem immediately. Please also say **which version of Claude Code or
-OpenCode** wrote the data, since format changes between their versions are the usual cause.
+usually identify the problem immediately. Please also say **which version of Claude Code,
+OpenCode or Codex CLI** wrote the data, since format changes between their versions are the usual cause.
 
 **Do not paste prompts, code or file contents from your sessions.** This tool never reads them
 and an issue does not need them.

@@ -159,7 +159,8 @@ export class ClaudeCodeCollector implements UsageCollector {
         stores,
       };
     }
-    return { available: true, stores };
+    const lastWrite = files.reduce((latest, f) => Math.max(latest, f.mtimeMs), 0);
+    return { available: true, stores, lastWriteAt: new Date(lastWrite).toISOString() };
   }
 
   async collect(options: CollectOptions): Promise<CollectResult> {

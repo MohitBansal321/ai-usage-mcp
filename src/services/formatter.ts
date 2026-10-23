@@ -1,5 +1,6 @@
 import type { AggregateRow, Page, SessionRow } from '../db/repositories/usage-repository.js';
 import type { CostTotals } from '../models/usage-record.js';
+import { CLIENT_IDS } from '../models/usage-record.js';
 import type {
   BreakdownReport,
   CacheHealthReport,
@@ -234,7 +235,7 @@ export function unmatchedScopeLines(scope: UnmatchedScope | undefined): string[]
   };
   say('model', scope.models, 'Run `ai-usage models` to see the ids actually present.');
   say('project', scope.projectPaths, 'Run `ai-usage projects` to see the paths actually present.');
-  say('client', scope.clients, 'Known clients are claude-code and opencode.');
+  say('client', scope.clients, `Known clients are ${CLIENT_IDS.join(', ')}.`);
   return lines;
 }
 
@@ -522,8 +523,8 @@ export function formatClients(report: ClientReport, costService: CostService): s
   }
   out.push(
     'Reported and estimated costs are listed separately on purpose and must not be added ' +
-      'together: OpenCode reports what it actually charged, while the Claude Code figure is a ' +
-      'list-price equivalent.',
+      'together: OpenCode reports what it actually charged, while the Claude Code and Codex ' +
+      'figures are list-price equivalents.',
   );
   return out.join('\n');
 }
@@ -756,6 +757,17 @@ export function formatStatus(status: StatusReport, update?: UpdateInfo | null): 
       `    Records stored: ${int(c.records)}${c.lastRecordAt ? `, newest ${c.lastRecordAt}` : ''}`,
     );
     out.push(`    Last sync:      ${c.lastSyncAt ?? 'never'}`);
+    if (c.sourceAhead) {
+      const a = c.sourceAhead;
+      out.push(
+        `    WARNING: ${c.name} last wrote to its data ${duration(Math.round(a.gapMs / 1000))} after the newest turn`,
+        `             collected from it (${a.lastRecordAt}; last write ${a.lastWriteAt}),`,
+        `             and a sync since then found nothing newer. If you used ${c.name} in`,
+        `             that time, it may be writing turns somewhere this version does not`,
+        `             read. Update ai-usage; if this persists, open an issue at`,
+        `             https://github.com/MohitBansal321/ai-usage-mcp/issues`,
+      );
+    }
     for (const store of c.stores) {
       const flags = [store.primary ? 'PRIMARY' : 'secondary', store.exists ? 'found' : 'missing'];
       out.push(
@@ -895,7 +907,7 @@ export function formatSyncReport(report: SyncReport, refresh?: PricingRefreshRep
 export function formatVerify(report: VerifyReport): string {
   const out: string[] = [
     'Verification -- our stored totals vs a fresh, independent read of the source data',
-    `Comparing activity strictly before ${report.cutoff} (both clients append while we read).`,
+    `Comparing activity strictly before ${report.cutoff} (the clients append while we read).`,
     '',
   ];
   for (const client of report.clients) {

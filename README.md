@@ -9,7 +9,7 @@
 [![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
 
 **Ask your coding agent what it has cost you — and where the money went.** An MCP server that
-answers from the data Claude Code and OpenCode already wrote to your machine. Nothing is
+answers from the data Claude Code, OpenCode and Codex CLI already wrote to your machine. Nothing is
 uploaded, and there is no API key or account.
 
 ```text
@@ -24,7 +24,7 @@ Three things it does that reading the transcripts cannot:
 - **It keeps your history.** Claude Code deletes transcripts after 30 days
   (`cleanupPeriodDays`). Every turn is copied into a local SQLite database as it is seen, so
   last quarter is still there after the source files are gone —
-  [and merges two machines into one total](#retention-and-merging-two-machines).
+  [and merges two machines into one total](docs/CLI.md#retention-and-merging-two-machines).
 - **It finds where the cache broke.** Cache tokens are where the money is — 94.7% of all tokens
   on the development machine. `cache_health` finds the turns where a session lost its cached
   prefix and paid to re-write the whole context, names the likely cause (a model switch, idling
@@ -46,7 +46,7 @@ RESULT: every client reconciles exactly against at least one independent read of
 ```
 
 Also: **your Pro/Max plan limits** — the 5-hour and weekly percentages Claude Code reports,
-kept by [a status line](#plan-limits-and-the-status-line) and projected to the time you would
+kept by [a status line](docs/STATUS_LINE.md#plan-limits-and-the-status-line) and projected to the time you would
 hit 100% — plus `counterfactual_cost` (these exact tokens at another model's rates), budgets
 with run rate and forecast, project × day breakdowns, and CSV/JSON export. It supports
 **Claude Code** and **OpenCode**, and exposes twelve MCP tools plus resources, prompts and a
@@ -92,6 +92,19 @@ The two cost lines are never added together, and never will be — see
 [How cost is reported](#how-cost-is-reported).
 
 </details>
+
+### Try it in one command
+
+There's nothing to configure and no account to create. It reads what Claude Code and OpenCode
+have already written to this machine:
+
+```bash
+npx -y -p ai-usage-mcp ai-usage report
+```
+
+The first run copies your history into a local database, which takes a few seconds. The report
+gives a verdict for the last 7 days, says where the tokens went, and lists what to change. To
+ask your agent questions like the ones above, [install it as an MCP server](#install).
 
 ### ai-usage or ccusage?
 
@@ -223,87 +236,22 @@ Or add it to `~/.config/opencode/opencode.jsonc`:
 
 Confirm with `opencode mcp list`.
 
-### Other MCP clients
-
-**The client you ask from does not have to be a client you measure.** This server reports on the
-Claude Code and OpenCode data already on your disk no matter who asks for it — so if you spend
-your day in Cursor but your tokens go through Claude Code, ask Cursor and you still get the real
-numbers.
-
-**Cursor**, **Google Antigravity**, **Windsurf** and **Claude Desktop** all take the same block.
-Only the file path changes:
-
-```json
-{
-  "mcpServers": {
-    "ai-usage": {
-      "command": "npx",
-      "args": ["-y", "ai-usage-mcp"]
-    }
-  }
-}
-```
-
-| Client                 | File to put it in                                                      |
-| ---------------------- | ---------------------------------------------------------------------- |
-| **Cursor**             | `~/.cursor/mcp.json` (all projects), or `.cursor/mcp.json` in one repo |
-| **Google Antigravity** | `~/.gemini/antigravity/mcp_config.json`                                |
-| **Windsurf**           | `~/.codeium/windsurf/mcp_config.json`                                  |
-| **Claude Desktop**     | **Settings → Developer → Edit Config** — see the paths below           |
-
-For **Claude Desktop**, that button creates the file if it does not exist and opens it either
-way, which is more reliable than editing by hand:
-
-| Platform | Path                                                              |
-| -------- | ----------------------------------------------------------------- |
-| macOS    | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows  | `%APPDATA%\Claude\claude_desktop_config.json`                     |
-
-Claude Desktop on Linux is in beta and Anthropic publishes no config path for it, so use the
-**Edit Config** button rather than guessing one. Fully quit and relaunch afterwards — the file is
-read at startup.
-
-Two clients need a different shape:
-
-**Codex** uses TOML, not JSON. Easiest is the CLI:
+### Codex CLI
 
 ```bash
 codex mcp add ai-usage -- npx -y ai-usage-mcp
 ```
 
-Or add the table by hand to `~/.codex/config.toml` (or a project-scoped `.codex/config.toml`):
+Codex usage is read from `~/.codex/sessions` (or `$CODEX_HOME`). Codex records no cost, so its
+cost is an API-equivalent estimate, or unavailable for a model the pricing table lacks. Support
+is new and verified against two sessions so far; `ai-usage verify` checks it on yours.
 
-```toml
-[mcp_servers.ai-usage]
-command = "npx"
-args = ["-y", "ai-usage-mcp"]
-```
+### Other MCP clients
 
-Confirm with `codex mcp list`.
-
-**GitHub Copilot CLI** uses `~/.copilot/mcp-config.json`, where the top-level key is `servers`,
-**not** `mcpServers`:
-
-```json
-{
-  "servers": {
-    "ai-usage": {
-      "command": "npx",
-      "args": ["-y", "ai-usage-mcp"]
-    }
-  }
-}
-```
-
-On native Windows, use the `cmd /c` form in any of these — `"command": "cmd"` with
-`"args": ["/c", "npx", "-y", "ai-usage-mcp"]`, or `command = "cmd"` with
-`args = ["/c", "npx", "-y", "ai-usage-mcp"]` for Codex. See the note under
-[Claude Code](#claude-code) for why.
-
-<sub>Provenance, 2026-09-08: Cursor, Windsurf, Codex and Claude Desktop paths are from each
-vendor's own documentation. The Antigravity and Copilot CLI paths and key names were read off
-installed copies of those apps on Linux, since neither publishes the path — including Copilot
-CLI's `servers` key, which differs from every other client here.</sub>
+Cursor, Google Antigravity, Windsurf and Claude Desktop take the same `npx -y ai-usage-mcp`
+block; only the config file differs. The client you ask from does not have to be one you
+measure: ask from Cursor, and you still get your Claude Code numbers. Paths and details are in
+[docs/INSTALL.md](docs/INSTALL.md#other-mcp-clients).
 
 ### The debug CLI
 
@@ -326,58 +274,33 @@ npx -y -p ai-usage-mcp ai-usage stats --today
 > skipped optional dependency, not a failed install — `ai-usage status` will show
 > `SQLite driver: node:sqlite` and everything works.
 
-Verified against Claude Code **2.1.251** and OpenCode **1.18.25** and **2.0.30**.
-
 ### Updating
 
-`npx -y ai-usage-mcp` — the form the instructions above use — re-resolves the version every
-time your client cold-starts the server, so it keeps itself current. Restart the client to pick
-up a new release.
+`npx -y ai-usage-mcp` re-resolves the version on every cold start, so restarting your client
+picks up a release. A global install is pinned: `npm install -g ai-usage-mcp@latest`.
+`ai-usage status` and the MCP server both tell you when you are behind.
+[docs/INSTALL.md](docs/INSTALL.md#updating) says what each kind of install needs, and describes
+the one request the check makes.
 
-A **global install is pinned** until you update it by hand:
+### Compatibility
 
-```bash
-npm install -g ai-usage-mcp@latest
-ai-usage --version
-```
+Both source formats are internal and unversioned, so a client update can change them. This is
+what has been checked, and how:
 
-`ai-usage status` tells you when you are behind:
+| Client      | Last verified                                                     | Earlier verifications |
+| ----------- | ----------------------------------------------------------------- | --------------------- |
+| Claude Code | **2.1.308**, 2026-10-23                                           | 2.1.2xx, 2.1.251      |
+| OpenCode    | **2.0.32**, 2026-10-23                                            | 1.18.25, 2.0.30       |
+| Codex CLI   | **0.162.0-alpha.17.2** and **0.114.0**, 2026-10-23 (two sessions) |                       |
+| Node.js     | 22.13+ and 24, in CI                                              |                       |
+| OS          | Linux, macOS and Windows, in CI                                   |                       |
 
-```text
-Update available: 0.1.0 installed, 0.2.0 latest -- npm i -g ai-usage-mcp@latest
-  New in 0.2.0: a live context-size warning for Claude Code sessions
-```
-
-The second line is there when that release published a highlight. The MCP server's notice
-carries it too.
-
-**The MCP server says so too**, because most people never run the CLI. When the server finds a
-newer release it says it **once per process**, through whichever channel comes first: a line
-added to the `instructions` it returns at handshake time, or a one-off note attached to the
-next tool result. It is a separate content block, so the numbers a tool returns stay exactly
-what the CLI prints for the same query, and it never repeats itself on later calls. The same
-line goes to the server's stderr log, and `@usage://status` shows the state on demand.
-
-The advice differs by how you installed it, and the notice says the right one:
-
-| Installed as                        | What actually fixes it                                |
-| ----------------------------------- | ----------------------------------------------------- |
-| `npm i -g ai-usage-mcp`             | `npm i -g ai-usage-mcp@latest`                        |
-| `npx -y ai-usage-mcp`               | Restart the server -- npx re-resolves on a cold start |
-| A version pinned in your MCP config | Change it there; no command will do it for you        |
-| A project dependency                | `npm i ai-usage-mcp@latest`                           |
-| A source checkout                   | `git pull && npm run build`                           |
-
-That check is one of the package's two network requests (the other downloads prices for new
-models -- see [New models are priced automatically](#new-models-are-priced-automatically)): a
-version lookup against the npm registry, at most once a day, cached in
-`<config dir>/update-check.json`, skipped when `CI` is set, and silently abandoned after 1.5s
-if you are offline. It sends no usage data and no identifier -- just a GET for a version
-string. Set `AI_USAGE_NO_UPDATE_CHECK=1` to turn it off everywhere, CLI and server alike; that
-switch turns off the price download too. In the server it runs _after_ the handshake, never
-during it, so it cannot slow down a client starting up.
-
----
+"Verified" means `ai-usage verify` matched every token class exactly against an independent
+re-read of the client's own data (715 MB of Claude Code transcripts, a 251 MB `opencode.db`, and Codex's
+session rollouts). Run
+it when no session is mid-reply: a turn written while `verify` runs shows up as a small delta.
+If a client update breaks collection, `ai-usage status` warns that the client keeps writing
+but no new turns arrive.
 
 ## Ask it things
 
@@ -441,154 +364,15 @@ session started outside a git repo). Neither kind of waste is claimed as wholly 
 shares are a guide to where usage went, not exact limit consumption: Anthropic does not publish
 how subscription limits weight each token type.
 
-### Plan limits and the status line
+### Plan limits, the status line and the context warning
 
-On a Pro or Max plan, the number that decides your day is how much of the 5-hour and weekly
-limits is left, and Claude Code writes it to no file. It does pass it to a configured
-**status line**, so ai-usage can be yours:
-
-```bash
-npm install -g ai-usage-mcp
-```
-
-Then add this to `~/.claude/settings.json` (keep the keys already there):
-
-```json
-{
-  "statusLine": { "type": "command", "command": "ai-usage statusline" }
-}
-```
-
-It renders like this (sample data):
-
-```text
-5h 23.5% ↻14:20 · wk 41% ↻Thu 09:00 · today $38.10 API-eq · cache 96% 2 breaks +$1.10 API-eq
-```
-
-Each segment: the 5-hour and weekly limits as Claude Code reported them, with the reset time
-(yellow past 70%, red past 90%, and a red `100% by 13:55` when the current pace runs out before
-the reset); today's API-equivalent cost across clients; and the prompt-cache hit rate and
-breaks for the session on screen. It keeps the database fresh itself (an incremental sync, at
-most every 30 seconds), and an unreadable payload or a failed sync never blanks the line.
-`--no-color` or `NO_COLOR=1` drops the colour.
-
-<sub>A global install keeps it fast: a status line runs on every assistant message, and
-`npx -y -p ai-usage-mcp ai-usage statusline` also works but adds about half a second to each
-run, and several seconds on a cold npm cache.</sub>
-
-Every reading is kept, so `plan_usage` (or `ai-usage limits`) can answer "how close am I, and
-will I run out before it resets?" from inside a conversation (sample data):
-
-```text
-5-hour window
-  Used:        62%     last read Mon, Oct 12 13:05
-  Resets:      Mon, Oct 12 14:20
-  Pace:        +24.0%/hour, averaged over 6 readings from Mon, Oct 12 11:35 to 13:05
-               -> 100% at Mon, Oct 12 14:40, after the reset -- on pace to stay under.
-  This machine's Claude Code turns since Mon, Oct 12 09:20:
-    ...
-```
-
-The percentages are Claude Code's own, never re-derived from tokens — Anthropic does not
-publish the limits as token counts, so any conversion would be made up. Until a reading
-arrives they are reported as **unavailable, not 0%**, and after a reset with no new reading,
-as unknown. The limits are shared by everything on your account (claude.ai, the desktop app,
-other machines); the token figures beside them cover only this machine's Claude Code turns.
-An API key has no such limits, and its payload carries none.
-
-### Get warned before context gets expensive
-
-Every message re-sends the whole conversation, so a session at 400k tokens of context re-reads
-400k tokens to answer "ok, thanks". `ai-usage report` finds that waste afterwards (the
-"re-reading context above 100k tokens" line in [`usage_report`](#start-here-usage_report)).
-Claude Code's own auto-compact only fires when the window is almost full, which is far too
-late to save anything. This warns while it is happening.
-
-Add both entries to `~/.claude/settings.json` (keep the keys already there):
-
-```json
-{
-  "statusLine": { "type": "command", "command": "ai-usage statusline" },
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "ai-usage hook", "timeout": 10 }] }
-    ]
-  }
-}
-```
-
-**The status line** gains a last segment, the size of the context the next message will
-re-read:
-
-```text
-... · cache 96% · ctx 77k        green: under 150k
-... · cache 96% · ctx 180k       yellow: 150k or more, worth watching
-... · cache 96% · ctx 260k · compact now      red: 250k or more
-```
-
-**The hook** runs before each prompt. Below 250k it prints nothing. At or above it, it tells
-Claude the size and that every turn re-sends all of it, and asks Claude to briefly suggest
-`/compact` (or `/clear`, for an unrelated task) before starting the new work, and shows you
-a one-line `systemMessage` saying the same. It never blocks or edits your prompt: it always
-exits 0, so even a broken setting cannot eat what you typed.
-
-**Changing the limits.** Both commands take `--ctx-warn` and `--ctx-limit`, as `150k`, `1.5m`
-or a plain count, and read `AI_USAGE_CTX_WARN` and `AI_USAGE_CTX_LIMIT` when no flag is given.
-A flag overrides the environment, which overrides the defaults of 150k and 250k:
-
-```json
-{ "type": "command", "command": "ai-usage hook --ctx-limit 200k", "timeout": 10 }
-```
-
-Use the same limits on both entries, or the line and the hook will disagree about when to
-compact. `--no-color` or `NO_COLOR=1` drops the status line's colour.
-
-**Not sure what is switched on?** `ai-usage status` reads `~/.claude/settings.json` and
-reports each integration as `on` or `not found`, with the entry to add for whichever is
-missing:
-
-```text
-Claude Code integrations (/home/you/.claude/settings.json):
-  Status line:  on -- plan limits, today's cost, cache and context size
-  Prompt hook:  not found -- asks Claude to suggest /compact when context is large
-  To turn on what is missing, add to that file (keep the keys already there):
-    "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "ai-usage hook", "timeout": 10 }] }] }
-  Both run the `ai-usage` command, so it must be on your PATH: npm i -g ai-usage-mcp
-  An entry in a project's .claude/settings.json is not checked.
-```
-
-**What it measures.** The size is the last real assistant turn in the session's transcript:
-fresh input plus cache reads plus cache writes, the same input side that `usage_report` counts
-as context carry. Subagent and placeholder turns are skipped. Right after `/compact` no turn
-has measured the new, smaller context yet, so the segment is **left out until the next reply**
-rather than showing the old size. It is left out too when the transcript cannot be read.
-
-**What it does not do.** It warns; it never compacts or clears anything by itself. It reads
-only the last few hundred kilobytes of one transcript, takes the token counts from it, and
-stores nothing. The hook opens no database and syncs nothing, so it adds only a few tens of
-milliseconds to a prompt.
-
-Every period-based tool takes `projectPaths` (a list) to narrow the report to one or more projects. The pre-0.8.0 singular `projectPath` is still accepted.
-
-An argument a tool does not declare is **rejected by name**, not ignored. Before 0.9.0,
-`{ "period": "today" }` was silently stripped and answered with all-time totals; every tool now
-advertises `additionalProperties: false`.
-
-`counterfactual_cost` answers "would a cheaper model have cost less for this?" — it re-prices
-the exact token counts that were recorded, grouped by client, model **and** speed so the
-fast-mode premium and the two clients' different reasoning-token conventions are both handled.
-It is a **counterfactual, not a saving**: the same task on a different model generally takes a
-different number of turns carrying a different context on each, and nothing on disk can say
-what that would have been. The caveat ships with the numbers.
-
-`cache_health` finds the turns in a session where the prompt cache stopped working: cache
-writes spike **and** cache reads fall below half of what the previous turn had cached, so the
-whole context was re-written at cache-write prices. A write spike alone -- reading one large
-file -- is not a break, because the existing prefix was still read back. Each break names a
-likely cause (a model or speed switch, idling past the 5-minute cache TTL, or an early-context
-change such as an edited `CLAUDE.md`) and its write premium, priced from the same versioned
-table as every other estimate. Main and subagent turns keep separate caches, so subagents are
-excluded by default and baselined separately when `includeSubagents` is set.
+Claude Code writes your Pro/Max 5-hour and weekly limits to no file, but it passes them to a
+status line. With `ai-usage statusline` as yours, the limits are recorded, with the reset times
+and when the current pace would reach 100%. Today's cost and the session's cache hit rate and
+breaks are shown beside them, and `plan_usage` answers the same from inside a conversation.
+`ai-usage hook` warns before a prompt when the session's context has grown expensive to
+re-send. `ai-usage status` says whether each one is switched on. Setup and details are in
+[docs/STATUS_LINE.md](docs/STATUS_LINE.md).
 
 ## Resources and prompts
 
@@ -639,373 +423,15 @@ ai-usage hook        # Claude Code UserPromptSubmit hook: warns when context is 
 
 Add `--json` to any command for machine-readable output.
 
-### Narrowing to several projects, models or clients
-
-`--client`, `--model` and `--project` are **repeatable and comma-separated**, and each matches
-_any_ of the values given:
-
-```bash
-ai-usage models   --model claude-opus-5,claude-sonnet-5
-ai-usage daily    --project /work/api --project /work/web    # same as a comma list
-ai-usage stats    --client opencode
-```
-
-Different scopes combine with **AND**: `--model claude-opus-5 --project /work/api` is Opus
-turns _in that project_.
-
-A value that matches no record anywhere in the database is called out rather than answered
-with an empty report, because a typo and a quiet week otherwise look identical:
-
-```text
-WARNING: no record anywhere in this database has model "claude-opus". An empty result below
-is that, not a quiet period. Run `ai-usage models` to see the ids actually present.
-```
-
-Note that `--model` (which turns to include) and `--target-models` (which rates to price them
-at, on `counterfactual` only) are different things, and usable together:
-`ai-usage counterfactual --model claude-opus-5 --target-models claude-sonnet-5` asks what the
-Opus turns would have cost on Sonnet.
-
-### Getting the data out
-
-```bash
-ai-usage export --days 30 > usage.csv        # one row per stored turn
-ai-usage export --format jsonl               # JSON Lines
-ai-usage export --project /work/api --model claude-opus-5
-```
-
-Every scope and period filter applies. The column set is a **stable, documented contract** —
-deliberately not `SELECT *`, so the table can grow a column without breaking every downstream
-spreadsheet, and no column can silently change meaning:
-
-```text
-id, timestamp, client, provider, model, session_id, project_path, turn_kind, speed,
-input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
-cache_write_1h_tokens, reasoning_tokens, total_tokens, cost_basis, cost, estimated_cost, currency
-```
-
-`cost` and `estimated_cost` are **separate columns** carrying `cost_basis` alongside, for the
-same reason every report keeps them apart. A value the source did not report is an **empty
-cell**, never `0` and never `null` — a figure nobody produced must not arrive in a spreadsheet
-as a number that gets summed with the real ones.
-
-Rows stream to stdout rather than being built in memory, so exporting a large database costs
-one row at a time. A `--limit`ed export says on **stderr** how many rows it left behind, which
-keeps stdout pipeable.
-
-(Previously the only route to the records was `sqlite3 usage.db '.mode csv' 'SELECT * FROM
-usage_records'`, which bypasses the product and depends on a schema the docs explicitly call
-internal and unversioned.)
-
-### Retention and merging two machines
-
-The database grows forever unless you tell it not to. Pruning is a **command, not a policy** —
-a retention setting that silently deleted last quarter on some future run is a worse tool than
-one that never deletes, because the data is gone and nothing asked. Put it in a cron if you
-want a policy:
-
-```bash
-ai-usage prune --before 2026-01-01          # DRY RUN: says what would go, deletes nothing
-ai-usage prune --before 2026-01-01 --yes    # actually delete
-ai-usage vacuum                             # reclaim the disk
-```
-
-`--before` is **exclusive**, like every other bound here: `--before 2026-01-01` removes 2025
-and keeps New Year's Day. Scope filters apply, so a prune cannot be broader than the report
-that justified it. `vacuum` measures the database's **whole footprint** — the `.db` plus its
-`-wal` and `-shm` companions — because this package always opens in WAL mode, where freshly
-written data lives in the `-wal` until a checkpoint folds it back. Measuring only the `.db`
-would report reclaiming nothing while most of the bytes sat next door.
-
-**Two machines, one total:**
-
-```bash
-# on the laptop
-ai-usage export --format jsonl > laptop.jsonl
-
-# on the desktop
-ai-usage import laptop.jsonl
-```
-
-Merging is **idempotent**. Record ids are derived deterministically from source identifiers, so
-the same turn — imported twice, or collected on both machines — upserts to one row rather than
-double counting. The output says how many rows were updated in place rather than added, so you
-can see that happening.
-
-A row that does not fully parse is **rejected with its line number** and the import exits
-non-zero. Importing a half-valid row would write a turn with invented zeroes, and a merged
-database that quietly under-counts is worse than a failed import.
-
-### Cache economics
-
-Cache tokens are where the money is — on the development machine cache-read is **94.7% of all
-tokens**, and for Claude Code it outweighs plain input by roughly 33,000×. Raw counts alone
-cannot say whether that cache is paying for itself, so `stats` and `clients` derive the figures
-that can:
-
-```text
-claude-code  --  8,486 records, 86 sessions
-  Cache hit rate:    97.12%
-  Reads per write:   33.7  (1 write : 33.7 reads)
-                     Break-even is 0.28 reads per 5-minute write and 1.11 per 1-hour write,
-                     so this cache is paying for itself.
-```
-
-Break-even is derived from the pricing table's own multipliers, not hardcoded: a 5-minute write
-costs `1.25×` input, so `0.25×` extra, and each read saves `0.9×` — hence `0.25 / 0.9 = 0.28`
-reads per write. Change the multipliers (or use a provider whose cache discount differs) and
-the threshold moves with them.
-
-A hit rate is **absent, not `0%`**, when there was no cache traffic at all — those are different
-statements. A genuine 0% (writes that were never read) _is_ reported, because it is the worst
-case for the write premium and exactly what you would want to see.
-
-`counterfactual` adds what the same tokens would have cost with **no caching at all**:
-
-```text
-Those same tokens with NO prompt caching at all:
-  claude-opus-5       $5252.61  vs     $861.31 actually estimated  ->  cache saved $4391.29 (83.6%)
-  claude-sonnet-5      $117.37  vs      $22.20 actually estimated  ->  cache saved $95.17 (81.1%)
-```
-
-This is the one scenario in the tool permitted to state a **saving**, and the reason is worth
-knowing. A model counterfactual cannot: the same task on a different model takes a different
-number of turns with a different context on each. Here the token counts genuinely are
-invariant — cache-read tokens _are_ the context re-sent each turn, so without a cache they
-would have been sent as ordinary input one for one, and the write premium would simply not
-have been paid. The remaining assumption (that a cacheless run would have made the same
-requests) prints with the numbers.
-
-A negative saving is reported as such rather than clamped: burning the write premium on
-sessions too short to reuse it is precisely what this is for.
-
-### Budget, run rate and forecast
-
-```bash
-ai-usage budget --amount 500 --basis estimated            # this calendar month
-ai-usage budget --amount 20  --basis reported --period week
-```
-
-```text
-Budget -- September 2026 (local), estimated cost basis
-
-  Budget:             $500.00
-  Spent so far:       $505.86   101.2% of budget
-  OVER BY:              $5.86
-  Elapsed:       16.5 of 30 days   55.0% of period
-
-Run rate and projection to period end:
-  Per calendar day       $30.65/day  ->      $919.65   OVER by $419.65
-                     (over 16.5 elapsed calendar days)
-  Per active day         $42.15/day  ->     $1264.65   OVER by $764.65
-                     (over 12 day(s) with any recorded activity)
-```
-
-**Two projections, never one.** Extrapolating month-end spend by hand meant picking a
-denominator — calendar days or active days — and on a machine used on weekdays only those
-differ by more than 2×. Showing one would be making that modelling choice silently on your
-behalf; the gap between them _is_ the size of the assumption.
-
-**`--basis` is required, with no default.** Reported and estimated cost are never summed, so a
-budget with no stated basis is a budget against nothing in particular:
-
-- `reported` — what a client actually charged. **Claude Code reports no cost at all**, so its
-  usage is not counted on this basis.
-- `estimated` — API-equivalent list price. On a Claude Pro/Max subscription your marginal cost
-  per request is **$0**, so this is a shadow price for comparing workloads, not a bill. The
-  figure to watch on a subscription is usage against your plan limits — see
-  [the status line](#plan-limits-and-the-status-line). The output says so every time.
-
-**Calendar periods only** (`month`, `week`). A projection needs a period end to aim at, which a
-rolling window has not got.
-
-**Exit 1 on a fact, not on a forecast.** `budget` exits 1 when spend _already_ exceeds the
-target. It does not fail on a projection — that would page somebody about arithmetic rather
-than about spend. To threshold a projection deliberately, compose with `--field`:
-
-```bash
-ai-usage budget --amount 500 --basis estimated \
-  --field projections.perActiveDay.projected --fail-over 500
-```
-
-### Using it in a script or an alert
-
-```bash
-ai-usage stats --today --field overall.cost.estimated
-# 18.067632500000002
-
-ai-usage stats --today --field overall.cost.estimated --fail-over 25 || notify "over budget"
-```
-
-`--field` prints **one value and nothing else** — no header, no label, no JSON — so a shell can
-read it without `jq`. `--fail-over` turns that same value into an **exit code**: `1` when it is
-strictly greater than the threshold, `0` otherwise. stdout still carries the value, so a script
-can branch _and_ capture it in one run.
-
-| Exit | Meaning                                                                         |
-| ---- | ------------------------------------------------------------------------------- |
-| `0`  | Fine — including a value exactly at the threshold                               |
-| `1`  | Threshold exceeded                                                              |
-| `2`  | Bad usage: unknown field, `--fail-over` with no `--field`, any other flag error |
-
-Two deliberate refusals:
-
-- **`--fail-over` requires `--field`.** There is no default, because reported and estimated
-  cost are separate figures that are never summed — "fail if cost exceeds $25" has no single
-  answer, and a default would silently ignore every record priced the other way.
-- **An unknown field is exit 2, never exit 0.** A threshold check against a silently-missing
-  field would pass forever, which is the worst failure an alert can have: it looks like
-  everything is fine. The error names the fields that _do_ exist at that level.
-
-### Crossing two dimensions
-
-`projects` gives a total with no trend; `daily --project X` gives one series. Answering
-"which of my projects is getting more expensive" therefore meant enumerating projects, issuing
-one call per path, and joining the results — an N+1 that is not feasible as a single tool call
-at all. `breakdown` crosses the axes in one query:
-
-```bash
-ai-usage breakdown --by project,day --days 30
-ai-usage breakdown --by model,day --days 7 --sort estimated-cost
-ai-usage breakdown --by client,model,hour-of-day
-```
-
-```text
-project                                day         turns  total tokens  reported  estimated
--------------------------------------  ----------  -----  ------------  --------  ---------
-/home/you/centralized_backend          2026-09-16    230    20,040,546        --     $22.23
-/home/you/centralized_backend          2026-09-15    161    19,803,069        --     $18.58
-/home/you/Videos/ai-usage              2026-09-17     82    24,592,585        --     $18.07
-```
-
-Axes: `client`, `model`, `provider`, `project`, `session`, `day`, `hour`, `hour-of-day` — up to
-three, each at most once. Time axes bucket in local time, identically to `daily`.
-
-Two things it deliberately does not do. Combinations with **no activity are absent** rather
-than returned as zero rows: a project × day grid is mostly empty and filling it would bury the
-rows that matter. And a `--` in a cost column means **no record in that row is priced on that
-basis** — it is not `$0`, which would be a different claim.
-
-`--sort`, `--limit` and `--offset` work here as on any other list.
-
-### Reading a trend
-
-`daily` shows **every** bucket in the window, including the ones with no activity:
-
-```text
-2026-09-17      52 turns  total 14,187,806 (14.19M)  (estimated $11.27)
-2026-09-16     333 turns  total 33,849,492 (33.85M)  (estimated $33.56)
-2026-09-15     161 turns  total 19,803,069 (19.80M)  (estimated $18.58)
-2026-09-14       0 turns  total 0   --
-2026-09-13       0 turns  total 0   --
-2026-09-12       0 turns  total 0   --
-2026-09-11     123 turns  total 12,157,650 (12.16M)  (estimated $10.89)
-```
-
-Rows marked `--` had no recorded activity. They used to be omitted, which made a trend
-_actively_ misleading rather than merely incomplete: the gaps were invisible, so the 11th
-rendered immediately below the 15th and any eye reading down the column saw a continuous
-series that did not exist. A zero row is not a fabricated number — it says what the absence of
-a row already meant. In JSON each carries `zeroFilled: true`, so a consumer can tell a
-constructed zero from an observed one.
-
-`--grain` changes the bucket:
-
-```bash
-ai-usage daily --days 7  --grain hour          # a finer timeline
-ai-usage daily --days 30 --grain hour-of-day   # every day on one 24-hour clock
-```
-
-`hour-of-day` is the one that answers _when_ you burn tokens, as opposed to _how much_:
-
-```text
-10:00     185 turns  total 43,016,467 (43.02M)   (estimated $42.61)
-11:00     526 turns  total 113,820,907 (113.82M) (estimated $99.95)
-12:00   1,413 turns  total 280,913,509 (280.91M) (estimated $213.99)
-...
-19:00       0 turns  total 0   --
-```
-
-All buckets are local time, matching the period filter, and `localtime` reads the OS timezone
-database so they stay correct across DST.
-
-### Comparing two periods
-
-`stats --compare previous` reports the equal-length window immediately before, and the delta:
-
-```bash
-ai-usage stats --days 7 --compare previous
-ai-usage stats --today  --compare previous     # vs yesterday
-```
-
-```text
-Compared with the 7 days before that
-  (2026-09-03T18:30:00.000Z -> 2026-09-10T18:30:00.000Z)
-
-  Records:                      -847   -55.9%
-  Total tokens:         -201,112,497   -71.5%
-  Cost (estimated):         -$160.06   -68.3%
-  Cost (reported):             $0.00   n/a, previous was zero
-```
-
-Three rules it keeps:
-
-- **The two cost bases are deltaed separately and never summed**, for the same reason they are
-  reported separately.
-- **There is no percentage change from zero.** `$0 → $5` is a new thing happening, not a rise
-  of 100%, so the percentage is reported as `n/a` rather than invented.
-- **The previous window is aligned to the same local midnights the period uses.** `--days 7`
-  compares against the seven whole days before, not "the 156 hours before" — which is what
-  subtracting an open window's elapsed length gives, and which changes every time you run it.
-
-`--compare` needs a period of fixed length: `--days`, `--today`, or `--since` **and**
-`--until` together. An open-ended period — all time, or `--since` or `--until` on its own — has
-no equally long window before it, so the comparison is refused (exit 2) rather than silently
-left out of an otherwise ordinary report.
-
-### Ordering and paging a list
-
-`sessions`, `models`, `projects` and `clients` accept `--sort`, `--limit` and `--offset`:
-
-```bash
-ai-usage sessions --sort estimated-cost --limit 5     # the costliest, not the latest
-ai-usage projects --sort estimated-cost
-ai-usage sessions --limit 100 --offset 100            # page two
-```
-
-| `--sort`         | Orders by                                           |
-| ---------------- | --------------------------------------------------- |
-| `tokens`         | Total tokens (default everywhere except `sessions`) |
-| `estimated-cost` | Estimated cost                                      |
-| `reported-cost`  | Reported cost                                       |
-| `records`        | Turn count                                          |
-| `sessions`       | Distinct sessions                                   |
-| `recent`         | Most recent activity (default for `sessions`)       |
-
-**There is deliberately no plain `--sort cost`.** Reported and estimated cost are separate
-figures that are never summed, so ordering by one sorts every row priced on the _other_ basis
-as though it were `$0`. The flag refuses the ambiguous form and names the two to pick from,
-and whichever you pick, the output says how many rows it could not speak for:
-
-```text
-Showing 5 of 366 sessions (offset 0), sorted by estimated-cost.
-More available: re-run with --offset 5 for the next page.
-NOTE: 280 of those sessions carry no estimated cost at all, so they sort as $0. They are not
-cheap -- they are priced on the other basis, or not priced at all.
-```
-
-That footer is why `--limit` is now safe to pass: it says what you did _not_ see. Before, the
-most expensive session was visible only if it also happened to be recent, and `--limit` made
-it less likely to be.
-
-In `--json` and MCP `structuredContent` this is a `page` object carrying `total`, `offset`,
-`hasMore`, `nextOffset`, `sort` and `rowsWithoutSortValue` — enough to walk a list to the end
-and know when you are done.
-
-`ai-usage stats --today` returns exactly what the `usage_summary` tool returns; a test in
-`tests/mcp/parity.test.ts` asserts they are byte-identical.
-
----
+More in [docs/CLI.md](docs/CLI.md):
+
+- narrowing to several projects, models or clients
+- CSV and JSON export
+- keeping history after Claude Code's 30-day cleanup, and merging two machines
+- cache economics
+- budgets with run rate and forecast
+- a single value and an exit code for scripts and alerts
+- project × day breakdowns, trends, period comparisons, and paging
 
 ## How cost is reported
 
@@ -1051,157 +477,9 @@ The two cache-write TTLs are tracked separately because both occur heavily in pr
 the machine this was developed against, 18.0M of 27.2M cache-write tokens used the 1-hour
 TTL, so averaging the rates would have understated cost substantially.
 
-### Which models ship with prices
-
-Pricing is versioned data (`src/pricing/tables/`), one file per provider, each keeping its
-own capture date:
-
-| Table                  | Models                                                                                               |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| `anthropic-2026-10-23` | Fable 5.1 / 5, Mythos 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6, Sonnet 5.5 / 5 / 4.6, Haiku 5.5 / 4.5 |
-| `openai-2026-09-16`    | gpt-6-astra, gpt-5.6-sol / terra / luna / cyber                                                      |
-
-Haiku 5.5 has two rate cards: a request whose prompt (input, cache reads and cache writes
-together) is over 100,000 tokens pays 5× the short-prompt rates. Each stored turn is one
-request, so each is priced on its own prompt.
-
-They are composed into one table, reported by `ai-usage status` as `builtin-<date>` with
-every provider's provenance behind it. Two tables may not price the same model id — that
-raises an error at build time rather than silently applying one vendor's rates to another's
-tokens.
-
-A Claude model released after that capture date is normally priced within a day anyway --
-see the next section. Anything that neither covers has no estimate, and the reports say so
-explicitly rather than showing `$0`. Add it yourself with an override.
-
-### New models are priced automatically
-
-A pricing table captured on one date cannot price a model released on the next, so every
-Claude Code turn on a new model used to report its cost as unavailable until a release caught
-up. Now the MCP server downloads [LiteLLM's community price
-list](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) in
-the background, at most once a day, and uses it for the Claude models the built-in table does
-not have yet:
-
-- **It only fills gaps.** A model the built-in table prices keeps the built-in price; the
-  community list never changes a number this package ships.
-- **It takes a model only if every rate is there** -- input, output, cache read, both
-  cache-write TTLs. A missing rate is not borrowed from a default, because newer models are
-  exactly where the defaults go wrong (Opus 5.5 reads cache at 0.05×, not 0.1×). A model
-  with a long-context price tier is left unpriced: what LiteLLM counts as the prompt for its
-  tier is not documented, and a built-in table or your override states it explicitly.
-- **It is labelled.** Estimates it contributes to cite a table version like
-  `builtin-2026-09-26+litellm-2026-10-02`, and `ai-usage status` lists the models it priced:
-
-  ```text
-  Pricing table:  builtin-2026-09-26+litellm-2026-10-02  (Anthropic first-party ...; plus 1 model(s) ...)
-    Community:     1 model(s) the built-in tables lack, from LiteLLM's price list fetched 2026-10-02: claude-opus-6
-  ```
-
-- **Earlier turns are priced too.** Records stored as unavailable before a price existed are
-  priced as soon as one does -- from the community list, a release, or your own override --
-  on the next sync, with no `sync --full` needed. Only `unavailable` records change; a cost a
-  client reported itself is never touched.
-
-It is one plain GET of a public ~3 MB file, carrying no usage data and no identifier. The
-converted prices are cached in `<config dir>/pricing-community.json`; a failed download keeps
-the previous copy. The CLI's `ai-usage sync` refreshes it as well. Turn it off with
-`AI_USAGE_NO_PRICING_REFRESH=1` (or `AI_USAGE_NO_UPDATE_CHECK=1`, which turns off both network
-requests); prices are then exactly the built-in tables plus your override.
-`AI_USAGE_PRICING_URL` points it at a mirror.
-
-The OpenAI numbers are the **Standard tier, short context** rates. OpenAI also publishes
-long-context, Batch, Flex and Fast-mode rates, and nothing in a stored record says which
-applied — so a long-context turn is _understated_ rather than guessed at. Providers whose
-published pricing this table cannot express exactly (DeepSeek, for instance, bills different
-rates at peak and off-peak hours) are deliberately not shipped; supply them yourself, with
-whichever rate is true for you.
-
-### Adding or correcting prices yourself
-
-Drop a JSON file at:
-
-```text
-~/.config/ai-usage-mcp/pricing.json      # or $AI_USAGE_PRICING_FILE
-```
-
-It is **overlaid onto the built-in table**, keyed by model id — so adding one model keeps
-every built-in price. (Before 0.8.0 it replaced the table wholesale, which meant the only
-way to add a missing provider was to lose every price you already had.)
-
-```jsonc
-{
-  // Required. Names YOUR table; this is the string reports will cite.
-  "version": "my-prices-2026-09-16",
-
-  // Optional. Shown by `ai-usage status`, with the built-in provenance appended.
-  "provenance": "DeepSeek off-peak list pricing, captured 2026-09-16",
-
-  // Optional. The default cache rates for models that do not carry their own.
-  // Omit to inherit the built-in defaults (read 0.1, write5m 1.25, write1h 2.0).
-  "cacheMultipliers": { "read": 0.1, "write5m": 1.25, "write1h": 2.0 },
-
-  // Required. Keyed by the model id EXACTLY as your client records it --
-  // `ai-usage models` lists the ids actually present in your database.
-  "models": {
-    "deepseek-v4-pro": {
-      "input": 0.66, // USD per 1,000,000 input tokens
-      "output": 1.98, // USD per 1,000,000 output tokens
-
-      // Optional: premium rates, applied when the source recorded `speed: "fast"`.
-      // Only Claude Code records a speed at all.
-      "fast": { "input": 1.32, "output": 3.96 },
-
-      // Optional: cache rates for THIS model, when the provider's differ from the
-      // table default. DeepSeek's cache-hit rate is 0.02x its input rate, not 0.1x.
-      "cache": { "read": 0.0333, "write5m": 1.0, "write1h": 1.0 },
-
-      // Optional: a second rate card for a request whose prompt (input + cache
-      // read + cache write) is OVER aboveTokens. The cache multipliers apply to
-      // whichever input rate the request gets. Fast-mode rates ignore it.
-      "longContext": { "aboveTokens": 200000, "input": 1.32, "output": 3.96 },
-    },
-  },
-}
-```
-
-**Units.** `input` and `output` are USD **per 1,000,000 tokens** — the same unit every
-provider's pricing page publishes, so you can copy the number straight across. The three
-`cache*` values are **multipliers of that model's input rate**, not prices: `read: 0.1`
-means a cache read costs a tenth of an input token. If your provider publishes an absolute
-cached-input price, divide it by the input price to get the multiplier.
-
-**What is required.** `version` and `models`; within each model, `input` and `output`.
-Everything else is optional. `currency` and `unit` are ignored if present — USD per million
-tokens is the only supported combination, and accepting a value that does nothing would be
-worse than ignoring it.
-
-**Replacing rather than overlaying.** Set `"replace": true` to discard the built-in table
-entirely. That form additionally _requires_ `cacheMultipliers.{read,write5m,write1h}`,
-because there is no built-in default left to inherit.
-
-An override entry replaces that model's price **wholesale**, not field by field: if the
-built-in entry has `fast` rates and yours does not, the model has no fast rates. A
-half-inherited price is a figure nobody could reason about.
-
-A malformed override **raises an error naming the offending field** rather than silently
-falling back — quietly using different prices than you think are in effect would be worse
-than failing:
-
-```text
-Pricing override at /home/you/.config/ai-usage-mcp/pricing.json is invalid:
-models["deepseek-v4-pro"].output must be a number >= 0 (USD per 1,000,000 tokens).
-```
-
-For the same reason, an `AI_USAGE_PRICING_FILE` that points at a file which does not exist is
-an error, not a fallback to built-in prices — otherwise a typo in the path would look exactly
-like the override working. Only the default `~/.config/ai-usage-mcp/pricing.json` may be
-absent, because not having one is the normal case.
-
-`ai-usage status` always shows which table is in force, and whether it is built-in, an
-overlay, or a full replacement.
-
----
+Which models ship with prices, how a model released after this package is priced
+automatically, and how to add or correct a price yourself are covered in
+[docs/PRICING.md](docs/PRICING.md).
 
 ## Why token counts here are trustworthy
 
@@ -1301,119 +579,16 @@ Delete that file to erase everything the tool knows.
 
 ## Troubleshooting
 
-### `ai-usage status` says a collector is unavailable
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) covers:
 
-It prints the reason and every path it looked at. Point it at the right place:
-
-| Variable                      | Purpose                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| `AI_USAGE_OPENCODE_DB`        | Path to `opencode.db`                                                   |
-| `AI_USAGE_CLAUDE_PROJECTS`    | Path to Claude Code's `projects/` directory                             |
-| `AI_USAGE_DB`                 | Where to keep our database                                              |
-| `AI_USAGE_HOME`               | Relocates both the database and the config dir in one go                |
-| `AI_USAGE_PRICING_FILE`       | Pricing override file                                                   |
-| `AI_USAGE_FRESHNESS_MS`       | How long a sync stays fresh before a tool call re-syncs (default 30000) |
-| `AI_USAGE_NO_UPDATE_CHECK`    | Set to `1` to turn off both network requests (update check and prices)  |
-| `AI_USAGE_NO_PRICING_REFRESH` | Set to `1` to stop downloading prices for models the tables lack        |
-| `AI_USAGE_PRICING_URL`        | Where to download the community price list from (a mirror)              |
-| `AI_USAGE_SQLITE_DRIVER`      | Force `node:sqlite` or `better-sqlite3`; unset picks the best available |
-
-### Numbers look lower than `opencode stats`
-
-Expected, and `opencode stats` is the one that's off. Its headline block reads OpenCode's
-`session` rollup columns, which can be stale, while its own per-model block reads message
-grain. The two halves of its output do not agree with each other. This tool matches the
-message grain — the number corroborated by two independent tables. Run `ai-usage verify` to
-see all three grains side by side.
-
-### `ai-usage status` reports additional stores
-
-You have more than one OpenCode database — usually because a sandboxed launcher exports its
-own `XDG_DATA_HOME`. Only the store OpenCode itself resolves is collected by default. Each
-extra store may be genuinely separate history or just a stale copy. Records are keyed by
-source record id, so merging is safe:
-
-```bash
-ai-usage sync --all-stores
-```
-
-### Claude Code cost seems enormous
-
-Read it as API-equivalent list price, not as money you spent — see the cost section above.
-On a Pro/Max subscription the marginal cost per request is $0; what you are spending is your
-plan limits, which [`ai-usage limits`](#plan-limits-and-the-status-line) reports.
-
-### `claude: command not found`
-
-You do not need the CLI. Claude Code's extensions read the same configuration files, so you can
-register the server by creating `.mcp.json` in your project root, or by adding an `mcpServers`
-block to `~/.claude.json` — see the collapsed section under [Install](#claude-code). If you do
-want the CLI, `npm install -g @anthropic-ai/claude-code` provides it.
-
-### `/mcp` shows ai-usage as failed
-
-The server is spawned by Claude Code, so it has to be resolvable from the environment Claude
-Code runs in. `npx -y ai-usage-mcp` is the most portable form and is what the instructions
-above use.
-
-If it still fails, your editor was probably launched without your shell's PATH (common with
-Snap or Flatpak builds on Linux, and with launching from a desktop icon on macOS). Point the
-config at absolute paths to bypass PATH lookup entirely:
-
-```json
-{
-  "mcpServers": {
-    "ai-usage": {
-      "command": "/absolute/path/to/node",
-      "args": ["/absolute/path/to/lib/node_modules/ai-usage-mcp/dist/mcp/server.js"]
-    }
-  }
-}
-```
-
-Get both paths with `command -v node` and `npm root -g` after `npm install -g ai-usage-mcp`.
-This pins the Node version, so prefer the `npx` form unless you need it.
-
-### `node-gyp rebuild` errors during install
-
-On Node 22.13+ this no longer fails the install. `better-sqlite3` is an **optional**
-dependency, so npm reports the build failure and carries on; storage falls back to Node's
-built-in `node:sqlite`. Confirm with:
-
-```bash
-ai-usage status        # expect: SQLite driver: node:sqlite
-```
-
-If that line instead reads `better-sqlite3`, your Node is older than 22.13.0 and the native
-module is genuinely required — upgrade Node, which is the simplest fix. Historically this bit
-Windows on npm 10, which ignores `better-sqlite3`'s `gypfile: false` flag and compiles from
-source even though a usable prebuilt binary is bundled; `npm install -g npm@11` fixed that,
-and remains the fix if you are pinned to an older Node and need the fallback to build.
-
-### A model shows cost as unavailable, or "no estimate attempted"
-
-That model is not in the pricing table. A new Claude model is normally picked up within a day
-from the [community price list](#new-models-are-priced-automatically) -- the `Community:` line
-of `ai-usage status` says whether it is on, when the list was last downloaded, and what it
-priced. If it is off, or the list does not have the model yet, add it via a [pricing override
-file](#adding-or-correcting-prices-yourself). Either way, records already stored are priced
-on the next sync. The tool will not guess a price.
-
-`ai-usage models --json` lists the model ids exactly as your clients recorded them, which are
-the keys your override file needs.
-
-### Totals changed after re-syncing
-
-They should not. Records are keyed deterministically by source identifiers and upserted, so
-re-syncing is idempotent — `ai-usage sync --full` re-reads everything and must leave totals
-unchanged. A test asserts this. If it happens, please file an issue with `ai-usage verify`
-output.
-
-### Sync feels slow
-
-Only the first sync reads everything (~2.5s for 87MB of transcripts plus a 900MB database on
-the development machine). After that, unchanged transcripts are skipped by size + mtime and
-OpenCode is read incrementally from a saved cursor. `--full` ignores the cursors.
+- a collector reported as unavailable
+- numbers lower than `opencode stats`
+- additional stores
+- `/mcp` showing the server as failed
+- `node-gyp` errors
+- models with no estimate
+- totals that changed after a re-sync
+- a client that keeps writing while no new turns arrive
 
 ---
 

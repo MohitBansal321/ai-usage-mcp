@@ -21,6 +21,7 @@ describe('context watch (CLI)', () => {
     AI_USAGE_DB: dbPath,
     AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
     AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
     AI_USAGE_NO_UPDATE_CHECK: '1',
   };
   delete baseEnv.NO_COLOR;

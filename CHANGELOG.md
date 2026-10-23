@@ -7,6 +7,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`ai-usage status` warns when a client keeps writing but no new turns arrive.** Neither
+  client versions its on-disk format, and when OpenCode 2.x began writing turns to a new table,
+  a user lost two days of usage with nothing saying so. Each collector now reports when its
+  client last wrote to its data: the newest Claude Code transcript, or `opencode.db` and its
+  `-wal`. If a sync after that write found no turn within six hours of it, `status` (and the
+  `usage://status` resource) says so and points at the issue tracker. It is worded as a prompt
+  to check. Opening a client without sending a prompt also writes, and on the development
+  machine OpenCode wrote 56 minutes after its last turn as it shut down.
+- **Codex CLI usage.** A third collector reads Codex's session rollouts
+  (`~/.codex/sessions`, or `$CODEX_HOME`; `archived_sessions/` too), one record per model
+  request, with the project, branch, model and CLI version of each. Every report, filter and
+  MCP tool takes `codex` as a client. Codex records no cost, so its cost is an API-equivalent
+  estimate from the pricing table, or unavailable for a model the table lacks (both models seen
+  so far, `gpt-6-luna` and `gpt-5.4`, are not in it yet). Two traps are handled: Codex repeats
+  its `token_count` event with an unchanged running total (39 of 76 events in one session), and
+  0.162 writes each request a second time as a `token_usage_record`. A request is counted once,
+  when the running total moves. OpenAI counts cached input inside `input_tokens` and reasoning
+  inside `output_tokens`, so cached input is moved to cache-read and reasoning is not added
+  again. The Codex snap keeps its own home under `~/snap/codex/`; it is reported as an extra
+  store and read with `--all-stores`. `AI_USAGE_CODEX_HOME` points the collector somewhere else.
+- **`ai-usage verify` checks Codex** against Codex's own running total, and against the
+  `token_usage_record` lines where a session has them. The format was verified on only two
+  sessions (Codex CLI 0.114.0 and 0.162.0-alpha.17.2); `docs/DATA_SOURCES.md` §3 says exactly
+  what was seen. Run `verify` on your own Codex history and report a mismatch.
+
 ### Changed
 
 - **The tool list a client loads is 13% smaller.** Every tool schema repeats the shared period,
@@ -14,6 +41,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   others) sends the whole list with every request. Their descriptions now say only what changes
   how an argument is used, which takes `tools/list` from 29,005 to 25,177 characters (about
   7,250 to 6,300 tokens). No tool, argument or default changed.
+- **The README is 60% shorter, and leads with a one-command try.** It went from 1,479 lines to
+  about 640. The reference sections moved word for word into `docs/`: `CLI.md`, `PRICING.md`,
+  `TROUBLESHOOTING.md`, `STATUS_LINE.md` and `INSTALL.md`. The README links to each. New in the
+  README are `npx -y -p ai-usage-mcp ai-usage report` near the top and a compatibility table
+  giving the client versions `verify` was last run against. `SECURITY.md` linked to a README
+  anchor that no longer existed. It now links to the pricing override docs.
+
+### Fixed
+
+- **The first CLI command on a new machine answered "0 turns".** The CLI never syncs on its
+  own, so `npx -p ai-usage-mcp ai-usage report`, the no-install route the README offers, always
+  met an empty database and reported no usage on a machine full of it. A command that reads
+  stored usage now syncs once first when nothing has ever been synced, and says so on stderr.
+  Every later run, and stdout on that first run, is unchanged.
 
 ## [0.15.0] - 2026-10-23
 

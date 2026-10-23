@@ -16,7 +16,7 @@ import {
  * Rows from any other client carry the cost the client itself reported, which
  * no pricing table may overwrite.
  */
-export const ESTIMATED_CLIENTS: readonly ClientId[] = ['claude-code'];
+export const ESTIMATED_CLIENTS: readonly ClientId[] = ['claude-code', 'codex'];
 
 /**
  * Where each client puts reasoning tokens relative to `outputTokens`.
@@ -25,15 +25,19 @@ export const ESTIMATED_CLIENTS: readonly ClientId[] = ['claude-code'];
  * are a *detail of* `output_tokens`, so they are already paid for by pricing
  * output. OpenCode's `reasoning` is a *sibling* of `output` (verified:
  * `tokens.total === input + output + reasoning + cache.read`), so pricing only
- * `output` would bill nothing for them.
+ * `output` would bill nothing for them. Codex follows OpenAI's convention:
+ * `reasoning_output_tokens` is part of `output_tokens` (verified: `total_tokens
+ * === input_tokens + output_tokens` on every counted request).
  *
- * Collection-time estimates never hit this, because only Claude Code is
- * estimated -- OpenCode reports its own cost. Anything that RE-prices a stored
- * row does hit it, for every client. See docs/DATA_SOURCES.md.
+ * Collection-time estimates never hit this, because only the clients whose
+ * reasoning is inside output are estimated -- OpenCode reports its own cost.
+ * Anything that RE-prices a stored row does hit it, for every client. See
+ * docs/DATA_SOURCES.md.
  */
 export const REASONING_PLACEMENT: Record<ClientId, 'inside-output' | 'sibling-of-output'> = {
   'claude-code': 'inside-output',
   opencode: 'sibling-of-output',
+  codex: 'inside-output',
 };
 
 /**
@@ -101,8 +105,9 @@ export interface Estimate {
  *     two cache-write TTLs are priced separately (1.25x vs 2x input). Averaging
  *     them would have understated this machine's real usage, where 55.1M of the
  *     82.6M cache-write tokens used the 1-hour TTL.
- *  3. Reasoning/thinking tokens are NOT priced separately for Claude: they are
- *     already inside `output_tokens`. Adding them would double-charge.
+ *  3. Reasoning/thinking tokens are NOT priced separately for Claude Code or
+ *     Codex: they are already inside `output_tokens`. Adding them would
+ *     double-charge.
  */
 export class CostService {
   private loaded: LoadedPricing;

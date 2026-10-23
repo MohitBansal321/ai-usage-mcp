@@ -15,8 +15,8 @@ export interface RepriceResult {
 
 /**
  * The estimate input for a stored turn -- the same fields, from the same
- * tokens, that the Claude Code collector passes when it first prices the turn,
- * so a re-priced row matches what a full re-sync would write.
+ * tokens, that the Claude Code and Codex collectors pass when they first price
+ * the turn, so a re-priced row matches what a full re-sync would write.
  */
 function estimateInput(turn: TurnRow): EstimateInput {
   return {

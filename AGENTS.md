@@ -10,8 +10,8 @@ re-derive these formats by guessing.
 ## What this project is
 
 A local-first MCP server that reports **real** token usage and cost across coding agents
-(Phase 1: Claude Code + OpenCode). Local SQLite, twelve MCP tools, a debug CLI. Nothing leaves
-the machine.
+(Phase 1: Claude Code + OpenCode; Codex CLI added since). Local SQLite, twelve MCP tools, a
+debug CLI. Nothing leaves the machine.
 
 ## Non-negotiable rules
 
@@ -51,7 +51,7 @@ the machine.
    ~1GB file on every sync.
 6. **Stay inside Phase 1 scope.** No dashboard, login, accounts, routing, optimization, or
    extra client collectors until the Definition of Done is fully green.
-7. **Re-verify before trusting.** Both source formats are internal and unversioned. If
+7. **Re-verify before trusting.** Every source format is internal and unversioned. If
    something does not match PROJECT_CONTEXT.md §5, inspect the real files and update the doc
    in the same change.
 
@@ -66,7 +66,13 @@ Reasoning tokens are **inside** `output_tokens` for Claude Code but **beside** `
 OpenCode — handling that generically double-counts. Cache-read dwarfs input (800M vs 24K), so
 always break token classes out and never show one blended total.
 
-Run `ai-usage verify` after any collector change: it re-derives both sources with a second,
+Codex: count a `token_count` event only when `total_token_usage` changed — Codex repeats the
+event with an unchanged total (39 of 76 events in one session). `token_usage_record` (0.162+)
+is the same request again; never add it to `token_count`. OpenAI puts cached input **inside**
+`input_tokens` and reasoning **inside** `output_tokens`, so cached input is subtracted out of
+input, and reasoning is not added. See `docs/DATA_SOURCES.md` §3.
+
+Run `ai-usage verify` after any collector change: it re-derives every source with a second,
 independent implementation and must report a zero delta.
 
 ## Commands

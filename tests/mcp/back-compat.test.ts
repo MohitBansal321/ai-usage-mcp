@@ -88,6 +88,7 @@ describe('pre-0.8.0 MCP argument spellings', () => {
         AI_USAGE_DB: join(dir, 'usage.db'),
         AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
         AI_USAGE_CLAUDE_PROJECTS: projects,
+        AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
         AI_USAGE_FRESHNESS_MS: '0',
         AI_USAGE_NO_UPDATE_CHECK: '1',
       },
