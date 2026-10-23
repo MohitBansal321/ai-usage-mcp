@@ -38,7 +38,7 @@ treated as a security-relevant change and called out explicitly in review.
 ## What is not in scope
 
 - Cost figures being inaccurate because a pricing table is out of date. Prices change; use a
-  [pricing override](README.md#correcting-prices-yourself). Cost is always labelled with its
+  [pricing override](docs/PRICING.md#adding-or-correcting-prices-yourself). Cost is always labelled with its
   basis, and an unknown model reports `unavailable` rather than a guess.
 - The database being readable by other processes running as the same user. It carries the
   same trust boundary as the source data it is derived from.

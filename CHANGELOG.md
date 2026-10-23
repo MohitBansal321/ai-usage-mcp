@@ -25,6 +25,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   others) sends the whole list with every request. Their descriptions now say only what changes
   how an argument is used, which takes `tools/list` from 29,005 to 25,177 characters (about
   7,250 to 6,300 tokens). No tool, argument or default changed.
+- **The README is 60% shorter, and leads with a one-command try.** It went from 1,479 lines to
+  about 640. The reference sections moved word for word into `docs/`: `CLI.md`, `PRICING.md`,
+  `TROUBLESHOOTING.md`, `STATUS_LINE.md` and `INSTALL.md`. The README links to each. New in the
+  README are `npx -y -p ai-usage-mcp ai-usage report` near the top and a compatibility table
+  giving the client versions `verify` was last run against. `SECURITY.md` linked to a README
+  anchor that no longer existed. It now links to the pricing override docs.
 
 ### Fixed
 
