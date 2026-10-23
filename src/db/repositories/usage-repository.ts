@@ -61,13 +61,20 @@ export interface AggregateRow extends TokenTotals {
 
 /**
  * Totals for one (client, model, speed) combination -- the smallest grouping that
- * can be honestly re-priced at a different model's rates.
+ * can be honestly re-priced at a different model's rates -- further split at
+ * each long-context threshold asked for, so no group straddles a rate card.
  */
 export interface RepriceGroup extends AggregateRow {
   client: ClientId;
   model: string;
   /** Absent when the source never recorded a speed. Not the same as 'standard'. */
   speed?: string;
+  /**
+   * The longest single prompt in the group (input + cache read + cache write).
+   * Every prompt in the group falls on the same side of each threshold the
+   * groups were split at, so this picks the rate card all of them get.
+   */
+  maxPromptTokens: number;
 }
 
 /**
@@ -654,25 +661,42 @@ export class UsageRepository {
    * rates applied. Collapsing either one and then re-pricing would quietly get
    * the arithmetic wrong -- see docs/DATA_SOURCES.md.
    */
-  repriceGroups(filter: UsageFilter = {}): RepriceGroup[] {
+  /**
+   * @param splitAbove Prompt lengths to split each group at -- the long-context
+   *   thresholds of the models about to price it.
+   */
+  repriceGroups(filter: UsageFilter = {}, splitAbove: number[] = []): RepriceGroup[] {
     const { sql, params } = buildWhere(filter);
     const priced = bindPricedModels(filter, params);
+    const prompt =
+      '(COALESCE(input_tokens,0) + COALESCE(cache_read_tokens,0) + COALESCE(cache_write_tokens,0))';
+    // How many thresholds the prompt is over: one band per side of each. (Not a
+    // constant 0 when there are none -- a bare integer in GROUP BY is a column.)
+    const band = splitAbove
+      .map((above, i) => {
+        params[`above${i}`] = above;
+        return `(${prompt} > :above${i})`;
+      })
+      .join(' + ');
     const rows = this.db
       .prepare(
-        `SELECT client AS group_client, model AS group_model, speed AS group_speed, ${aggSelect(priced)}
+        `SELECT client AS group_client, model AS group_model, speed AS group_speed,
+                MAX(${prompt}) AS max_prompt, ${aggSelect(priced)}
          FROM usage_records ${sql}
-         GROUP BY client, model, speed
+         GROUP BY client, model, speed${band ? `, ${band}` : ''}
          ORDER BY total_tokens DESC`,
       )
       .all(params) as (RawAgg & {
       group_client: ClientId;
       group_model: string;
       group_speed: string | null;
+      max_prompt: number | null;
     })[];
     return rows.map((r) => {
       const group: RepriceGroup = {
         client: r.group_client,
         model: r.group_model,
+        maxPromptTokens: r.max_prompt ?? 0,
         ...toAggregate(r),
       };
       if (r.group_speed != null) group.speed = r.group_speed;

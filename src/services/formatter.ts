@@ -528,6 +528,14 @@ export function formatClients(report: ClientReport, costService: CostService): s
   return out.join('\n');
 }
 
+/**
+ * Claude Code writes `HEAD` whenever it cannot name a branch: mostly a session
+ * started outside a git repo (or before its first commit), and only sometimes a
+ * detached checkout. The stored value cannot tell these apart, so none is claimed.
+ */
+const NO_BRANCH = 'no branch';
+const branchName = (b: string) => (b === 'HEAD' ? NO_BRANCH : b);
+
 export function formatSessions(page: Page<SessionRow>, costService: CostService): string {
   const sessions = page.rows;
   if (sessions.length === 0) {
@@ -540,7 +548,7 @@ export function formatSessions(page: Page<SessionRow>, costService: CostService)
     out.push(`${s.sessionId}  [${s.client}]`);
     if (s.title) out.push(`  Title:     ${s.title}`);
     out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
-    if (s.gitBranch) out.push(`  Branch:    ${s.gitBranch}`);
+    if (s.gitBranch) out.push(`  Branch:    ${branchName(s.gitBranch)}`);
     out.push(`  Models:    ${s.models.length ? s.models.join(', ') : '(unknown)'}`);
     out.push(`  Started:   ${s.startedAt}`);
     out.push(
@@ -561,7 +569,7 @@ export function formatSessionDetail(detail: SessionDetail, costService: CostServ
   if (s.title) out.push(`  Title:     ${s.title}`);
   out.push(`  Client:    ${s.client}`);
   out.push(`  Project:   ${s.projectPath ?? '(unknown)'}`);
-  if (s.gitBranch) out.push(`  Branch:    ${s.gitBranch}`);
+  if (s.gitBranch) out.push(`  Branch:    ${branchName(s.gitBranch)}`);
   out.push(`  Models:    ${s.models.length ? s.models.join(', ') : '(unknown)'}`);
   out.push(`  Started:   ${s.startedAt}`);
   out.push(`  Ended:     ${s.endedAt}`);
@@ -1114,7 +1122,6 @@ const VERDICT_LINE: Record<UsageReport['verdict'], string> = {
 };
 
 const pct = (share: number) => `${(share * 100).toFixed(1)}%`;
-const branchName = (b: string) => (b === 'HEAD' ? 'HEAD (detached)' : b);
 
 /**
  * The report a new user runs first: a verdict, where the usage went, and what
@@ -1170,6 +1177,12 @@ export function formatUsageReport(report: UsageReport): string {
       out.push(
         `  ${pct(b.share).padStart(6)}  ${branchName(b.gitBranch)}  ` +
           `(${int(b.sessions)} session(s), ${int(b.turns)} turns)`,
+      );
+    }
+    if (report.topBranches.some((b) => b.gitBranch === 'HEAD')) {
+      out.push(
+        `  "${NO_BRANCH}": the session started outside a git repo, before its first commit, ` +
+          'or on a detached checkout.',
       );
     }
   }

@@ -3,8 +3,8 @@ import type { PricingTable } from '../types.js';
 /**
  * Anthropic first-party API list prices.
  *
- * Captured 2026-09-26 (first captured 2026-06-24; every earlier rate re-checked
- * and unchanged). These are API list rates, used only to produce an
+ * Captured 2026-10-23 from https://platform.claude.com/docs/en/about-claude/pricing
+ * (first captured 2026-06-24; every earlier rate re-checked and unchanged). These are API list rates, used only to produce an
  * "API-equivalent estimated cost" for Claude Code, which records no cost of its
  * own. A Claude Pro/Max subscriber's marginal cost per request is $0 -- see the
  * cost policy in README.md.
@@ -17,8 +17,8 @@ import type { PricingTable } from '../types.js';
  * Partner platforms (Bedrock, Vertex) have separate pricing and are not modelled.
  */
 export const anthropicPricing: PricingTable = {
-  version: 'anthropic-2026-09-26',
-  provenance: 'Anthropic first-party API list pricing, captured 2026-09-26',
+  version: 'anthropic-2026-10-23',
+  provenance: 'Anthropic first-party API list pricing, captured 2026-10-23',
   currency: 'USD',
   unit: 'per_million_tokens',
   cacheMultipliers: {
@@ -54,8 +54,22 @@ export const anthropicPricing: PricingTable = {
     'claude-opus-4-8': { input: 5, output: 25, fast: { input: 10, output: 50 } },
     'claude-opus-4-7': { input: 5, output: 25 },
     'claude-opus-4-6': { input: 5, output: 25 },
+    // Same rates as Sonnet 5, but cache reads at $0.10/MTok (0.05x), not $0.20.
+    'claude-sonnet-5-5': {
+      input: 2,
+      output: 10,
+      cache: { read: 0.05, write5m: 1.25, write1h: 2.0 },
+    },
     'claude-sonnet-5': { input: 2, output: 10 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
+    // Two rate cards, chosen per request by prompt length (cache reads and writes
+    // included): 5x the rates once the prompt is over 100,000 tokens. Standard
+    // cache multipliers apply to both cards.
+    'claude-haiku-5-5': {
+      input: 0.1,
+      output: 0.5,
+      longContext: { aboveTokens: 100_000, input: 0.5, output: 2.5 },
+    },
     'claude-haiku-4-5': { input: 1, output: 5 },
   },
 };

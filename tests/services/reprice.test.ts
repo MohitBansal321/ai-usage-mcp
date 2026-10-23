@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { communityPricingPath, writeCommunityPricing } from '../../src/pricing/index.js';
 import { UsageService } from '../../src/services/usage-service.js';
@@ -170,6 +170,39 @@ describe('pricing stored rows the table has since learned', () => {
     expect(resynced.estimated).toBeCloseTo(repriced.estimated, 12);
     expect(resynced.estimatedRecords).toBe(repriced.estimatedRecords);
     expect(resynced.unavailableRecords).toBe(repriced.unavailableRecords);
+  });
+
+  it('picks a prompt-length rate card from each stored row, as collection would', async () => {
+    // r1's prompt is 1,000 + 1,000,000 + 30,000 tokens, over the 500k line; r2
+    // ran in fast mode, whose single rate ignores the tier. By hand, per million:
+    //   r1: 1,000 x $8 + 2,000 x $30 + 1,000,000 x $0.40 + 10,000 x $10 + 20,000 x $16
+    //     = 0.008 + 0.06 + 0.4 + 0.1 + 0.32 = 0.888
+    //   r2: 0.0048, as before
+    const file = join(dir, 'pricing.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 'tiered',
+        models: {
+          [NEW_MODEL]: {
+            ...NEW_MODEL_PRICE,
+            longContext: { aboveTokens: 500_000, input: 8, output: 30 },
+          },
+        },
+      }),
+    );
+    process.env.AI_USAGE_PRICING_FILE = file;
+    try {
+      service.reloadPricing();
+      const repriced = claudeCost(service);
+      expect(repriced.estimatedRecords).toBe(2);
+      expect(repriced.estimated).toBeCloseTo(0.888 + 0.0048, 10);
+
+      await service.sync({ full: true });
+      expect(claudeCost(service).estimated).toBeCloseTo(repriced.estimated, 12);
+    } finally {
+      delete process.env.AI_USAGE_PRICING_FILE;
+    }
   });
 
   it('never touches a cost the client reported itself', () => {

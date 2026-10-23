@@ -113,6 +113,56 @@ describe('CostService', () => {
     expect(fast.estimatedCost).toBeCloseTo(2, 9);
   });
 
+  it('prices Sonnet 5.5 cache reads at 0.05x, not the 0.1x default', () => {
+    const estimate = service.estimate({
+      model: 'claude-sonnet-5-5',
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 10_000_000,
+    });
+    // 10M at $2/M * 0.05 = $1 ($0.10/MTok on Anthropic's pricing page).
+    expect(estimate.estimatedCost).toBeCloseTo(1, 9);
+  });
+
+  describe('a model priced by prompt length (Haiku 5.5)', () => {
+    // 1M of each token class, so every rate shows up in the total.
+    const tokens = {
+      model: 'claude-haiku-5-5',
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 2_000_000,
+      cacheWrite5mTokens: 1_000_000,
+      cacheWrite1hTokens: 1_000_000,
+    };
+    // input + output + read 0.1x + write5m 1.25x + write1h 2x, per $1 of input rate.
+    const total = (input: number, output: number) =>
+      input + output + input * 0.1 + input * 1.25 + input * 2;
+
+    it('uses the short-prompt card at exactly the threshold', () => {
+      const estimate = service.estimate({ ...tokens, promptTokens: 100_000 });
+      expect(estimate.estimatedCost).toBeCloseTo(total(0.1, 0.5), 9);
+      expect(estimate.note ?? '').not.toContain('long-context');
+    });
+
+    it('uses the long-prompt card for every rate, cache included, above it', () => {
+      const estimate = service.estimate({ ...tokens, promptTokens: 100_001 });
+      expect(estimate.estimatedCost).toBeCloseTo(total(0.5, 2.5), 9);
+      expect(estimate.note).toContain('over 100,000 tokens');
+    });
+
+    it('will not guess a card when the prompt length is not given', () => {
+      const estimate = service.estimate(tokens);
+      expect(estimate.costBasis).toBe('unavailable');
+      expect(estimate.estimatedCost).toBeUndefined();
+      expect(estimate.note).toContain('priced by prompt length');
+    });
+
+    it('lists its threshold for callers that price aggregates', () => {
+      expect(service.longContextThresholds()).toEqual([100_000]);
+    });
+  });
+
   it('always labels estimates as API-equivalent and mentions the subscription case', () => {
     const label = service.estimatedCostLabel();
     expect(label).toContain('API-equivalent');

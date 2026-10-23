@@ -1,5 +1,5 @@
 import type { TurnRow } from '../db/repositories/usage-repository.js';
-import type { CostService } from './cost-service.js';
+import { promptTokensOf, type CostService } from './cost-service.js';
 
 /** Idle longer than this and Anthropic's default (5-minute) cache entry has expired. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -46,7 +46,14 @@ export type BreakPricer = (turn: TurnRow) => number | undefined;
  */
 export function writePremiumPricer(costService: CostService): BreakPricer {
   return (turn) => {
-    const base = { model: turn.model, inputTokens: 0, outputTokens: 0, speed: turn.speed };
+    // Both halves are priced at the rate card the real request got.
+    const base = {
+      model: turn.model,
+      inputTokens: 0,
+      outputTokens: 0,
+      speed: turn.speed,
+      promptTokens: promptTokensOf(turn),
+    };
     const written = costService.estimate({
       ...base,
       cacheWriteTokens: turn.cacheWriteTokens,

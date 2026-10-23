@@ -84,11 +84,12 @@ function tidy(n: number): number {
 
 /** One LiteLLM entry as a {@link ModelPrice}, or the reason it cannot be one. */
 function convertEntry(entry: Record<string, unknown>): ModelPrice | string {
-  // A long-context tier (Sonnet 4.5 bills more above 200K input tokens) is a
-  // price this table cannot express. Pricing every turn at the base rate would
-  // understate exactly the expensive ones, so the model is left unpriced.
+  // A long-context tier (Sonnet 4.5 bills more above 200K input tokens) is not
+  // taken from this list: what each `_above_` key counts as the prompt is not
+  // documented, and getting it wrong misprices exactly the expensive turns. A
+  // built-in table or an override states the tier explicitly instead.
   if (Object.keys(entry).some((key) => /_above_\d+k_tokens/.test(key))) {
-    return 'has a long-context price tier, which the pricing table cannot express';
+    return 'has a long-context price tier, which is taken only from a built-in table or an override';
   }
 
   const fields = {

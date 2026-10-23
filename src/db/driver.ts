@@ -84,9 +84,31 @@ interface NodeSqliteModule {
   StatementSync?: { prototype?: object };
 }
 
+/**
+ * Loads `node:sqlite` without its one-time `ExperimentalWarning`, which Node 22
+ * prints to stderr on every CLI command and every status-line refresh. Only that
+ * warning is dropped, and only for the duration of the load; any other warning
+ * passes through untouched.
+ */
+function requireNodeSqlite(): unknown {
+  const saved = Object.getOwnPropertyDescriptor(process, 'emitWarning');
+  const emit = process.emitWarning.bind(process) as (...args: unknown[]) => void;
+  process.emitWarning = (warning: string | Error, ...rest: unknown[]) => {
+    const options = rest[0];
+    const type = typeof options === 'string' ? options : (options as { type?: string })?.type;
+    if (type === 'ExperimentalWarning' && String(warning).startsWith('SQLite')) return;
+    emit(warning, ...rest);
+  };
+  try {
+    return requireFrom('node:sqlite');
+  } finally {
+    if (saved) Object.defineProperty(process, 'emitWarning', saved);
+  }
+}
+
 function loadNodeSqlite(): NodeSqliteModule | undefined {
   try {
-    const mod = requireFrom('node:sqlite') as NodeSqliteModule;
+    const mod = requireNodeSqlite() as NodeSqliteModule;
     // On v22.5-v22.12 the module only loads with --experimental-sqlite, and even
     // then has no iterate(). Treat a copy without it as absent rather than
     // discovering the gap mid-collection.

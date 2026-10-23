@@ -8,7 +8,7 @@ import type {
   UsageRecord,
 } from '../../models/usage-record.js';
 import { normaliseProjectPath, UNKNOWN_MODEL } from '../../models/usage-record.js';
-import type { CostService } from '../../services/cost-service.js';
+import { promptTokensOf, type CostService } from '../../services/cost-service.js';
 import { isWithin, num } from '../collector.js';
 import {
   discoverClaudeRoots,
@@ -380,6 +380,7 @@ export class ClaudeCodeCollector implements UsageCollector {
       cacheWrite5mTokens: acc.cacheWrite5mTokens,
       cacheWrite1hTokens: acc.cacheWrite1hTokens,
       ...(acc.speed ? { speed: acc.speed } : {}),
+      promptTokens: promptTokensOf(acc),
     });
     if (estimate.costBasis === 'unavailable') unpricedModels.add(acc.model);
 

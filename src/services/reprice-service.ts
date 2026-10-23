@@ -1,5 +1,10 @@
 import type { TurnRow, UsageRepository } from '../db/repositories/usage-repository.js';
-import { ESTIMATED_CLIENTS, type CostService, type EstimateInput } from './cost-service.js';
+import {
+  ESTIMATED_CLIENTS,
+  promptTokensOf,
+  type CostService,
+  type EstimateInput,
+} from './cost-service.js';
 
 export interface RepriceResult {
   /** Models whose stored rows gained an estimate. */
@@ -23,6 +28,7 @@ function estimateInput(turn: TurnRow): EstimateInput {
     cacheWrite5mTokens: turn.cacheWrite5mTokens,
     cacheWrite1hTokens: turn.cacheWrite1hTokens,
     ...(turn.speed ? { speed: turn.speed } : {}),
+    promptTokens: promptTokensOf(turn),
   };
 }
 

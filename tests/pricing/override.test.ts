@@ -47,6 +47,29 @@ describe('pricing override: overlay', () => {
     expect(loaded.table.models['gpt-5.6-sol']).toEqual(openaiPricing.models['gpt-5.6-sol']);
   });
 
+  it('takes a long-context tier and prices each request by its own prompt', () => {
+    writeOverride({
+      version: 'mine-2026-10-23',
+      models: {
+        'claude-sonnet-4-5': {
+          input: 3,
+          output: 15,
+          longContext: { aboveTokens: 200_000, input: 6, output: 22.5 },
+        },
+      },
+    });
+    const service = new CostService();
+    const price = (promptTokens: number) =>
+      service.estimate({
+        model: 'claude-sonnet-4-5',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        promptTokens,
+      }).estimatedCost;
+    expect(price(200_000)).toBeCloseTo(3, 9);
+    expect(price(250_000)).toBeCloseTo(6, 9);
+  });
+
   it('corrects a stale built-in price in place', () => {
     writeOverride({
       version: 'corrected',
@@ -188,6 +211,22 @@ describe('pricing override: validation names the bad field', () => {
       'bad fast rates',
       { version: 'v', models: { m: { input: 1, output: 2, fast: { input: 1 } } } },
       /models\["m"\]\.fast\.output must be a number/,
+    ],
+    [
+      'long-context tier without a threshold',
+      {
+        version: 'v',
+        models: { m: { input: 1, output: 2, longContext: { input: 5, output: 10 } } },
+      },
+      /models\["m"\]\.longContext\.aboveTokens must be a whole number/,
+    ],
+    [
+      'long-context tier missing a rate',
+      {
+        version: 'v',
+        models: { m: { input: 1, output: 2, longContext: { aboveTokens: 200_000, input: 5 } } },
+      },
+      /models\["m"\]\.longContext\.output must be a number/,
     ],
     [
       'bad top-level cache block',
