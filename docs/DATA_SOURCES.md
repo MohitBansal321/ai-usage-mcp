@@ -147,6 +147,12 @@ A **direct read-only connection opens in ~15ms** and returns numbers identical t
 approach (verified against all four combinations of copy/no-copy and readonly/read-write). A
 read-only connection cannot mutate the file, so a running OpenCode is not disturbed.
 
+It can still create files next to it (verified 2026-10-23, `node:sqlite`). OpenCode deletes
+`-wal` and `-shm` when it closes cleanly, and a read-only open of a WAL database recreates both:
+`-wal` empty and `-shm` at 32 KB, each stamped with the time of our read. An existing `-wal` is
+left alone, mtime included. So `-wal`'s mtime is OpenCode's last write only while `-wal` holds
+frames; `lastWriteMs` ignores an empty one.
+
 The collector therefore opens read-only directly and falls back to the snapshot copy
 (`.db` + `-wal` + `-shm`) only if that fails.
 

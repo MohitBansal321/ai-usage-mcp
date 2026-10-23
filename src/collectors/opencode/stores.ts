@@ -117,12 +117,20 @@ export function primaryStore(stores: StoreInfo[]): StoreInfo | undefined {
  * The latest write to a database, in ms. OpenCode runs in WAL mode, so a new
  * turn lands in `-wal` and reaches the main file only at a checkpoint: the main
  * file's mtime alone can trail the real last write by a whole session.
+ *
+ * An empty `-wal` is not a write. OpenCode deletes `-wal` when it closes, and
+ * our own read-only open creates an empty one in its place, stamped with the
+ * time of our read, so counting it made `status` report our sync as OpenCode
+ * writing. A real write always leaves frames in `-wal`, and a checkpoint that
+ * empties it also moves the main file's mtime.
  */
 export function lastWriteMs(dbPath: string): number | undefined {
   let latest: number | undefined;
   for (const path of [dbPath, `${dbPath}-wal`]) {
     try {
-      const mtime = statSync(path).mtimeMs;
+      const stat = statSync(path);
+      if (path !== dbPath && stat.size === 0) continue;
+      const mtime = stat.mtimeMs;
       if (latest === undefined || mtime > latest) latest = mtime;
     } catch {
       /* no -wal between checkpoints is normal */
