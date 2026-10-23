@@ -49,8 +49,12 @@ debug CLI. Nothing leaves the machine.
 5. **Open live databases read-only.** Prefer a direct read-only connection (~15ms even at
    879MB); fall back to copying `.db` + `-wal` + `-shm` only if that fails. Never copy a
    ~1GB file on every sync.
-6. **Stay inside Phase 1 scope.** No dashboard, login, accounts, routing, optimization, or
-   extra client collectors until the Definition of Done is fully green.
+6. **Stay inside the current phase.** Phase 1's Definition of Done is green
+   (PROJECT_CONTEXT.md §14), and Phase 2 is under way: Codex CLI, in 0.16, was its first new
+   collector. Still out of scope: a dashboard, login or accounts, routing or optimizing
+   requests, and anything team- or cloud-shaped (Phase 4). A new collector is in scope only
+   with its format written up from real data in `docs/DATA_SOURCES.md` and `verify`
+   reconciling it against two independent readings.
 7. **Re-verify before trusting.** Every source format is internal and unversioned. If
    something does not match PROJECT_CONTEXT.md §5, inspect the real files and update the doc
    in the same change.
