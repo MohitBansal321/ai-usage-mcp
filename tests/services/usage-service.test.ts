@@ -442,7 +442,10 @@ describe('UsageService', () => {
 
   it('reports when each client last wrote to its data', async () => {
     const status = await service.status();
-    for (const c of status.collectors) {
+    // Only an available collector has data to have written to.
+    const available = status.collectors.filter((c) => c.available);
+    expect(available.length).toBeGreaterThan(0);
+    for (const c of available) {
       expect(Date.parse(c.lastWriteAt ?? '')).not.toBeNaN();
     }
   });
