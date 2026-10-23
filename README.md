@@ -436,7 +436,8 @@ message re-sends the whole conversation, so a turn at 300k context re-reads 300k
 one step; the part above 100k is what compacting earlier would not have carried. **Cache
 rebuilds** are turns where the cached prefix was lost and the whole context was re-written
 (the same detection as `cache_health`). Sessions are named by the title the client gave them
-and the git branch they ran on. Neither kind of waste is claimed as wholly avoidable, and the
+and the git branch they ran on, or `no branch` when Claude Code recorded none (usually a
+session started outside a git repo). Neither kind of waste is claimed as wholly avoidable, and the
 shares are a guide to where usage went, not exact limit consumption: Anthropic does not publish
 how subscription limits weight each token type.
 
