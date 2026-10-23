@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { realpathSync, rmSync } from 'node:fs';
+import { existsSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { OpenCodeCollector } from '../../src/collectors/opencode/collector.js';
+import { openSqlite } from '../../src/db/driver.js';
 import { buildOpenCodeDb, tempDir } from '../fixtures/build-fixtures.js';
 
 function assistant(options: {
@@ -300,6 +301,40 @@ describe('OpenCodeCollector', () => {
     const availability = await new OpenCodeCollector().isAvailable();
     expect(availability.available).toBe(false);
     expect(availability.reason).toContain('No OpenCode database found');
+  });
+
+  it('does not count the empty -wal its own read creates as OpenCode writing', async () => {
+    // OpenCode deletes -wal on a clean close; a read-only open recreates it, empty and
+    // stamped now. Counting that made `status` warn about our own sync, on a real machine.
+    const dbPath = buildOpenCodeDb(dir, {
+      sessions: [{ id: 's1' }],
+      messages: [
+        {
+          id: 'm1',
+          sessionId: 's1',
+          timeCreated: 1_000,
+          data: assistant({ input: 1, created: 1_000 }),
+        },
+      ],
+    });
+    const wal = openSqlite(dbPath);
+    wal.exec('PRAGMA journal_mode=WAL');
+    wal.close();
+    const lastOpenCodeWrite = new Date('2026-10-19T12:06:00Z');
+    utimesSync(dbPath, lastOpenCodeWrite, lastOpenCodeWrite);
+    expect(existsSync(`${dbPath}-wal`)).toBe(false);
+
+    process.env.AI_USAGE_OPENCODE_DB = dbPath;
+    const collector = new OpenCodeCollector();
+    await collector.collect({});
+    expect(statSync(`${dbPath}-wal`).size).toBe(0);
+    expect((await collector.isAvailable()).lastWriteAt).toBe(lastOpenCodeWrite.toISOString());
+
+    // A -wal holding frames is a real write that has not reached the main file yet.
+    const turnInWal = new Date('2026-10-20T08:00:00Z');
+    writeFileSync(`${dbPath}-wal`, Buffer.alloc(32));
+    utimesSync(`${dbPath}-wal`, turnInWal, turnInWal);
+    expect((await collector.isAvailable()).lastWriteAt).toBe(turnInWal.toISOString());
   });
 
   describe('OpenCode 2.x schema (session_message / session_v2)', () => {
