@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-23
+
+Two things in this release. `ai-usage status` now tells you when the status line and prompt
+hook from 0.13 and 0.14 are not switched on, and Claude Haiku 5.5 and Sonnet 5.5 have prices,
+with Haiku priced the way Anthropic bills it: by each request's prompt length.
+
 ### Added
 
 - **`ai-usage status` says whether the Claude Code status line and prompt hook are on.**
@@ -33,6 +39,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prompt. `counterfactual_cost` splits its groups at the line instead of pricing a sum of
   short prompts as one long one. An override can state such a tier with
   `"longContext": { "aboveTokens", "input", "output" }`.
+
+### Changed
+
+- Runtime dependencies: `@modelcontextprotocol/sdk` 1.32.1 and `zod` 4.6.7.
 
 ### Fixed
 
@@ -1025,7 +1035,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.12.0...v0.12.1
