@@ -17,11 +17,11 @@ export function registerUsageSummary(server: McpServer, ctx: ToolContext): void 
     {
       ...readOnlyTool('Usage summary'),
       description:
-        'Total token usage and cost for a period, split by client (Claude Code, OpenCode). ' +
+        'Total token usage and cost for a period, split by client (Claude Code, OpenCode, Codex). ' +
         'Tokens are broken out into input / output / cache-read / cache-write / reasoning, ' +
         'because cache tokens typically dwarf input and a single blended total is misleading. ' +
-        'Reported cost (from OpenCode) and estimated cost (computed for Claude Code, which ' +
-        'records none) are always listed separately and must not be summed. Also reports the ' +
+        'Reported cost (from OpenCode) and estimated cost (computed for Claude Code and Codex, ' +
+        'which record none) are always listed separately and must not be summed. Also reports the ' +
         'cache hit rate and reads-per-write, which are what say whether the cache is paying ' +
         'for itself -- the raw cache counts alone cannot.',
       inputSchema: z.strictObject({

@@ -1,3 +1,4 @@
+import { CLIENT_IDS, isClientId, type ClientId } from '../models/usage-record.js';
 import { parseTokenCount } from '../services/context-service.js';
 import { EXPORT_FORMATS, type ExportFormat } from '../services/export-service.js';
 import {
@@ -56,7 +57,7 @@ export interface ParsedArgs {
   help: boolean;
 }
 
-type ClientName = 'claude-code' | 'opencode';
+type ClientName = ClientId;
 
 export class ArgError extends Error {}
 
@@ -202,8 +203,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--client': {
         const values = toList('--client', requireNonEmpty('--client', rest.shift()));
         const clients: ClientName[] = values.map((value) => {
-          if (value !== 'claude-code' && value !== 'opencode') {
-            throw new ArgError(`--client expects "claude-code" or "opencode", got "${value}".`);
+          if (!isClientId(value)) {
+            throw new ArgError(
+              `--client expects one of ${CLIENT_IDS.map((c) => `"${c}"`).join(', ')}, got "${value}".`,
+            );
           }
           return value;
         });

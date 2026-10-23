@@ -3,6 +3,8 @@
 Ground truth for both Phase 1 collectors, established by inspecting real data on a live
 machine on **2026-08-31** (OpenCode 1.18.25, Claude Code 2.1.209–2.1.251). OpenCode **2.x**
 changed where turns are stored; §1.6 records that, verified on 2.0.30 on **2026-10-16**.
+Codex CLI (§3) was added later and rests on far less data: **two sessions**, verified on
+**2026-10-23** against Codex CLI 0.114.0 and 0.162.0-alpha.17.2.
 
 This file supersedes `PROJECT_CONTEXT.md` §5 where they disagree. Every correction below was
 found by reading the actual bytes, and each one would have produced wrong numbers if the
@@ -457,23 +459,162 @@ entries.
 
 ---
 
-## 3. Re-verifying
+## 3. Codex CLI — **[verified 2026-10-23, on two sessions only]**
+
+Everything in this section was read from the only two Codex sessions on the development
+machine. Treat it as a first reading, not as settled:
+
+| Session                      | CLI                  | Launched from      | Requests | User turns | Model        |
+| ---------------------------- | -------------------- | ------------------ | -------- | ---------- | ------------ |
+| `~/.codex/sessions/…`        | `0.162.0-alpha.17.2` | VS Code (`vscode`) | 4        | 1          | `gpt-6-luna` |
+| `~/snap/codex/34/sessions/…` | `0.114.0`            | snap CLI (`cli`)   | 36       | 9          | `gpt-5.4`    |
+
+The 0.162 session is from an **alpha** build, and its four requests all belong to **one** user
+turn (one `turn_id`), so anything that varies between turns was only seen on the 0.114 session.
+Run `ai-usage verify` on more Codex history before trusting these numbers widely, and update
+this section with what it finds.
+
+### 3.1 Layout
+
+```text
+$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<session id>.jsonl
+```
+
+`$CODEX_HOME` defaults to `~/.codex`. One JSON object per line, `{ timestamp, type, payload }`,
+append-only. The session id in the file name equalled `session_meta.payload.id` in both files.
+
+Two more places are read **without having been seen populated**, because the 0.162 binary
+names them:
+
+- `$CODEX_HOME/archived_sessions/` — the binary checks that "rows under archived_sessions are
+  archived and rows under sessions are active", so archiving moves the file there. Records are
+  keyed by session id, not path, so a moved file is not counted again.
+- `rollout-*.jsonl.zst` — the binary has a rollout compression pass that writes `.jsonl.zst`
+  and removes the source. It is read as zstd-compressed JSONL when Node has zstd (22.15+); on
+  22.13 it is skipped and the sync says so. Never observed on disk.
+
+**A snap splits the history, as with OpenCode (§1.1).** The Codex snap points `CODEX_HOME` at
+its per-revision user data directory: `~/snap/codex/34/` held `sessions/`, `state_5.sqlite` and
+`auth.json` directly, and the 0.114 session above was there and nowhere in `~/.codex`.
+`~/snap/codex/current` is a symlink to the revision, so homes are canonicalised. The snap home is
+reported as an extra store and read with `--all-stores`.
+
+### 3.2 Line types
+
+| `type`                        | Read for                                                                                                                                |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_meta` (first line)   | `id`, `cwd`, `cli_version`, `model_provider`, the branch in its repo block                                                              |
+| `turn_context` (one per turn) | `model`, `cwd` -- the only place the model is                                                                                           |
+| `event_msg` / `token_count`   | usage, see 3.3                                                                                                                          |
+| `token_usage_record` (0.162)  | `verify` only, see 3.4                                                                                                                  |
+| everything else               | nothing: `response_item`, `world_state`, `compacted` and the other `event_msg` types are the conversation, never read past their `type` |
+
+`session_meta` also carries `creator_user_id` and `creator_account_id` (0.162),
+`base_instructions` and the repository's remote URL. **None of them is stored.** 0.162 adds a
+`session_id` beside `id`, with the same value.
+
+### 3.3 `token_count`: the running total, and the repeats — the rule
+
+```json
+{"timestamp":"…","type":"event_msg","payload":{"type":"token_count","info":{
+  "total_token_usage":{"input_tokens":30143,"cached_input_tokens":26112,"cache_write_input_tokens":0,
+                       "output_tokens":193,"reasoning_output_tokens":0,"total_tokens":30336},
+  "last_token_usage": {"input_tokens":15157,"cached_input_tokens":14848,"cache_write_input_tokens":0,
+                       "output_tokens":62,"reasoning_output_tokens":0,"total_tokens":15219},
+  "model_context_window":258400},"rate_limits":{…}}}
+```
+
+`total_token_usage` is the session's running total; `last_token_usage` is one model request.
+`cache_write_input_tokens` exists from 0.162 (always 0 here); 0.114 does not write it, and then
+cache-write is stored as unavailable, not 0.
+
+**Codex repeats the event.** In the 0.114 session, 76 `token_count` events held 36 requests:
+
+- 1 had `info: null` (a rate-limit update, no usage);
+- most requests were followed seconds later by a second event with the identical total;
+- each new user turn opened with the previous turn's total re-emitted;
+- after `compacted`, an event repeated the total with `last_token_usage` all zeros except
+  `total_tokens: 8376`.
+
+39 events repeated the previous total. Summing every event's `last_token_usage` would have
+reported 5.5M cache-read for a session that used 2.7M.
+
+**Rule: a `token_count` is a new request only when `total_token_usage` differs from the previous
+event's.** Checked on every counted event of both sessions (40): `last_token_usage` equalled the
+change in the running total on **every field**, and the counted events summed exactly to the
+final running total. Codex's own `state_5.sqlite` (`threads.tokens_used`) agreed with that final
+total in both homes (66,212 and 2,928,839). The record id is `codex:<session id>:<running total>`,
+which names the request however many times it was written, and wherever the file has moved.
+
+### 3.4 `token_usage_record` is the same request again
+
+0.162 writes a `token_usage_record` immediately before each `token_count`:
+
+```json
+{"type":"token_usage_record","payload":{"thread_id":"…","turn_id":"…","session_id":"…",
+  "response_id":"resp_…","usage":{…},"turn_token_usage":{…},"thread_token_usage":{…}}}
+```
+
+In all 4 cases `usage` equalled the following `token_count`'s `last_token_usage` field for
+field, `thread_token_usage` equalled its `total_token_usage`, and every `response_id` was
+distinct. Counting both would double every request. The collector reads `token_count` only
+(the one both versions write); `verify` uses `token_usage_record` as an independent per-request
+check. 0.114 writes none.
+
+### 3.5 Token semantics are OpenAI's, unlike either other client
+
+`total_tokens === input_tokens + output_tokens` on all 40 counted requests, so:
+
+- **`cached_input_tokens` is inside `input_tokens`** (and never larger than it). Our
+  `inputTokens` means uncached input for every client, so cached input is subtracted out and
+  stored as cache-read. Copying `input_tokens` across would have counted the 53K cached tokens
+  of the 0.162 session twice.
+- **`reasoning_output_tokens` is inside `output_tokens`** — like Claude Code (§2.7), unlike
+  OpenCode (§1.4). It was non-zero on most 0.114 requests (e.g. 187 output, 42 reasoning,
+  `total_tokens` 11,363 = 11,176 + 187), so this was observed, not assumed. It is stored as a
+  detail and never added or priced again.
+- **`cache_write_input_tokens`** was 0 or absent everywhere, so where it belongs is **not
+  verified**. It is treated like cached input (inside `input_tokens`), and a sync that meets a
+  non-zero value says so.
+
+### 3.6 Other fields
+
+- **Cost:** none recorded, so every figure is an estimate from the pricing table, or
+  unavailable. Neither model seen (`gpt-6-luna`, `gpt-5.4`) is in the built-in OpenAI table, and
+  the community list fills Anthropic models only, so on the development machine every Codex
+  turn is `unavailable`.
+- **Model:** per turn, from `turn_context.model`. A request with no `turn_context` before it is
+  `(unknown)`, never guessed.
+- **Provider:** `session_meta.model_provider` (`openai` in both).
+- **Project:** `session_meta.cwd`, the directory the session started in; `turn_context.cwd`
+  only when that is missing. **Branch:** the `branch` in `session_meta`'s repository block,
+  captured once at session start.
+- **Subagents:** no subagent session has been observed, so every Codex turn is `main`.
+- **Rate limits:** `token_count.rate_limits` carries plan-window percentages (`used_percent`,
+  `window_minutes`, `resets_at`). Not read; plan limits are Claude Code only for now.
+- **Titles:** `$CODEX_HOME/session_index.jsonl` holds `{id, thread_name, updated_at}`. Not read.
+
+---
+
+## 4. Re-verifying
 
 `ai-usage verify` re-derives everything from source with a **second implementation that shares
 no reduction code with the collectors** — for Claude Code it deliberately uses a different
 rule (prefer the `stop_reason` line) so that agreement means two readings of the same bytes
-agree, not that one function agrees with itself.
+agree, not that one function agrees with itself. For Codex it reads the running total
+(`total_token_usage`) where the collector sums per-request `last_token_usage`, and, where
+present, the separate `token_usage_record` lines.
 
-It syncs first, then compares only activity before a shared cutoff: both clients append to
+It syncs first, then compares only activity before a shared cutoff: the clients append to
 their stores continuously, so without a cutoff the source is always a few requests ahead and
 the diff could never be zero.
 
-It compares only sessions the source still holds. Both clients delete their own history --
-Claude Code removes transcripts after `cleanupPeriodDays`, 30 days by default -- while the
+It compares only sessions the source still holds. Claude Code and OpenCode delete their own
+history -- Claude Code removes transcripts after `cleanupPeriodDays`, 30 days by default -- while the
 local database keeps what it collected, so after a month the database legitimately holds more
 than the source. Those sessions are listed on a separate `Retained, not compared` line instead
 of being counted as a mismatch. Any source record missing from the database still fails the
 check, because the source side is never narrowed.
 
 Current result on the development machine: **exact match, zero delta on every token class,
-for both clients.**
+for every client** (for Codex, both sessions, the second read with `--all-stores`).

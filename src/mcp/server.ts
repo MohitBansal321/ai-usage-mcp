@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     {
       instructions:
         'Reports real, locally collected token usage and cost across coding agents ' +
-        '(Claude Code and OpenCode). All figures come from data those clients wrote to ' +
+        '(Claude Code, OpenCode and Codex CLI). All figures come from data those clients wrote to ' +
         'this machine; nothing is estimated unless it is explicitly labelled as an ' +
         'API-equivalent estimate, and missing values are reported as unavailable rather ' +
         'than as zero. Never present the reported and estimated cost figures as one number.' +

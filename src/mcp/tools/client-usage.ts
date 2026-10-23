@@ -19,10 +19,10 @@ export function registerClientUsage(server: McpServer, ctx: ToolContext): void {
     {
       ...readOnlyTool('Usage by client'),
       description:
-        'Token usage and cost per coding agent (Claude Code vs OpenCode). ' +
+        'Token usage and cost per coding agent (Claude Code, OpenCode, Codex). ' +
         'Note that the two cost figures are not comparable as a single number: OpenCode ' +
-        'reports actual charged cost, while the Claude Code figure is an API-equivalent ' +
-        'estimate (a Pro/Max subscription has $0 marginal cost per request).',
+        'reports actual charged cost, while the Claude Code and Codex figures are API-equivalent ' +
+        'estimates (a subscription has $0 marginal cost per request).',
       inputSchema: z.strictObject({ ...periodShape, ...pageShape }),
     },
     async (args) => {

@@ -287,8 +287,8 @@ async function run(argv: string[]): Promise<number> {
           // particular -- and the right answer differs for a subscriber.
           process.stderr.write(
             'budget requires --basis reported|estimated.\n' +
-              '  reported  = what a client actually charged. Claude Code reports no cost, so\n' +
-              '              its usage is NOT counted on this basis.\n' +
+              '  reported  = what a client actually charged. Claude Code and Codex report no\n' +
+              '              cost, so their usage is NOT counted on this basis.\n' +
               '  estimated = API-equivalent list price. On a Pro/Max subscription your marginal\n' +
               '              cost per request is $0, so this is a shadow price, not a bill.\n' +
               'There is no default: the two are never summed, so one must be chosen.\n',

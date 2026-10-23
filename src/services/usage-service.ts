@@ -18,6 +18,7 @@ import {
   type ClaudeIntegrations,
 } from '../collectors/claude-code/settings.js';
 import { OpenCodeCollector } from '../collectors/opencode/collector.js';
+import { CodexCollector } from '../collectors/codex/collector.js';
 import type { ClientId, StoreInfo, UsageCollector } from '../models/usage-record.js';
 import {
   AggregationService,
@@ -182,7 +183,11 @@ export class UsageService {
     this.usageRepo = new UsageRepository(db);
     this.syncRepo = new SyncRepository(db);
     this.aggregation = new AggregationService(this.usageRepo);
-    this.collectors = [new OpenCodeCollector(), new ClaudeCodeCollector(this.costService)];
+    this.collectors = [
+      new OpenCodeCollector(),
+      new ClaudeCodeCollector(this.costService),
+      new CodexCollector(this.costService),
+    ];
     this.syncService = new SyncService(this.usageRepo, this.syncRepo, this.collectors);
     this.verifyService = new VerifyService(this.usageRepo);
     this.reportService = new ReportService(this.usageRepo, this.costService);

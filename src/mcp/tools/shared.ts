@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { UsageService, UsageQuery } from '../../services/usage-service.js';
+import { CLIENT_IDS, type ClientId } from '../../models/usage-record.js';
 import type { PageRequest, SortKey } from '../../db/repositories/usage-repository.js';
 import type { PageInfo } from '../../services/aggregation-service.js';
 import { takeUpdateNotice } from '../notice.js';
@@ -52,7 +53,7 @@ export const periodShape = {
  * but there is no reason to break it when accepting both costs one union.
  */
 export const clientEnum = z
-  .union([z.enum(['claude-code', 'opencode']), z.array(z.enum(['claude-code', 'opencode']))])
+  .union([z.enum(CLIENT_IDS), z.array(z.enum(CLIENT_IDS))])
   .optional()
   .describe('Restrict to these clients (a single id also works).');
 
@@ -117,7 +118,7 @@ export interface ToolContext {
   ensureFresh(): Promise<void>;
 }
 
-type ClientArg = 'claude-code' | 'opencode';
+type ClientArg = ClientId;
 
 export type PeriodArgs = {
   days?: number;

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Required reading before changing collectors or cost code
 
 1. **[AGENTS.md](AGENTS.md)** — the project's non-negotiable rules and the correctness traps. Everything in it applies here; it is not duplicated below.
-2. **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — the on-disk formats of Claude Code and OpenCode as _verified against real data_. It supersedes [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §5 where they disagree. Both source formats are internal and unversioned, so this file is the only record of what was actually observed — never re-derive a format by guessing, and update this doc in the same change if your understanding of a format changes.
+2. **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)** — the on-disk formats of Claude Code, OpenCode and Codex CLI as _verified against real data_. It supersedes [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §5 where they disagree. Every source format is internal and unversioned, so this file is the only record of what was actually observed — never re-derive a format by guessing, and update this doc in the same change if your understanding of a format changes.
 3. **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)** — product goal, Phase 1 scope, Definition of Done.
 
 ## Commands
@@ -61,7 +61,7 @@ The one rule: **MCP never knows where data comes from.**
 
 ```text
 MCP tools (src/mcp/tools/*) ─┐
-                             ├─> UsageService ─> collectors ─> Claude Code JSONL / OpenCode SQLite
+                             ├─> UsageService ─> collectors ─> Claude Code JSONL / OpenCode SQLite / Codex JSONL
 debug CLI (src/cli/main.ts) ┘         │
                                       └─> our own SQLite (usage_records, sync_state, ...)
 ```
@@ -111,7 +111,7 @@ Between the built-in tables and the override sit **community prices**
 by [src/services/pricing-refresh.ts](src/services/pricing-refresh.ts), filling only models the
 built-in tables lack. Estimates are stored per row at collection time, so
 [src/services/reprice-service.ts](src/services/reprice-service.ts) prices `unavailable`
-Claude Code rows after every sync and whenever the table changes; it never touches a
+Claude Code and Codex rows after every sync and whenever the table changes; it never touches a
 `reported` or already-`estimated` row, and must stay in lockstep with the collector's estimate
 inputs so a re-priced row equals what `sync --full` would write.
 
@@ -139,12 +139,13 @@ MCP specifics:
 - Anything exported for consumers is re-exported from [src/index.ts](src/index.ts).
 - Tests are fully isolated from the machine's real data by env vars, built with
   [tests/fixtures/build-fixtures.ts](tests/fixtures/build-fixtures.ts): `AI_USAGE_DB`,
-  `AI_USAGE_OPENCODE_DB`, `AI_USAGE_CLAUDE_PROJECTS`, `AI_USAGE_HOME`,
+  `AI_USAGE_OPENCODE_DB`, `AI_USAGE_CLAUDE_PROJECTS`, `AI_USAGE_CODEX_HOME`, `AI_USAGE_HOME`,
   `AI_USAGE_FRESHNESS_MS`, `AI_USAGE_NO_UPDATE_CHECK`. Never let a test read the developer's
-  own `~/.claude` or `opencode.db`. [vitest.config.ts](vitest.config.ts) sets
+  own `~/.claude`, `opencode.db` or `~/.codex`. [vitest.config.ts](vitest.config.ts) sets
   `AI_USAGE_NO_PRICING_REFRESH=1` for every test (and every child spawned with
   `...process.env`), so no test downloads the price list or reads a copy a real server cached;
-  a test of that feature turns it back on explicitly.
+  a test of that feature turns it back on explicitly. It also points `AI_USAGE_CODEX_HOME` at a
+  path that does not exist, so a test that sets it must restore it, not delete it.
 - Coverage thresholds in [vitest.config.ts](vitest.config.ts) are calibrated to the current v8
   provider and understate real coverage: `src/cli/**`, `src/mcp/**` and `src/version.ts` are
   covered by subprocess-based integration tests that v8 cannot attribute. Recalibrate rather

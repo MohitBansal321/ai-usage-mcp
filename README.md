@@ -9,7 +9,7 @@
 [![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
 
 **Ask your coding agent what it has cost you — and where the money went.** An MCP server that
-answers from the data Claude Code and OpenCode already wrote to your machine. Nothing is
+answers from the data Claude Code, OpenCode and Codex CLI already wrote to your machine. Nothing is
 uploaded, and there is no API key or account.
 
 ```text
@@ -236,6 +236,16 @@ Or add it to `~/.config/opencode/opencode.jsonc`:
 
 Confirm with `opencode mcp list`.
 
+### Codex CLI
+
+```bash
+codex mcp add ai-usage -- npx -y ai-usage-mcp
+```
+
+Codex usage is read from `~/.codex/sessions` (or `$CODEX_HOME`). Codex records no cost, so its
+cost is an API-equivalent estimate, or unavailable for a model the pricing table lacks. Support
+is new and verified against two sessions so far; `ai-usage verify` checks it on yours.
+
 ### Other MCP clients
 
 Cursor, Google Antigravity, Windsurf and Claude Desktop take the same `npx -y ai-usage-mcp`
@@ -277,15 +287,17 @@ the one request the check makes.
 Both source formats are internal and unversioned, so a client update can change them. This is
 what has been checked, and how:
 
-| Client      | Last verified                   | Earlier verifications |
-| ----------- | ------------------------------- | --------------------- |
-| Claude Code | **2.1.308**, 2026-10-23         | 2.1.2xx, 2.1.251      |
-| OpenCode    | **2.0.32**, 2026-10-23          | 1.18.25, 2.0.30       |
-| Node.js     | 22.13+ and 24, in CI            |                       |
-| OS          | Linux, macOS and Windows, in CI |                       |
+| Client      | Last verified                                                     | Earlier verifications |
+| ----------- | ----------------------------------------------------------------- | --------------------- |
+| Claude Code | **2.1.308**, 2026-10-23                                           | 2.1.2xx, 2.1.251      |
+| OpenCode    | **2.0.32**, 2026-10-23                                            | 1.18.25, 2.0.30       |
+| Codex CLI   | **0.162.0-alpha.17.2** and **0.114.0**, 2026-10-23 (two sessions) |                       |
+| Node.js     | 22.13+ and 24, in CI                                              |                       |
+| OS          | Linux, macOS and Windows, in CI                                   |                       |
 
 "Verified" means `ai-usage verify` matched every token class exactly against an independent
-re-read of the client's own data (715 MB of Claude Code transcripts, a 251 MB `opencode.db`). Run
+re-read of the client's own data (715 MB of Claude Code transcripts, a 251 MB `opencode.db`, and Codex's
+session rollouts). Run
 it when no session is mid-reply: a turn written while `verify` runs shows up as a small delta.
 If a client update breaks collection, `ai-usage status` warns that the client keeps writing
 but no new turns arrive.

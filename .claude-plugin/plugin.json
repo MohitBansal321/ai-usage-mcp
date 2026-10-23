@@ -1,7 +1,7 @@
 {
   "name": "ai-usage",
   "displayName": "AI Usage",
-  "description": "Reports real token usage and cost from the Claude Code and OpenCode data already on your machine. Never fabricates a number, and never blends reported cost with estimated cost.",
+  "description": "Reports real token usage and cost from the Claude Code, OpenCode and Codex CLI data already on your machine. Never fabricates a number, and never blends reported cost with estimated cost.",
   "version": "0.15.0",
   "author": {
     "name": "Mohit Bansal"
@@ -9,7 +9,7 @@
   "homepage": "https://github.com/MohitBansal321/ai-usage-mcp#readme",
   "repository": "https://github.com/MohitBansal321/ai-usage-mcp",
   "license": "MIT",
-  "keywords": ["token-usage", "cost", "claude-code", "opencode", "local-first", "mcp"],
+  "keywords": ["token-usage", "cost", "claude-code", "opencode", "codex", "local-first", "mcp"],
   "mcpServers": {
     "ai-usage": {
       "command": "npx",

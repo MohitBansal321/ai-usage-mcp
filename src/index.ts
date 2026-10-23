@@ -86,8 +86,10 @@ export {
 export { VerifyService, type VerifyReport } from './services/verify-service.js';
 export { OpenCodeCollector } from './collectors/opencode/collector.js';
 export { ClaudeCodeCollector } from './collectors/claude-code/collector.js';
+export { CodexCollector } from './collectors/codex/collector.js';
 export { discoverOpenCodeStores } from './collectors/opencode/stores.js';
 export { discoverClaudeRoots, listTranscripts } from './collectors/claude-code/transcripts.js';
+export { discoverCodexHomes, listRollouts } from './collectors/codex/rollouts.js';
 export {
   claudeSettingsPath,
   readClaudeIntegrations,

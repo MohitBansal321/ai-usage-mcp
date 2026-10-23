@@ -22,6 +22,7 @@ describe('CLI exit codes', () => {
     AI_USAGE_DB: join(dir, 'usage.db'),
     AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
     AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
     AI_USAGE_NO_UPDATE_CHECK: '1',
   };
 
@@ -80,6 +81,7 @@ describe('CLI date bounds', () => {
     AI_USAGE_DB: join(dir, 'usage.db'),
     AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
     AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
     AI_USAGE_NO_UPDATE_CHECK: '1',
   };
   const run = (...args: string[]) =>
@@ -113,6 +115,7 @@ describe('CLI filter and range guards', () => {
     AI_USAGE_DB: join(dir, 'usage.db'),
     AI_USAGE_OPENCODE_DB: join(dir, 'absent-opencode.db'),
     AI_USAGE_CLAUDE_PROJECTS: join(dir, 'absent-projects'),
+    AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
     AI_USAGE_NO_UPDATE_CHECK: '1',
   };
   const run = (...args: string[]) =>

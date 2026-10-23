@@ -44,6 +44,7 @@ describe('threshold exit codes', () => {
       AI_USAGE_DB: join(dir, 'usage.db'),
       AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
       AI_USAGE_CLAUDE_PROJECTS: projects,
+      AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
       AI_USAGE_NO_UPDATE_CHECK: '1',
     };
     execFileSync(process.execPath, [CLI, 'sync'], { env, encoding: 'utf8' });
@@ -162,6 +163,7 @@ describe('budget exit codes', () => {
       AI_USAGE_DB: join(dir, 'usage.db'),
       AI_USAGE_OPENCODE_DB: join(dir, 'absent.db'),
       AI_USAGE_CLAUDE_PROJECTS: projects,
+      AI_USAGE_CODEX_HOME: join(dir, 'absent-codex-home'),
       AI_USAGE_NO_UPDATE_CHECK: '1',
     };
     execFileSync(process.execPath, [CLI, 'sync'], { env: env2, encoding: 'utf8' });

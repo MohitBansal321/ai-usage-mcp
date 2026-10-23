@@ -190,7 +190,8 @@ export class BudgetService {
     } else {
       caveats.push(
         'Budgeting against the REPORTED basis: only records whose client told us what it ' +
-          'charged. Claude Code reports no cost at all, so its usage is NOT in this figure.',
+          'charged. Claude Code reports no cost at all, and neither does Codex, so their usage ' +
+          'is NOT in this figure.',
       );
     }
 
