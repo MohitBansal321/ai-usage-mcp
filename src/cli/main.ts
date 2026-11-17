@@ -82,10 +82,13 @@ function emit(args: ParsedArgs, text: string, data: unknown): boolean {
 const THRESHOLD_EXIT = 1;
 
 /**
- * Commands that only read the local database. The CLI otherwise never syncs on
- * its own, so on a database no sync has ever filled -- the first
- * `npx -p ai-usage-mcp ai-usage report` anyone runs -- these answered "0 turns"
- * about a machine full of usage. They sync once first instead.
+ * Commands that only read the local database. On a database no sync has ever
+ * filled -- the first `npx -p ai-usage-mcp ai-usage report` anyone runs -- these
+ * answered "0 turns" about a machine full of usage, so they sync first. Later
+ * runs used to read whatever was stored, however old: a database last synced
+ * three weeks earlier printed a 7-day report of "0 turns". Now they sync
+ * incrementally whenever the stored data is older than the freshness window,
+ * the same rule the MCP server and the status line follow.
  */
 const READS_STORED_USAGE = new Set([
   'stats',
@@ -104,7 +107,7 @@ const READS_STORED_USAGE = new Set([
 ]);
 
 /** Same knob and default as the MCP server's freshness gate. */
-const STATUSLINE_FRESHNESS_MS = Number(process.env.AI_USAGE_FRESHNESS_MS ?? 30_000);
+const FRESHNESS_MS = Number(process.env.AI_USAGE_FRESHNESS_MS ?? 30_000);
 
 export async function run(argv: string[]): Promise<number> {
   let args: ParsedArgs;
@@ -135,9 +138,19 @@ export async function run(argv: string[]): Promise<number> {
       // later run, and what the MCP tools return.
       process.stderr.write(
         "ai-usage: first run -- reading your coding agents' history into the " +
-          'local database.\nLater commands read what is stored; `ai-usage sync` refreshes it.\n',
+          'local database.\nLater commands only read what changed since.\n',
       );
       await service.sync();
+    } else if (READS_STORED_USAGE.has(args.command)) {
+      try {
+        await service.syncIfStale(FRESHNESS_MS);
+      } catch (err) {
+        // Like the MCP server: a failed refresh answers from what is stored,
+        // and says so, rather than failing the read.
+        process.stderr.write(
+          `ai-usage: sync failed, showing stored data: ${(err as Error).message}\n`,
+        );
+      }
     }
     switch (args.command) {
       case 'status': {
@@ -355,7 +368,7 @@ export async function run(argv: string[]): Promise<number> {
           );
         }
         try {
-          await service.syncIfStale(STATUSLINE_FRESHNESS_MS);
+          await service.syncIfStale(FRESHNESS_MS);
         } catch (err) {
           process.stderr.write(`ai-usage: sync failed: ${(err as Error).message}\n`);
         }

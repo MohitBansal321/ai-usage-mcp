@@ -1,11 +1,11 @@
 {
   "name": "ai-usage-mcp",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "mcpName": "io.github.MohitBansal321/ai-usage-mcp",
   "description": "See what Claude Code, Codex CLI and OpenCode actually cost you: tokens, cost, prompt-cache breaks and Pro/Max plan limits, from data already on your machine. Local MCP server and CLI; nothing leaves your machine.",
   "releaseHighlight": {
-    "version": "0.17.0",
-    "text": "npx ai-usage-mcp in a terminal now prints your 7-day report and the one command that connects it to your agent"
+    "version": "0.17.1",
+    "text": "ai-usage report and the other CLI reads now sync first, so they never show weeks-old numbers"
   },
   "keywords": [
     "mcp",

@@ -84,18 +84,9 @@ async function main(): Promise<void> {
       // A person at a terminal, not an MCP client: nothing will ever speak
       // JSON-RPC on this stdin, so show them the report the CLI prints instead
       // of waiting forever. The CLI is loaded only here, never on the server path.
+      // The CLI's read commands sync whatever is stale first, so this is
+      // today's report even on a database last filled weeks ago.
       process.stderr.write(TERMINAL_INTRO);
-      // The CLI's `report` reads what is stored and syncs only on a first run,
-      // so a database last filled weeks ago would print a "0 turns" verdict.
-      // Someone who just typed this command wants today's numbers.
-      const syncing = UsageService.open();
-      try {
-        await syncing.sync();
-      } catch (err) {
-        process.stderr.write(`[ai-usage] sync failed: ${(err as Error).message}\n`);
-      } finally {
-        syncing.close();
-      }
       const { runAndSetExitCode } = await import('../cli/main.js');
       await runAndSetExitCode(['report']);
       process.stderr.write(TERMINAL_OUTRO);
