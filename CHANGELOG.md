@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-11-17
+
+### Fixed
+
+- **CLI reports showed stale numbers after the first run.** A read command (`report`, `stats`,
+  `daily` and the rest) synced only on a database no sync had ever filled, and from then on
+  read whatever was stored, however old. A database last synced three weeks earlier printed
+  a 7-day `report` of "0 turns" about a machine in daily use. Read commands now sync
+  incrementally when the stored data is older than `AI_USAGE_FRESHNESS_MS` (30 seconds by
+  default), the rule the MCP server and the status line already follow. A failed refresh
+  answers from what is stored and says so on stderr.
+
 ## [0.17.0] - 2026-11-17
 
 `npx ai-usage-mcp`, typed into a terminal, now shows your usage instead of waiting forever.
@@ -1153,7 +1165,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.0...v0.16.1

@@ -326,7 +326,7 @@ What to change:
   2. Don't resume a session that has gone cold. ...
 
 Heaviest sessions:
-   47.7%  Admission transfer tariff services and roles linking  [development, claude-code]
+   47.7%  Refactor the billing service  [development, claude-code]
 ```
 
 It measures two kinds of waste from token counts alone. **Context carry** exists because every
