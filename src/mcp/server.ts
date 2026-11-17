@@ -20,6 +20,7 @@ import { registerUsageSummary } from './tools/usage-summary.js';
 import { initUpdateNotice, startUpdateWatch } from './notice.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
+import { launchMode, SERVER_HELP, TERMINAL_INTRO, TERMINAL_OUTRO } from './terminal.js';
 import type { ToolContext } from './tools/shared.js';
 
 /**
@@ -72,6 +73,38 @@ function createFreshnessGate(service: UsageService): () => Promise<void> {
 }
 
 async function main(): Promise<void> {
+  switch (launchMode(process.argv.slice(2), process.stdin.isTTY === true)) {
+    case 'version':
+      process.stdout.write(`ai-usage-mcp ${VERSION}\n`);
+      return;
+    case 'help':
+      process.stdout.write(SERVER_HELP);
+      return;
+    case 'report': {
+      // A person at a terminal, not an MCP client: nothing will ever speak
+      // JSON-RPC on this stdin, so show them the report the CLI prints instead
+      // of waiting forever. The CLI is loaded only here, never on the server path.
+      process.stderr.write(TERMINAL_INTRO);
+      // The CLI's `report` reads what is stored and syncs only on a first run,
+      // so a database last filled weeks ago would print a "0 turns" verdict.
+      // Someone who just typed this command wants today's numbers.
+      const syncing = UsageService.open();
+      try {
+        await syncing.sync();
+      } catch (err) {
+        process.stderr.write(`[ai-usage] sync failed: ${(err as Error).message}\n`);
+      } finally {
+        syncing.close();
+      }
+      const { runAndSetExitCode } = await import('../cli/main.js');
+      await runAndSetExitCode(['report']);
+      process.stderr.write(TERMINAL_OUTRO);
+      return;
+    }
+    case 'server':
+      break;
+  }
+
   const service = UsageService.open();
 
   // Cache-only, so this cannot delay the handshake. When it finds nothing, the

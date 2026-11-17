@@ -7,6 +7,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-17
+
+`npx ai-usage-mcp`, typed into a terminal, now shows your usage instead of waiting forever.
+
+### Added
+
+- **Started from a terminal, the server prints your report.** An MCP client always spawns
+  `ai-usage-mcp` with a pipe on stdin; a person who types it gets a TTY there, and used to see
+  one line on stderr and then a process waiting for JSON-RPC that never came. It now syncs,
+  prints the 7-day `ai-usage report`, and ends with the command that connects the server to
+  Claude Code, Codex CLI or OpenCode. MCP clients are unaffected, and `--stdio` forces server
+  mode for one that hands the server a TTY.
+- **`ai-usage-mcp --help` and `--version`.** Both used to start the server.
+
+### Changed
+
+- **The README opens with what the tool shows.** A picture of the report, the one command
+  that prints it, and the two that connect it, ahead of the detail. It no longer says in one
+  place that Codex CLI is supported and in another that only Claude Code and OpenCode are.
+- **The npm and MCP registry descriptions name Codex CLI**, and the npm keywords cover the
+  terms people search for (`claude`, `anthropic`, `statusline`, `tokens`).
+
 ## [0.16.2] - 2026-10-23
 
 Three fixes to the numbers that say whether to trust this tool. `ai-usage verify` no longer
@@ -1131,7 +1153,8 @@ and a debug CLI. Nothing leaves the machine.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) documenting both on-disk formats as verified
   against real data, including the seven documented assumptions that turned out to be wrong.
 
-[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.2...HEAD
+[Unreleased]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/MohitBansal321/ai-usage-mcp/compare/v0.15.0...v0.16.0
