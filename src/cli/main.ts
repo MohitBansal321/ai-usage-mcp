@@ -106,7 +106,7 @@ const READS_STORED_USAGE = new Set([
 /** Same knob and default as the MCP server's freshness gate. */
 const STATUSLINE_FRESHNESS_MS = Number(process.env.AI_USAGE_FRESHNESS_MS ?? 30_000);
 
-async function run(argv: string[]): Promise<number> {
+export async function run(argv: string[]): Promise<number> {
   let args: ParsedArgs;
   try {
     args = parseArgs(argv);
@@ -445,12 +445,17 @@ async function run(argv: string[]): Promise<number> {
  *
  * Setting `exitCode` and letting the loop drain is both correct and measurably
  * faster here, because nothing is left half-closed on the way out.
+ *
+ * Exported rather than run on import, so the MCP server can hand a person who
+ * launched it from a terminal the same report this CLI prints.
  */
-run(process.argv.slice(2))
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((err) => {
-    process.stderr.write(`ai-usage: ${(err as Error).stack ?? String(err)}\n`);
-    process.exitCode = 1;
-  });
+export function runAndSetExitCode(argv: string[]): Promise<void> {
+  return run(argv)
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      process.stderr.write(`ai-usage: ${(err as Error).stack ?? String(err)}\n`);
+      process.exitCode = 1;
+    });
+}

@@ -1,11 +1,11 @@
 {
   "name": "ai-usage-mcp",
-  "version": "0.16.2",
+  "version": "0.17.0",
   "mcpName": "io.github.MohitBansal321/ai-usage-mcp",
-  "description": "Local-first MCP server that reports real token usage and cost across coding agents (Claude Code, OpenCode, Codex CLI). Nothing leaves your machine.",
+  "description": "See what Claude Code, Codex CLI and OpenCode actually cost you: tokens, cost, prompt-cache breaks and Pro/Max plan limits, from data already on your machine. Local MCP server and CLI; nothing leaves your machine.",
   "releaseHighlight": {
-    "version": "0.16.2",
-    "text": "verify no longer reports a mismatch for a session still writing; Codex shows cached input, not a fake 100% hit rate"
+    "version": "0.17.0",
+    "text": "npx ai-usage-mcp in a terminal now prints your 7-day report and the one command that connects it to your agent"
   },
   "keywords": [
     "mcp",
@@ -15,7 +15,20 @@
     "codex",
     "token-usage",
     "cost",
-    "local-first"
+    "local-first",
+    "claude",
+    "anthropic",
+    "codex-cli",
+    "openai",
+    "ai-agents",
+    "usage",
+    "tokens",
+    "llm-cost",
+    "prompt-caching",
+    "statusline",
+    "claude-code-plugin",
+    "mcp-server",
+    "cli"
   ],
   "license": "MIT",
   "author": "Mohit Bansal",

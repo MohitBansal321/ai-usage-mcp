@@ -22,8 +22,10 @@ if (isHook) {
       process.exitCode = 0;
     });
 } else {
-  import('./main.js').catch((err) => {
-    process.stderr.write(`ai-usage: ${(err as Error).stack ?? String(err)}\n`);
-    process.exitCode = 1;
-  });
+  import('./main.js')
+    .then((m) => m.runAndSetExitCode(argv))
+    .catch((err) => {
+      process.stderr.write(`ai-usage: ${(err as Error).stack ?? String(err)}\n`);
+      process.exitCode = 1;
+    });
 }

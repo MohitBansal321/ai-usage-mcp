@@ -8,115 +8,90 @@
 [![node](https://img.shields.io/node/v/ai-usage-mcp?logo=node.js&color=5fa04e)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
 
-**Ask your coding agent what it has cost you — and where the money went.** An MCP server that
-answers from the data Claude Code, OpenCode and Codex CLI already wrote to your machine. Nothing is
-uploaded, and there is no API key or account.
+**See what Claude Code, Codex CLI and OpenCode actually cost you — and what to change.** It
+reads the history those agents already keep on your machine. No account, no API key, and nothing
+is uploaded.
+
+```bash
+npx ai-usage-mcp
+```
+
+<p align="center">
+  <img src="assets/report.svg" alt="Output of npx ai-usage-mcp: a 7-day report showing the share of usage spent re-reading long contexts and rebuilding a lost prompt cache, what to change, and the heaviest sessions" width="820">
+</p>
+
+That is your last 7 days in one command (sample data above): how much went to re-reading long
+contexts and rebuilding a lost prompt cache, your heaviest sessions, and what to change. The
+first run copies your history into a local database, which takes a few seconds.
+
+**Then just ask your agent.** Connect it once:
+
+```bash
+claude mcp add ai-usage -s user -- npx -y ai-usage-mcp     # Claude Code
+codex mcp add ai-usage -- npx -y ai-usage-mcp              # Codex CLI
+```
+
+OpenCode, Cursor, VS Code, Windsurf and Claude Desktop are under [Install](#install).
 
 ```text
 > Where are my tokens going, and what should I change?
 > Where did this session lose its prompt cache?
-> Which of my projects is getting more expensive, day by day?
+> How close am I to my weekly limit, and will I run out before it resets?
 > What would last week have cost on Sonnet instead of Opus?
 ```
 
-Three things it does that reading the transcripts cannot:
+## Why use it
+
+- **It finds where your prompt cache broke, and prices it.** Cache tokens are where the money
+  is — 94.7% of all tokens on the development machine. `cache_health` finds the turns where a
+  session lost its cached prefix and re-wrote the whole context, names the likely cause (a model
+  switch, idling past the 5-minute TTL, an edited `CLAUDE.md`) and prices the premium.
+- **It shows your Pro/Max limits while you work.** Claude Code writes the 5-hour and weekly
+  limits to no file, but it passes them to a status line. Make
+  [`ai-usage statusline`](docs/STATUS_LINE.md#plan-limits-and-the-status-line) yours and every
+  reading is kept, with the time the current pace would hit 100%:
+
+  ```text
+  5h 23.5% ↻14:20 · wk 41% ↻Thu 09:00 · today $38.10 API-eq · cache 96% 2 breaks +$1.10 API-eq
+  ```
 
 - **It keeps your history.** Claude Code deletes transcripts after 30 days
   (`cleanupPeriodDays`). Every turn is copied into a local SQLite database as it is seen, so
   last quarter is still there after the source files are gone —
   [and merges two machines into one total](docs/CLI.md#retention-and-merging-two-machines).
-- **It finds where the cache broke.** Cache tokens are where the money is — 94.7% of all tokens
-  on the development machine. `cache_health` finds the turns where a session lost its cached
-  prefix and paid to re-write the whole context, names the likely cause (a model switch, idling
-  past the 5-minute TTL, an edited `CLAUDE.md`) and prices the premium.
 - **It proves its numbers.** Claude Code writes one JSONL line _per content block_, each
   repeating the same `usage` object, so summing lines inflates every figure 2–3×.
-  `ai-usage verify` re-reads both sources with a _second, independent implementation_ that
-  shares no reduction code with the collectors, and diffs the result against its own database.
+  `ai-usage verify` re-reads the sources with a _second, independent implementation_ that
+  shares no reduction code with the collectors, and diffs the result against its own database:
 
-```text
-$ ai-usage verify
+  ```text
+  $ ai-usage verify
 
-== claude-code ==
-  MATCH    claude JSONL, deduped by stop_reason line (independent rule)
-  INFO     claude JSONL, naive sum of every usage line (NOT used -- shows the double count)
-           delta:  cache-read 990,824,820 ...
+  == claude-code ==
+    MATCH    claude JSONL, deduped by stop_reason line (independent rule)
+    INFO     claude JSONL, naive sum of every usage line (NOT used -- shows the double count)
+             delta:  cache-read 990,824,820 ...
 
-RESULT: every client reconciles exactly against at least one independent read of its source.
-```
+  RESULT: every client reconciles exactly against at least one independent read of its source.
+  ```
 
-Also: **your Pro/Max plan limits** — the 5-hour and weekly percentages Claude Code reports,
-kept by [a status line](docs/STATUS_LINE.md#plan-limits-and-the-status-line) and projected to the time you would
-hit 100% — plus `counterfactual_cost` (these exact tokens at another model's rates), budgets
-with run rate and forecast, project × day breakdowns, and CSV/JSON export. It supports
-**Claude Code** and **OpenCode**, and exposes twelve MCP tools plus resources, prompts and a
-debug CLI that prints the same text the tools return.
+- **It never fabricates a number.** A value a source does not record is reported as
+  unavailable, not as zero, and a cost the client reported is never added to one this package
+  estimated — see [How cost is reported](#how-cost-is-reported).
 
-**It never fabricates a number.** If a source does not record something, it is reported as
-unavailable — not as zero.
-
-<details>
-<summary><b>What the output looks like</b> (sample data)</summary>
-
-```text
-$ ai-usage stats --today
-Usage summary -- today (local time)
-Subagent/sidechain turns: INCLUDED (3 main + 1 subagent turns).
-
-Records: 4   Sessions: 2
-
-Tokens (all clients):
-  Input:        1,871
-  Output:       16,909 (16.9K)
-  Cache read:   2,452,000 (2.45M)
-  Cache write:  37,300 (37.3K)
-  Reasoning:    2,600
-  Total:        2,508,080 (2.51M)
-
-  Cost (reported by client, exact): $0.41  [1 records]
-  Cost (estimated, API-equivalent):  $1.50  [3 records]
-
-By client:
-  claude-code  --  3 records, 1 sessions
-    Cache read:   2,238,000 (2.24M)
-    Total:        2,280,001 (2.28M)
-    Cost (estimated, API-equivalent):  $1.50  [3 records]
-
-  opencode  --  1 records, 1 sessions
-    Cache read:   214,000 (214.0K)
-    Total:        228,079 (228.1K)
-    Cost (reported by client, exact): $0.41  [1 records]
-```
-
-The two cost lines are never added together, and never will be — see
-[How cost is reported](#how-cost-is-reported).
-
-</details>
-
-### Try it in one command
-
-There's nothing to configure and no account to create. It reads what Claude Code and OpenCode
-have already written to this machine:
-
-```bash
-npx -y -p ai-usage-mcp ai-usage report
-```
-
-The first run copies your history into a local database, which takes a few seconds. The report
-gives a verdict for the last 7 days, says where the tokens went, and lists what to change. To
-ask your agent questions like the ones above, [install it as an MCP server](#install).
+Also: `counterfactual_cost` (these exact tokens at another model's rates), budgets with run rate
+and forecast, project × day breakdowns, and CSV/JSON export — twelve MCP tools in all, plus
+resources, prompts and a CLI that prints the same text the tools return.
 
 ### ai-usage or ccusage?
 
 [ccusage](https://github.com/ryoppippi/ccusage) is the established tool, and a good one: it
-covers far more agents, and its Claude Code token counts agree with this package's exactly —
-every token class, every day, checked against ccusage 20.0.26 on the development machine for
-21–25 September 2026. For a quick report across many agents, use it.
-
-Use this one when you want what a report over the current transcripts cannot give: history that
-outlives Claude Code's 30-day cleanup, cache breaks found and priced, counterfactual pricing,
-budgets, cross-dimension breakdowns, reported and estimated cost kept apart, and token totals
-proved against a second read by `verify`.
+covers far more agents, and for a quick report across many of them, use it. Its Claude Code
+token counts and this package's agree exactly — every token class, every day, checked against
+ccusage 20.0.26 on the development machine for 21–25 September 2026 — so the choice is about
+what you want to do with the numbers. Use this one to ask your agent about them, to find and
+price cache breaks, to keep history past Claude Code's 30-day cleanup, and to keep reported and
+estimated cost apart.
 
 ---
 
@@ -324,7 +299,7 @@ Break my last 7 days down day by day.
 | `usage_summary`       | Totals for a period, split by client, tokens + cost                        |
 | `session_usage`       | One session: client, model, duration, token breakdown, cost                |
 | `model_usage`         | Per-model tokens and cost                                                  |
-| `client_usage`        | Per-client (Claude Code vs OpenCode) tokens and cost                       |
+| `client_usage`        | Per-client (Claude Code, Codex CLI, OpenCode) tokens and cost              |
 | `recent_sessions`     | Recent sessions with project, client, tokens, cost                         |
 | `project_usage`       | Per-project tokens and cost, by the directory a turn ran in                |
 | `daily_usage`         | Per-day tokens and cost, newest day first                                  |

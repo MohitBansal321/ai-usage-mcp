@@ -87,6 +87,19 @@ config at absolute paths to bypass PATH lookup entirely:
 Get both paths with `command -v node` and `npm root -g` after `npm install -g ai-usage-mcp`.
 This pins the Node version, so prefer the `npx` form unless you need it.
 
+## `ai-usage-mcp` prints a report instead of starting the server
+
+It decides by its stdin. An MCP client spawns it with a pipe there, and gets the server; a
+person who types `ai-usage-mcp` into a terminal has a TTY there, and gets the 7-day report
+instead of a process that waits forever for JSON-RPC. A client or wrapper that hands the
+server a TTY can force server mode with `--stdio`:
+
+```json
+{ "command": "npx", "args": ["-y", "ai-usage-mcp", "--stdio"] }
+```
+
+`ai-usage-mcp --help` and `--version` answer either way.
+
 ## `node-gyp rebuild` errors during install
 
 On Node 22.13+ this no longer fails the install. `better-sqlite3` is an **optional**

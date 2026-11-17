@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="858" height="652" viewBox="0 0 858 652" role="img" aria-label="Output of npx ai-usage-mcp: a 7-day usage report showing where tokens went, what to change, and the heaviest sessions">
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 14px; fill: #d4d4d8; }
+    .cmd { fill: #86efac; }
+    .head { fill: #fafafa; font-weight: 700; }
+    .verdict { fill: #fcd34d; }
+    .pct { fill: #7dd3fc; }
+    .dim { fill: #a1a1aa; }
+  </style>
+  <rect width="858" height="652" rx="10" fill="#18181b"/>
+  <circle cx="22" cy="20" r="6" fill="#f87171"/>
+  <circle cx="42" cy="20" r="6" fill="#fbbf24"/>
+  <circle cx="62" cy="20" r="6" fill="#4ade80"/>
+  <text x="24" y="52" class="cmd" xml:space="preserve">$ npx ai-usage-mcp</text>
+  <text x="24" y="72" xml:space="preserve"></text>
+  <text x="24" y="92" class="head" xml:space="preserve">Usage report -- last 7 days (local time)</text>
+  <text x="24" y="112" xml:space="preserve"></text>
+  <text x="24" y="132" xml:space="preserve">598 turns across 12 sessions, 88,006,221 (88.01M) tokens.</text>
+  <text x="24" y="152" class="verdict" xml:space="preserve">Verdict: Some waste -- a noticeable share of this usage re-read or rebuilt old context.</text>
+  <text x="24" y="172" xml:space="preserve"></text>
+  <text x="24" y="192" class="head" xml:space="preserve">Where it went (share of usage, weighted by API-equivalent price):</text>
+  <text x="24" y="212" xml:space="preserve"><tspan class="pct">   12.3%</tspan>  re-reading context above 100k tokens (327 turns; largest context 408,319 (408.3K))</text>
+  <text x="24" y="232" xml:space="preserve"><tspan class="pct">   16.0%</tspan>  rebuilding a lost cache (10 times, 5 after an idle break)</text>
+  <text x="24" y="252" xml:space="preserve"><tspan class="pct">   28.3%</tspan>  total -- avoidable in part, not whole</text>
+  <text x="24" y="272" xml:space="preserve"></text>
+  <text x="24" y="292" class="head" xml:space="preserve">What to change:</text>
+  <text x="24" y="312" xml:space="preserve">  1. Compact earlier. 3 session(s) grew past 200k tokens of context (largest: "Payments</text>
+  <text x="24" y="332" xml:space="preserve">     refactor", 408k). Run /compact once a session passes ~100k.</text>
+  <text x="24" y="352" xml:space="preserve">  2. Don't resume a session that has gone cold. 5 time(s) a session was continued after its</text>
+  <text x="24" y="372" xml:space="preserve">     prompt cache expired, and the whole context was re-written from scratch.</text>
+  <text x="24" y="392" xml:space="preserve">  3. Keep the start of a session stable. 5 cache rebuild(s) happened without an idle gap --</text>
+  <text x="24" y="412" xml:space="preserve">     usually a model switch mid-session, or editing CLAUDE.md while a session is running.</text>
+  <text x="24" y="432" xml:space="preserve"></text>
+  <text x="24" y="452" class="head" xml:space="preserve">Heaviest sessions:</text>
+  <text x="24" y="472" xml:space="preserve"><tspan class="pct">   39.2%</tspan>  Fix flaky checkout tests  [fix/checkout-retry, claude-code]</text>
+  <text x="24" y="492" xml:space="preserve">          165 turns, peak context 319,570 (319.6K), 2 cache rebuild(s)</text>
+  <text x="24" y="512" xml:space="preserve"><tspan class="pct">   28.8%</tspan>  Payments refactor  [main, claude-code]</text>
+  <text x="24" y="532" xml:space="preserve">          257 turns, peak context 408,319 (408.3K), 5 cache rebuild(s)</text>
+  <text x="24" y="552" xml:space="preserve"><tspan class="pct">    8.8%</tspan>  Admin list view  [feat/admin-list, codex]</text>
+  <text x="24" y="572" xml:space="preserve">          48 turns, peak context 166,367 (166.4K), 0 cache rebuild(s)</text>
+  <text x="24" y="592" xml:space="preserve"></text>
+  <text x="24" y="612" class="dim" xml:space="preserve">Weight: $34.81 API-equivalent across 489 turns. On a subscription that is not money spent.</text>
+</svg>
