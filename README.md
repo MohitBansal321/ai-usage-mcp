@@ -7,6 +7,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/ai-usage-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/ai-usage-mcp)
 [![node](https://img.shields.io/node/v/ai-usage-mcp?logo=node.js&color=5fa04e)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/ai-usage-mcp?color=blue)](LICENSE)
+[![MohitBansal321/ai-usage-mcp MCP server](https://glama.ai/mcp/servers/MohitBansal321/ai-usage-mcp/badges/score.svg)](https://glama.ai/mcp/servers/MohitBansal321/ai-usage-mcp)
 
 **See what Claude Code, Codex CLI and OpenCode actually cost you — and what to change.** It
 reads the history those agents already keep on your machine. No account, no API key, and nothing
